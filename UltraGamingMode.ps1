@@ -4,7 +4,7 @@
 .DESCRIPTION
     Manages the full lifecycle of Ultra Gaming Mode:
     - Enable: Snapshots current state, suppresses user startup apps/UWP/visual effects, and arms boot task.
-    - ApplyBootMode: Called by Task Scheduler on boot under SYSTEM to strip 70+ non-essential services.
+    - ApplyBootMode: Called by Task Scheduler on boot under SYSTEM to strip 173 non-essential services.
     - Restore: Returns all services, startup items, UWP apps, and visual parameters to original state.
     - Status: Shows current state, active services, and scheduled task status.
     - Diagnostic: Verifies system readiness, whitelist protection, and bloatware coverage.
@@ -130,7 +130,7 @@ switch ($Action) {
 
         Write-Host "`n[SUCCESS] PC is primed for Ultra Gaming Mode!" -ForegroundColor Green
         Write-Host "  - Third-party startup apps, shortcuts, and TranslucentTB are suppressed." -ForegroundColor White
-        Write-Host "  - On next restart, 70+ non-essential Windows services will be disabled." -ForegroundColor White
+        Write-Host "  - On next restart, 173 non-essential Windows services will be disabled." -ForegroundColor White
         Write-Host "  - Windows Audio, Network, AMD DisplayPort DSC, and Anti-Cheats remain 100% protected." -ForegroundColor White
         Write-Host "`n[FAIL-SAFE WATCHDOG] When done playing, simply run Option [2] Restore, or reboot the PC." -ForegroundColor Yellow
     }
