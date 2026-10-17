@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 # ⚡ Ultra Gaming Mode for Windows 11
 ### *Extreme Precision & Universal Hardware Tuning Edition (v2.5)*

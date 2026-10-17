@@ -319,19 +319,15 @@ Ultra Gaming Mode v2.5 оснащен автономным движком обн
 ```
 ============================================================
            ULTRA GAMING MODE CONTROLLER  v2.5
+            Universal Hardware Adaptive Suite
 ============================================================
- 
-  [1] Arm Ultra Gaming Mode for Next Boot
-  [2] Restore Normal Windows State Now
-  [3] Flush and Clean RAM Cache Now (Standby List)
-  [4] Run System Diagnostic / Pre-Flight Check
-  [5] Repair Display + Reset DisplayPort Cache (Emergency Fix)
-  [6] Repair Microphone, Steam + Core Services (Instant Fix)
-  [7] Purge AMD / DirectX / Vulkan Shader Cache
-  [8] Check & Toggle VBS / HVCI (Core Isolation)
-  [9] Check GPU MSI Mode & Device Priority Status
- [10] Check Current Status
- [11] Exit
+
+  [1] Enable Gaming Mode (Arm for Next Boot)
+  [2] Restore Normal Windows State
+  [3] Flush RAM Cache Now (Standby List)
+  [4] System Diagnostic & Hardware Check
+  [5] Advanced Tools & Emergency Repairs -->
+  [0] Exit
 ============================================================
 ```
 
@@ -377,19 +373,26 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 
 ## 🕹 Справочник меню и команд CLI
 
+### Главное меню:
 | Пункт меню | Команда CLI | Описание |
 |:---:|:---|:---|
 | **`[1]`** | `-Action Enable` | Создает снимок системы (службы, профиль оборудования, троттлинг ЦП, ULPS, MSI, NTFS, Core Parking, сетевые карты, дефрагментация HDD), подавляет автозапуск софта и регистрирует задачу загрузки от имени SYSTEM. |
 | **`[2]`** | `-Action Restore` | Возвращает все 173 службы и настройки железа (троттлинг ЦП, ULPS, MSI, Core Parking, NTFS, сеть, дефрагментация HDD) к исходному состоянию, включает Защитник Windows, удаляет задачи загрузки и восстанавливает автозапуск. |
 | **`[3]`** | `-Action CleanMemory` | Вызывает `EmptyWorkingSet` и `Win32StandbyCleaner` (P/Invoke `NtSetSystemInformation`) для сброса кэша ожидания ядра и рабочих наборов процессов на лету. |
 | **`[4]`** | `-Action Diagnostic` | Полный аудит: проверка универсального профиля оборудования (ЦП, GPU, ОЗУ, диски), прав администратора, схем питания и парковки ядер, MMCSS, сетевых адаптеров, AMD ULPS, кэша шейдеров, GPU MSI, VBS/HVCI, NTFS, защиты белого списка и фоновых служб. |
-| **`[5]`** | `-Action RepairDisplay` | Экстренное исправление: очистка кэшей топологии мониторов в реестре и сброс настроек планировщика MMCSS. |
-| **`[6]`** | `-Action RepairServices`| Экстренное исправление: восстанавливает и запускает `camsvc` (доступ к микрофону), `LanmanServer` (RPC) и Steam. |
-| **`[7]`** | `-Action FlushShaderCache`| Очищает кэши шейдеров AMD DirectX, Vulkan и D3D (`DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `D3DSCache`) для устранения микрофризов компиляции шейдеров. |
-| **`[8]`** | `-Action ToggleVBS` | Проверяет и переключает VBS / HVCI (целостность памяти) в реестре для устранения оверхеда виртуализации. |
-| **`[9]`** | `-Action GpuMsiStatus` | Показывает вендора видеокарты, статус режима Message Signaled Interrupts (MSI) и приоритет прерываний (`DevicePriority = 3`). |
-| **`[10]`**| `-Action Status` | Показывает текущий статус системы, адаптивные бейджи оборудования (ЦП, GPU, Low-RAM Guard, HDD Thrash Guard), число активных служб, состояние Core Parking, GPU MSI и VBS. |
-| **`[11]`**| `Exit` | Закрывает командное меню. |
+| **`[5]`** | `Advanced Tools -->` | Открывает подменю расширенных инструментов и экстренных исправлений (см. ниже). |
+| **`[0]`** | `Exit` | Закрывает командное меню. |
+
+### Подменю «Дополнительные инструменты и экстренные исправления» (Пункт [5]):
+| Пункт подменю | Команда CLI | Описание |
+|:---:|:---|:---|
+| **`[1]`** | `-Action RepairDisplay` | Экстренное исправление: очистка кэшей топологии мониторов в реестре и сброс настроек планировщика MMCSS. |
+| **`[2]`** | `-Action RepairServices`| Экстренное исправление: восстанавливает и запускает `camsvc` (доступ к микрофону), `LanmanServer` (RPC) и Steam. |
+| **`[3]`** | `-Action FlushShaderCache`| Очищает кэши шейдеров AMD DirectX, Vulkan и D3D (`DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `D3DSCache`) для устранения микрофризов компиляции шейдеров. |
+| **`[4]`** | `-Action ToggleVBS` | Проверяет и переключает VBS / HVCI (целостность памяти) в реестре для устранения оверхеда виртуализации. |
+| **`[5]`** | `-Action GpuMsiStatus` | Показывает вендора видеокарты, статус режима Message Signaled Interrupts (MSI) и приоритет прерываний (`DevicePriority = 3`). |
+| **`[6]`** | `-Action Status` | Показывает текущий статус системы, адаптивные бейджи оборудования (ЦП, GPU, Low-RAM Guard, HDD Thrash Guard), число активных служб, состояние Core Parking, GPU MSI и VBS. |
+| **`[0]`** | `<-- Back` | Возврат в главное меню. |
 
 ---
 

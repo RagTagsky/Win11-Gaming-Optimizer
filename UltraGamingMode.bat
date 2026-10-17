@@ -3,7 +3,7 @@ setlocal EnableDelayedExpansion
 
 REM ============================================================
 REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.5
-REM  Universal Hardware Tuning & Failsafe Optimizer
+REM  Universal Hardware Adaptive Tuning & Failsafe Suite
 REM ============================================================
 
 REM 1. Guard against infinite elevation loops
@@ -24,29 +24,24 @@ exit /b
 
 :start
 cd /d "%~dp0"
-title Ultra Gaming Mode Controller v2.5 (Universal Hardware Edition)
+title Ultra Gaming Mode Controller v2.5
 
 :menu
 cls
 echo ============================================================
 echo            ULTRA GAMING MODE CONTROLLER  v2.5
-echo        Universal Hardware Adaptive Tuning Suite
+echo             Universal Hardware Adaptive Suite
 echo ============================================================
 echo.
-echo  [1] Arm Ultra Gaming Mode for Next Boot
-echo  [2] Restore Normal Windows State Now
-echo  [3] Flush and Clean RAM Cache Now (Standby List)
-echo  [4] Run System Diagnostic / Pre-Flight Check
-echo  [5] Repair Display + Reset DisplayPort Cache (Emergency Fix)
-echo  [6] Repair Microphone, Steam + Core Services (Instant Fix)
-echo  [7] Purge AMD / DirectX / Vulkan Shader Cache
-echo  [8] Check & Toggle VBS / HVCI (Core Isolation)
-echo  [9] Check GPU MSI Mode & Device Priority Status
-echo [10] Check Current Status
-echo [11] Exit
+echo   [1] Enable Gaming Mode (Arm for Next Boot)
+echo   [2] Restore Normal Windows State
+echo   [3] Flush RAM Cache Now (Standby List)
+echo   [4] System Diagnostic ^& Hardware Check
+echo   [5] Advanced Tools ^& Emergency Repairs --^>
+echo   [0] Exit
 echo.
 echo ============================================================
-set /p choice="Select an option [1-11]: "
+set /p choice="Select an option [0-5]: "
 
 if "%choice%"=="1" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Enable
@@ -73,42 +68,9 @@ if "%choice%"=="4" (
     goto menu
 )
 if "%choice%"=="5" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairDisplay
-    echo.
-    pause
-    goto menu
+    goto tools_menu
 )
-if "%choice%"=="6" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairServices
-    echo.
-    pause
-    goto menu
-)
-if "%choice%"=="7" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action FlushShaderCache
-    echo.
-    pause
-    goto menu
-)
-if "%choice%"=="8" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action ToggleVBS
-    echo.
-    pause
-    goto menu
-)
-if "%choice%"=="9" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action GpuMsiStatus
-    echo.
-    pause
-    goto menu
-)
-if "%choice%"=="10" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Status
-    echo.
-    pause
-    goto menu
-)
-if "%choice%"=="11" (
+if "%choice%"=="0" (
     exit
 )
 if /i "%choice%"=="q" (
@@ -118,3 +80,67 @@ if /i "%choice%"=="q" (
 echo Invalid selection. Please try again.
 pause
 goto menu
+
+:tools_menu
+cls
+echo ============================================================
+echo            ADVANCED TOOLS ^& EMERGENCY REPAIRS
+echo ============================================================
+echo.
+echo   [1] Reset DisplayPort ^& Monitor Topology Cache
+echo   [2] Repair Microphone, Steam ^& Audio Services
+echo   [3] Purge GPU Shader Cache (AMD / DirectX / Vulkan)
+echo   [4] Check ^& Toggle VBS / Core Isolation
+echo   [5] Check GPU MSI Mode ^& IRQ Priority Status
+echo   [6] View Full Mode Status
+echo   [0] ^<-- Back to Main Menu
+echo.
+echo ============================================================
+set /p tool_choice="Select a tool [0-6]: "
+
+if "%tool_choice%"=="1" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairDisplay
+    echo.
+    pause
+    goto tools_menu
+)
+if "%tool_choice%"=="2" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairServices
+    echo.
+    pause
+    goto tools_menu
+)
+if "%tool_choice%"=="3" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action FlushShaderCache
+    echo.
+    pause
+    goto tools_menu
+)
+if "%tool_choice%"=="4" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action ToggleVBS
+    echo.
+    pause
+    goto tools_menu
+)
+if "%tool_choice%"=="5" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action GpuMsiStatus
+    echo.
+    pause
+    goto tools_menu
+)
+if "%tool_choice%"=="6" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Status
+    echo.
+    pause
+    goto tools_menu
+)
+if "%tool_choice%"=="0" (
+    goto menu
+)
+if /i "%tool_choice%"=="q" (
+    goto menu
+)
+
+echo Invalid selection. Please try again.
+pause
+goto tools_menu
