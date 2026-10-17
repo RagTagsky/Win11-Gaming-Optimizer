@@ -2,8 +2,8 @@
 setlocal EnableDelayedExpansion
 
 REM ============================================================
-REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.4
-REM  Automatically elevates to admin safely with recursion guard.
+REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.5
+REM  Universal Hardware Tuning & Failsafe Optimizer
 REM ============================================================
 
 REM 1. Guard against infinite elevation loops
@@ -24,12 +24,13 @@ exit /b
 
 :start
 cd /d "%~dp0"
-title Ultra Gaming Mode Controller v2.4
+title Ultra Gaming Mode Controller v2.5 (Universal Hardware Edition)
 
 :menu
 cls
 echo ============================================================
-echo            ULTRA GAMING MODE CONTROLLER  v2.4
+echo            ULTRA GAMING MODE CONTROLLER  v2.5
+echo        Universal Hardware Adaptive Tuning Suite
 echo ============================================================
 echo.
 echo  [1] Arm Ultra Gaming Mode for Next Boot

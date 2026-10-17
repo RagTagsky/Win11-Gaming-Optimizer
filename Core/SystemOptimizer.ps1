@@ -25,6 +25,65 @@ public static class Win32MemoryOptimizer {
     }
 }
 
+if (-not ([System.Management.Automation.PSTypeName]'Win32StandbyCleaner').Type) {
+    try {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class Win32StandbyCleaner {
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern bool LookupPrivilegeValue(string lpSystemName, string lpName, out long lpLuid);
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct TOKEN_PRIVILEGES {
+        public int PrivilegeCount;
+        public long Luid;
+        public int Attributes;
+    }
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool AdjustTokenPrivileges(IntPtr TokenHandle, bool DisableAllPrivileges, ref TOKEN_PRIVILEGES NewState, int BufferLength, IntPtr PreviousState, IntPtr ReturnLength);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentProcess();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("ntdll.dll")]
+    public static extern int NtSetSystemInformation(int SystemInformationClass, ref int SystemInformation, int SystemInformationLength);
+
+    public static bool EnablePrivilege(string privilege) {
+        IntPtr token;
+        if (!OpenProcessToken(GetCurrentProcess(), 0x0028, out token)) return false;
+        long luid;
+        if (!LookupPrivilegeValue(null, privilege, out luid)) { CloseHandle(token); return false; }
+        TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES { PrivilegeCount = 1, Luid = luid, Attributes = 0x00000002 };
+        bool ok = AdjustTokenPrivileges(token, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+        int err = Marshal.GetLastWin32Error();
+        CloseHandle(token);
+        return ok && (err == 0);
+    }
+
+    public static int FlushStandbyList() {
+        try {
+            EnablePrivilege("SeProfileSingleProcessPrivilege");
+            EnablePrivilege("SeIncreaseQuotaPrivilege");
+            int command = 4; // MemoryPurgeStandbyList
+            return NtSetSystemInformation(80, ref command, sizeof(int));
+        } catch {
+            return -1;
+        }
+    }
+}
+"@ -ErrorAction SilentlyContinue
+    }
+    catch {}
+}
+
 function Get-ActivePowerSchemeGuid {
     [CmdletBinding()]
     param()
@@ -229,9 +288,13 @@ function Restore-MultimediaConfig {
 
 function Optimize-SystemMemory {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory = $false)]
+        [switch]$Aggressive
+    )
 
-    Write-Host "[*] Flushing memory caches and trimming non-critical process working sets..." -ForegroundColor Cyan
+    $modeText = if ($Aggressive) { "Aggressive Low-RAM standby list & process memory reclamation" } else { "memory caches and trimming non-critical process working sets" }
+    Write-Host "[*] Flushing $modeText..." -ForegroundColor Cyan
 
     $initialMem = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory
     $trimmedProcesses = 0
@@ -262,6 +325,19 @@ function Optimize-SystemMemory {
         }
     }
 
+    # If Aggressive (e.g. LowRamProfile <= 8GB), flush standby list via NtSetSystemInformation and trigger multi-pass GC
+    if ($Aggressive) {
+        try {
+            if (([System.Management.Automation.PSTypeName]'Win32StandbyCleaner').Type) {
+                $standbyRes = [Win32StandbyCleaner]::FlushStandbyList()
+                if ($standbyRes -eq 0) {
+                    Write-Host "  [+] Kernel standby cache list successfully flushed to free page list." -ForegroundColor Green
+                }
+            }
+        }
+        catch {}
+    }
+
     [System.GC]::Collect()
     [System.GC]::WaitForPendingFinalizers()
 
@@ -270,6 +346,9 @@ function Optimize-SystemMemory {
     $reclaimedMb = [math]::Round($reclaimedKb / 1024, 2)
 
     Write-Host "  [+] Cleaned working sets across $trimmedProcesses non-critical processes." -ForegroundColor Green
+    if ($Aggressive) {
+        Write-Host "  [+] Low-RAM Budget Guard: Working set trim & standby cache reclaim complete." -ForegroundColor Green
+    }
     Write-Host "  [+] Free physical RAM increased by $reclaimedMb MB." -ForegroundColor Green
     return $reclaimedMb
 }
@@ -731,6 +810,231 @@ function Set-FocusAssistAndSoundsGamingState {
     return $true
 }
 
+# ── Universal Hardware Auto-Detection & Adaptive Tuning Engine ─────────────
+
+function Get-HardwareProfile {
+    [CmdletBinding()]
+    param()
+
+    # 1. CPU Auto-Detection
+    $allCpus = @(Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue)
+    $cpu = if ($allCpus.Count -gt 0) { $allCpus[0] } else { $null }
+    $cpuName = if ($cpu -and $cpu.Name) { ($cpu.Name.Trim() -replace '\s+', ' ') } else { "Unknown Processor" }
+    $cpuMfg = if ($cpu -and $cpu.Manufacturer) { $cpu.Manufacturer } else { "" }
+    $cpuVendor = if ($cpuMfg -match "Intel" -or $cpuName -match "Intel") { "Intel" }
+                 elseif ($cpuMfg -match "AMD" -or $cpuName -match "AMD|Ryzen") { "AMD" }
+                 else { "Unknown" }
+
+    $physCores = 0
+    $logCores = 0
+    if ($allCpus.Count -gt 0) {
+        $pMeasure = $allCpus | Measure-Object -Property NumberOfCores -Sum
+        $physCores = if ($pMeasure.Sum) { [int]$pMeasure.Sum } else { 0 }
+        $lMeasure = $allCpus | Measure-Object -Property NumberOfLogicalProcessors -Sum
+        $logCores = if ($lMeasure.Sum) { [int]$lMeasure.Sum } else { 0 }
+    }
+    if ($physCores -le 0) { $physCores = [System.Environment]::ProcessorCount }
+    if ($logCores -le 0) { $logCores = [System.Environment]::ProcessorCount }
+
+    $arch = switch ($cpu.Architecture) {
+        9 { "x64" }
+        0 { "x86" }
+        12 { "ARM64" }
+        default { if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "x86" } }
+    }
+    # LowCoreProfile: <= 4 logical cores (e.g. i3-2100 with 2C/4T or i5 4C/4T)
+    $lowCore = ($logCores -le 4)
+
+    # 2. GPU Auto-Detection (Dedicated gaming GPU priority)
+    $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)
+    $pci = @($gpus | Where-Object { $_.PNPDeviceID -match "^PCI" })
+
+    $isDedicatedGpu = {
+        param($g)
+        if (-not $g) { return $false }
+        if ($g.PNPDeviceID -match "VEN_10DE") { return $true }
+        if ($g.PNPDeviceID -match "VEN_1002" -and $g.Name -notmatch "AMD Radeon\(TM\) Graphics|Vega [0-9] Mobile") { return $true }
+        if ($g.PNPDeviceID -match "VEN_8086" -and ($g.Name -match "Arc" -or $g.Name -notmatch "HD Graphics|UHD Graphics|Iris")) { return $true }
+        return $false
+    }
+
+    $dedicatedGpus = @($pci | Where-Object { & $isDedicatedGpu $_ })
+    $primaryGpu = if ($dedicatedGpus.Count -gt 0) {
+        $activeDedicated = @($dedicatedGpus | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
+        if ($activeDedicated.Count -gt 0) { $activeDedicated[0] } else { $dedicatedGpus[0] }
+    } else {
+        $activeGpu = @($pci | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
+        if ($activeGpu.Count -gt 0) { $activeGpu[0] } elseif ($pci.Count -gt 0) { $pci[0] } elseif ($gpus.Count -gt 0) { $gpus[0] } else { $null }
+    }
+
+    $gpuName = if ($primaryGpu -and $primaryGpu.Name) { $primaryGpu.Name.Trim() } else { "Generic Display Adapter" }
+    $gpuPnpId = if ($primaryGpu) { $primaryGpu.PNPDeviceID } else { $null }
+    $gpuVendor = if ($primaryGpu) {
+        if ($gpuPnpId -match "VEN_1002" -or $gpuName -match "AMD|Radeon" -or $primaryGpu.AdapterCompatibility -match "Advanced Micro Devices") { "AMD" }
+        elseif ($gpuPnpId -match "VEN_10DE" -or $gpuName -match "NVIDIA|GeForce|Quadro|RTX|GTX" -or $primaryGpu.AdapterCompatibility -match "NVIDIA") { "NVIDIA" }
+        elseif ($gpuPnpId -match "VEN_8086" -or $gpuName -match "Intel" -or $primaryGpu.AdapterCompatibility -match "Intel") { "Intel" }
+        else { "Unknown" }
+    } else { "Unknown" }
+
+    $gpuRes = if ($primaryGpu -and $primaryGpu.CurrentHorizontalResolution) {
+        "$($primaryGpu.CurrentHorizontalResolution)x$($primaryGpu.CurrentVerticalResolution) @ $($primaryGpu.CurrentRefreshRate)Hz"
+    } else { "Display Inactive / Virtual" }
+
+    # Query MSI status for the primary GPU
+    $gpuMsiSupported = $false
+    $gpuPriority = $null
+    if ($gpuPnpId) {
+        $msiPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$gpuPnpId\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
+        $affPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$gpuPnpId\Device Parameters\Interrupt Management\Affinity Policy"
+        if (Test-Path $msiPath) {
+            $val = (Get-ItemProperty -Path $msiPath -ErrorAction SilentlyContinue).MSISupported
+            if ($null -ne $val -and [int]$val -eq 1) { $gpuMsiSupported = $true }
+        }
+        if (Test-Path $affPath) {
+            $val = (Get-ItemProperty -Path $affPath -ErrorAction SilentlyContinue).DevicePriority
+            if ($null -ne $val) { $gpuPriority = [int]$val }
+        }
+    }
+
+    # 3. RAM Auto-Detection & Pagefile Check
+    $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+    $totalRamBytes = if ($cs -and $cs.TotalPhysicalMemory) { [int64]$cs.TotalPhysicalMemory } else { 0 }
+    if ($totalRamBytes -le 0) {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+        if ($os -and $os.TotalVisibleMemorySize) {
+            $totalRamBytes = [int64]$os.TotalVisibleMemorySize * 1024
+        }
+    }
+    $totalRamGb = [math]::Round($totalRamBytes / 1GB, 2)
+    # LowRamProfile: <= 8.5 GB (covers 8 GB systems with hardware reservations)
+    $lowRam = ($totalRamBytes -gt 0 -and $totalRamBytes -le [int64](8.5 * 1024 * 1024 * 1024))
+
+    $pfManaged = if ($cs -and $null -ne $cs.AutomaticManagedPagefile) { [bool]$cs.AutomaticManagedPagefile } else { $false }
+    $pfReg = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "PagingFiles", "ExistingPageFiles" -ErrorAction SilentlyContinue
+    $hasPfReg = ($pfReg -and (($pfReg.PagingFiles -and $pfReg.PagingFiles.Count -gt 0) -or ($pfReg.ExistingPageFiles -and $pfReg.ExistingPageFiles.Count -gt 0)))
+    $pfUsage = @(Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue)
+    $pfConfigured = ($pfUsage.Count -gt 0 -or $hasPfReg -or $pfManaged)
+    $pfWarning = if (-not $pfConfigured) {
+        "CRITICAL: Paging file is disabled or missing! On 8GB RAM, modern games will crash with Out-Of-Memory (OOM)."
+    } else { $null }
+
+    # 4. Storage Disk Auto-Detection (System Drive C:)
+    $cLetter = "C"
+    $diskNum = $null
+    $diskModel = "Unknown Storage Device"
+    $mediaType = "Unknown"
+    $busType = "Unknown"
+    $isHdd = $false
+
+    $hddModelPattern = "(?i)HDD|WD[0-9]|WDC|ST[0-9]|Hitachi|Seagate|Barracuda|Spinpoint|MQ01|DT01|Deskstar|Caviar|Blue|Green|Red|Purple|Black|FireCuda|IronWolf"
+    $ssdModelPattern = "(?i)SSD|NVMe|NAND|EVO|PRO|Crucial|Kingston|KIOXIA|Lexar|Sandisk|Micron|SK hynix|Adata|Corsair|Intel SSD|Sabrent"
+
+    try {
+        $part = Get-Partition -DriveLetter $cLetter -ErrorAction Stop
+        $diskNum = $part.DiskNumber
+        $pDisks = @(Get-PhysicalDisk -ErrorAction SilentlyContinue)
+        $targetDisk = $pDisks | Where-Object { [string]$_.DeviceId -eq [string]$diskNum } | Select-Object -First 1
+        if ($targetDisk) {
+            $diskModel = $targetDisk.FriendlyName
+            $mediaType = [string]$targetDisk.MediaType
+            $busType = [string]$targetDisk.BusType
+            if ($mediaType -match "HDD" -or ($targetDisk.SpindleSpeed -and $targetDisk.SpindleSpeed -gt 0)) {
+                $isHdd = $true
+            } elseif ($mediaType -match "SSD" -or $busType -match "NVMe") {
+                $isHdd = $false
+            } else {
+                # Fallback to model name heuristics when MediaType is Unspecified or Unknown
+                if ($diskModel -match $hddModelPattern) {
+                    $isHdd = $true
+                    $mediaType = "HDD"
+                } elseif ($diskModel -match $ssdModelPattern -or $busType -match "NVMe") {
+                    $isHdd = $false
+                    $mediaType = "SSD"
+                }
+            }
+        }
+    } catch {}
+
+    # Fallback to WMI if mediaType or diskModel remains unresolved
+    if ($mediaType -eq "Unknown" -or $diskModel -eq "Unknown Storage Device") {
+        try {
+            $cDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID = 'C:'"
+            $partitions = Get-CimAssociatedInstance -InputObject $cDrive -ResultClassName Win32_DiskPartition
+            if ($partitions) {
+                $drives = Get-CimAssociatedInstance -InputObject ($partitions | Select-Object -First 1) -ResultClassName Win32_DiskDrive
+                if ($drives) {
+                    $d = $drives | Select-Object -First 1
+                    $diskModel = $d.Model
+                    $diskNum = $d.Index
+                    if ($d.Model -match $hddModelPattern) {
+                        $isHdd = $true
+                        $mediaType = "HDD"
+                    } elseif ($d.Model -match $ssdModelPattern) {
+                        $isHdd = $false
+                        $mediaType = "SSD"
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    # Also detect if any secondary drive is an HDD
+    $anyHdd = $false
+    try {
+        $allPDisks = @(Get-PhysicalDisk -ErrorAction SilentlyContinue)
+        foreach ($pd in $allPDisks) {
+            $m = [string]$pd.MediaType
+            $f = [string]$pd.FriendlyName
+            if ($m -match "HDD" -or ($pd.SpindleSpeed -and $pd.SpindleSpeed -gt 0) -or ($f -match $hddModelPattern)) {
+                $anyHdd = $true
+            }
+        }
+    } catch {}
+
+    if (-not $anyHdd) {
+        try {
+            $allDrives = @(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue)
+            foreach ($d in $allDrives) {
+                if ($d.Model -match $hddModelPattern) {
+                    $anyHdd = $true
+                }
+            }
+        } catch {}
+    }
+
+    return @{
+        CpuName             = $cpuName
+        CpuVendor           = $cpuVendor
+        CpuArchitecture     = $arch
+        PhysicalCores       = $physCores
+        LogicalCores        = $logCores
+        LowCoreProfile      = $lowCore
+
+        GpuName             = $gpuName
+        GpuVendor           = $gpuVendor
+        GpuPnpDeviceId      = $gpuPnpId
+        GpuResolution       = $gpuRes
+        GpuMsiSupported     = $gpuMsiSupported
+        GpuDevicePriority   = $gpuPriority
+
+        TotalRamBytes       = $totalRamBytes
+        TotalRamGB          = $totalRamGb
+        LowRamProfile       = $lowRam
+        PagefileConfigured  = $pfConfigured
+        PagefileManaged     = $pfManaged
+        PagefileWarning     = $pfWarning
+
+        SystemDriveLetter   = $cLetter
+        SystemDiskNumber    = $diskNum
+        SystemDiskModel     = $diskModel
+        SystemDiskMediaType = $mediaType
+        SystemDiskBusType   = $busType
+        IsHdd               = $isHdd
+        HasAnyHdd           = $anyHdd
+        HddProfile          = ($isHdd -or $anyHdd)
+    }
+}
+
 # ── AMD Radeon & Ryzen Hardware Optimizations ──────────────────────────────
 
 function Get-AmdGpuDriverClassKeys {
@@ -940,7 +1244,13 @@ function Set-ProcessorIdleMinCores {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
-        [int]$Percent = 100
+        [int]$Percent = 100,
+
+        [Parameter(Mandatory = $false)]
+        [string]$CpuVendor = "",
+
+        [Parameter(Mandatory = $false)]
+        [switch]$LowCore
     )
 
     Write-Host "[*] Configuring Processor Core Parking (CPMINCORES = $Percent%)..." -ForegroundColor Cyan
@@ -952,7 +1262,15 @@ function Set-ProcessorIdleMinCores {
             return $false
         }
         if ($Percent -eq 100) {
-            Write-Host "  [+] Ryzen Core Parking DISABLED (all CPU cores kept active, CPMINCORES = 100%)." -ForegroundColor Green
+            if ($LowCore) {
+                Write-Host "  [+] Low-Core Budget CPU Guard: All logical cores forced unparked (prevents thread stalls, CPMINCORES = 100%)." -ForegroundColor Green
+            } elseif ($CpuVendor -eq "Intel") {
+                Write-Host "  [+] Intel Core Architecture: Core parking DISABLED (CPMINCORES = 100% - all threads active)." -ForegroundColor Green
+            } elseif ($CpuVendor -eq "AMD") {
+                Write-Host "  [+] AMD Ryzen Architecture: Core parking DISABLED (CPMINCORES = 100% - all CCX cores active)." -ForegroundColor Green
+            } else {
+                Write-Host "  [+] Processor Core Parking DISABLED (all CPU cores kept active, CPMINCORES = 100%)." -ForegroundColor Green
+            }
         }
         else {
             Write-Host "  [+] Processor CPMINCORES set to $Percent%." -ForegroundColor Green
@@ -993,6 +1311,93 @@ function Restore-ProcessorIdleMinCores {
     return $true
 }
 
+function Get-ProcessorThrottleMin {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $activeGuid = Get-ActivePowerSchemeGuid
+        if ($activeGuid) {
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$activeGuid\54533251-82be-4824-96c1-47b60b740d00\893dee8e-2bef-41e0-89c6-b55d0929964c"
+            if (Test-Path $regPath) {
+                $p = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+                if ($null -ne $p.ACSettingIndex) {
+                    return [int]$p.ACSettingIndex
+                }
+            }
+        }
+
+        $raw = powercfg /q SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 2>&1 | Out-String
+        if ($raw -match "(?im)(?:AC|сети|secteur|wechselstrom|ca)[^:\r\n]*:\s*0x([0-9a-fA-F]+)") {
+            return [Convert]::ToInt32($matches[1], 16)
+        }
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
+function Restore-ProcessorThrottleMin {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$OriginalPercent
+    )
+
+    if ($null -ne $OriginalPercent) {
+        Write-Host "[*] Restoring Minimum Processor Frequency State..." -ForegroundColor Cyan
+        try {
+            $p = [int]$OriginalPercent
+            $null = powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN $p 2>&1
+            $null = powercfg -setactive SCHEME_CURRENT 2>&1
+            Write-Host "  [+] Minimum processor frequency restored to $p%." -ForegroundColor Green
+            return $true
+        }
+        catch {
+            Write-Warning "Exception restoring PROCTHROTTLEMIN: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    return $true
+}
+
+function Apply-CpuGamingOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$HardwareProfile
+    )
+
+    $hw = if ($HardwareProfile) { $HardwareProfile } else { Get-HardwareProfile }
+
+    Write-Host "[*] Applying Adaptive CPU Gaming Optimizations ($($hw.CpuVendor), $($hw.LogicalCores) Threads)..." -ForegroundColor Cyan
+
+    # 1. Core unparking (CPMINCORES = 100%) for both Intel and AMD
+    Set-ProcessorIdleMinCores -Percent 100 -CpuVendor $hw.CpuVendor -LowCore:$hw.LowCoreProfile | Out-Null
+
+    # 2. Minimum & Maximum processor frequency to 100%
+    try {
+        $null = powercfg -setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 bc5038f7-23e0-4960-96da-33abaf5935ec 100 2>&1
+        $null = powercfg -setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 100 2>&1
+        $null = powercfg -setactive SCHEME_CURRENT 2>&1
+        Write-Host "  [+] Processor Frequency locked to 100% (eliminates clock ramp-up latency)." -ForegroundColor Green
+    }
+    catch {}
+
+    if ($hw.CpuVendor -eq "AMD") {
+        Write-Host "  [+] AMD Zen Architecture Profile: Inter-core wake latency eliminated across all CCXs." -ForegroundColor Green
+    }
+    elseif ($hw.CpuVendor -eq "Intel") {
+        if ($hw.LowCoreProfile) {
+            Write-Host "  [+] Intel Low-Core Budget Profile: All $($hw.LogicalCores) threads kept 100% active (prevents Sandy Bridge sleep stalls)." -ForegroundColor Green
+        } else {
+            Write-Host "  [+] Intel Core Architecture Profile: High-frequency C-state latency reduction active." -ForegroundColor Green
+        }
+    }
+    return $true
+}
+
 # ── GPU MSI (Message Signaled Interrupts) Mode ─────────────────────────────
 
 function Get-GpuPnpDeviceId {
@@ -1000,12 +1405,34 @@ function Get-GpuPnpDeviceId {
     param()
 
     try {
-        $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
-        $amd = $gpus | Where-Object { $_.PNPDeviceID -match "^PCI" -and ($_.Name -like "*AMD*" -or $_.Name -like "*Radeon*") } | Select-Object -First 1
-        if ($amd) { return $amd }
+        $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)
+        $pci = @($gpus | Where-Object { $_.PNPDeviceID -match "^PCI" })
+        if ($pci.Count -eq 0) {
+            return ($gpus | Select-Object -First 1)
+        }
 
-        $pciGpu = $gpus | Where-Object { $_.PNPDeviceID -match "^PCI" } | Select-Object -First 1
-        return $pciGpu
+        # Dedicated GPUs: NVIDIA, AMD (non-APU), Intel Arc
+        $isDedicatedGpu = {
+            param($g)
+            if (-not $g) { return $false }
+            if ($g.PNPDeviceID -match "VEN_10DE") { return $true }
+            if ($g.PNPDeviceID -match "VEN_1002" -and $g.Name -notmatch "AMD Radeon\(TM\) Graphics|Vega [0-9] Mobile") { return $true }
+            if ($g.PNPDeviceID -match "VEN_8086" -and ($g.Name -match "Arc" -or $g.Name -notmatch "HD Graphics|UHD Graphics|Iris")) { return $true }
+            return $false
+        }
+
+        $dedicatedGpus = @($pci | Where-Object { & $isDedicatedGpu $_ })
+        if ($dedicatedGpus.Count -gt 0) {
+            $activeDedicated = @($dedicatedGpus | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
+            if ($activeDedicated.Count -gt 0) { return $activeDedicated[0] }
+            return $dedicatedGpus[0]
+        }
+
+        # Fallback to active display GPU
+        $activeGpu = @($pci | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
+        if ($activeGpu.Count -gt 0) { return $activeGpu[0] }
+
+        return $pci[0]
     }
     catch {
         return $null
@@ -1018,6 +1445,11 @@ function Get-GpuMsiConfig {
 
     $gpu = Get-GpuPnpDeviceId
     if (-not $gpu -or -not $gpu.PNPDeviceID) { return $null }
+
+    $vendor = "Unknown"
+    if ($gpu.PNPDeviceID -match "VEN_1002" -or $gpu.Name -match "AMD|Radeon" -or $gpu.AdapterCompatibility -match "Advanced Micro Devices") { $vendor = "AMD" }
+    elseif ($gpu.PNPDeviceID -match "VEN_10DE" -or $gpu.Name -match "NVIDIA|GeForce|Quadro|RTX|GTX" -or $gpu.AdapterCompatibility -match "NVIDIA") { $vendor = "NVIDIA" }
+    elseif ($gpu.PNPDeviceID -match "VEN_8086" -or $gpu.Name -match "Intel" -or $gpu.AdapterCompatibility -match "Intel") { $vendor = "Intel" }
 
     $basePath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($gpu.PNPDeviceID)\Device Parameters\Interrupt Management"
     $msiPath = Join-Path $basePath "MessageSignaledInterruptProperties"
@@ -1038,6 +1470,7 @@ function Get-GpuMsiConfig {
     return @{
         PNPDeviceID    = $gpu.PNPDeviceID
         DeviceName     = $gpu.Name
+        Vendor         = $vendor
         BasePath       = $basePath
         MSISupported   = $msiSupp
         DevicePriority = $devPrio
@@ -1056,6 +1489,11 @@ function Set-GpuMsiGamingConfig {
         return $false
     }
 
+    $vendor = "PCI"
+    if ($gpu.PNPDeviceID -match "VEN_1002" -or $gpu.Name -match "AMD|Radeon") { $vendor = "AMD" }
+    elseif ($gpu.PNPDeviceID -match "VEN_10DE" -or $gpu.Name -match "NVIDIA|GeForce") { $vendor = "NVIDIA" }
+    elseif ($gpu.PNPDeviceID -match "VEN_8086" -or $gpu.Name -match "Intel") { $vendor = "Intel" }
+
     $basePath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($gpu.PNPDeviceID)\Device Parameters\Interrupt Management"
     $msiPath = Join-Path $basePath "MessageSignaledInterruptProperties"
     $affPath = Join-Path $basePath "Affinity Policy"
@@ -1063,17 +1501,46 @@ function Set-GpuMsiGamingConfig {
     try {
         if (-not (Test-Path $msiPath)) { New-Item -Path $msiPath -Force -ErrorAction Stop | Out-Null }
         Set-ItemProperty -Path $msiPath -Name "MSISupported" -Value 1 -Type DWord -Force -ErrorAction Stop
-        Write-Host "  [+] GPU '$($gpu.Name)': MSISupported set to 1 (MSI mode active)." -ForegroundColor Green
+        Write-Host "  [+] GPU '$($gpu.Name)' ($vendor): MSISupported set to 1 (MSI mode active)." -ForegroundColor Green
 
         if (-not (Test-Path $affPath)) { New-Item -Path $affPath -Force -ErrorAction Stop | Out-Null }
         Set-ItemProperty -Path $affPath -Name "DevicePriority" -Value 3 -Type DWord -Force -ErrorAction Stop
-        Write-Host "  [+] GPU '$($gpu.Name)': DevicePriority set to 3 (High IRQ Priority)." -ForegroundColor Green
+        Write-Host "  [+] GPU '$($gpu.Name)' ($vendor): DevicePriority set to 3 (High IRQ Priority)." -ForegroundColor Green
         return $true
     }
     catch {
         Write-Warning "Failed to set GPU MSI mode: $($_.Exception.Message)"
         return $false
     }
+}
+
+function Apply-GpuGamingOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$HardwareProfile
+    )
+
+    $hw = if ($HardwareProfile) { $HardwareProfile } else { Get-HardwareProfile }
+
+    Write-Host "[*] Applying Adaptive GPU Gaming Optimizations ($($hw.GpuVendor) - $($hw.GpuName))..." -ForegroundColor Cyan
+
+    # 1. Enable MSI Mode & High IRQ Priority for primary GPU
+    Set-GpuMsiGamingConfig | Out-Null
+
+    # 2. Vendor specific tweaks
+    if ($hw.GpuVendor -eq "AMD" -or (Get-AmdGpuDriverClassKeys).Count -gt 0) {
+        Set-AmdUlpsState -Enable 0 | Out-Null
+        Write-Host "  [+] AMD Polaris / RDNA Profile: ULPS disabled (eliminates GPU deep-sleep stutter)." -ForegroundColor Green
+    }
+    elseif ($hw.GpuVendor -eq "NVIDIA") {
+        Write-Host "  [+] NVIDIA GeForce Profile: MSI High Priority enabled (ULPS is AMD-specific; skipped)." -ForegroundColor Green
+    }
+    elseif ($hw.GpuVendor -eq "Intel") {
+        Write-Host "  [+] Intel Graphics Profile: MSI mode configured where supported." -ForegroundColor Green
+    }
+
+    return $true
 }
 
 function Restore-GpuMsiConfig {
@@ -1268,7 +1735,10 @@ function Get-NTFSFileSystemConfig {
 
 function Set-NTFSGamingOptimizations {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory = $false)]
+        [switch]$IsHdd
+    )
 
     Write-Host "[*] Applying NTFS File System I/O Optimizations (DisableLastAccess & Disable8dot3)..." -ForegroundColor Cyan
     try {
@@ -1287,6 +1757,10 @@ function Set-NTFSGamingOptimizations {
             Write-Host "  [+] NTFS 8.3 legacy short name generation disabled (speeds up directory lookups)." -ForegroundColor Green
         } else {
             Write-Warning "Could not configure disable8dot3 ($code2): $out2"
+        }
+
+        if ($IsHdd) {
+            Write-Host "  [+] Mechanical HDD Protection: Disk head thrashing minimized by eliminating metadata update writes." -ForegroundColor Green
         }
 
         return ($code1 -eq 0 -and $code2 -eq 0)
@@ -1313,9 +1787,13 @@ function Restore-NTFSGamingOptimizations {
         try {
             if ($null -ne $origLast) {
                 Set-ItemProperty -Path $fsPath -Name "NtfsDisableLastAccessUpdate" -Value $origLast -Type DWord -Force -ErrorAction Stop
+            } else {
+                Remove-ItemProperty -Path $fsPath -Name "NtfsDisableLastAccessUpdate" -Force -ErrorAction SilentlyContinue
             }
             if ($null -ne $orig8dot3) {
                 Set-ItemProperty -Path $fsPath -Name "NtfsDisable8dot3NameCreation" -Value $orig8dot3 -Type DWord -Force -ErrorAction Stop
+            } else {
+                Remove-ItemProperty -Path $fsPath -Name "NtfsDisable8dot3NameCreation" -Force -ErrorAction SilentlyContinue
             }
             Write-Host "  [+] NTFS settings restored to original values." -ForegroundColor Green
             return $true

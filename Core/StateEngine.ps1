@@ -69,11 +69,14 @@ function New-SystemStateBackup {
         if ($null -ne $val) { $origMinAnimate = [string]$val }
     }
 
+    $hwProfile = Get-HardwareProfile
+
     $snapshot = @{
-        Version                  = "2.4"
+        Version                  = "2.5"
         Timestamp                = (Get-Date).ToString("o")
         State                    = "Armed"
         BootRunCount             = 0
+        HardwareProfile          = $hwProfile
         PowerScheme              = (Get-ActivePowerSchemeGuid)
         MultimediaConfig         = (Get-MultimediaGamingConfig)
         VisualConfig             = @{
@@ -89,6 +92,7 @@ function New-SystemStateBackup {
         NetworkAdapterProperties = @()
         GameDVRConfig            = @{}
         CoreParkingMinCores      = $null
+        ProcessorThrottleMin     = (Get-ProcessorThrottleMin)
         UlpsConfig               = @()
         MSIConfig                = $null
         NTFSConfig               = $null
@@ -178,13 +182,24 @@ function New-SystemStateBackup {
         }
     }
 
-    # 5. Telemetry Scheduled Tasks Snapshot
-    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
-    foreach ($tName in $telemetryTaskNames) {
-        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
+    # 5. Telemetry & Maintenance Scheduled Tasks Snapshot
+    $tasksToSnapshot = @(
+        @{ Name = "MapsToastTask"; Path = "\Microsoft\Windows\Maps\" },
+        @{ Name = "ShowFeedbackToast"; Path = "\Microsoft\Windows\Feedback\Siuf\" },
+        @{ Name = "SustainabilityTelemetry"; Path = "\Microsoft\Windows\Customer Experience Improvement Program\" }
+    )
+    if ($hwProfile.HddProfile) {
+        $tasksToSnapshot += @{ Name = "ScheduledDefrag"; Path = "\Microsoft\Windows\Defrag\" }
+    }
+    foreach ($tItem in $tasksToSnapshot) {
+        $task = if ($tItem.Path) {
+            Get-ScheduledTask -TaskPath $tItem.Path -TaskName $tItem.Name -ErrorAction SilentlyContinue
+        } else {
+            Get-ScheduledTask -TaskName $tItem.Name -ErrorAction SilentlyContinue
+        }
         if ($task -and $task.State -ne "Disabled") {
             $snapshot.ScheduledTasks += @{
-                TaskName      = $tName
+                TaskName      = $tItem.Name
                 TaskPath      = $task.TaskPath
                 OriginalState = $task.State.ToString()
             }
@@ -330,14 +345,56 @@ function Disable-UserStateAggressive {
         Write-Host "  [+] Window animation latency disabled." -ForegroundColor Green
     }
 
-    # 5. Disable Telemetry Scheduled Tasks
-    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
-    foreach ($tName in $telemetryTaskNames) {
-        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
-        if ($task -and $task.State -ne "Disabled") {
-            Disable-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue | Out-Null
-            Write-Host "  [x] Disabled telemetry task: $tName" -ForegroundColor Yellow
+    # 5. Disable Telemetry & Scheduled Maintenance Tasks (suspend defrag on HDD)
+    $hw = Get-HardwareProfile
+    $tasksToDisable = @(
+        @{ Name = "MapsToastTask"; Path = "\Microsoft\Windows\Maps\" },
+        @{ Name = "ShowFeedbackToast"; Path = "\Microsoft\Windows\Feedback\Siuf\" },
+        @{ Name = "SustainabilityTelemetry"; Path = "\Microsoft\Windows\Customer Experience Improvement Program\" }
+    )
+    if ($hw.HddProfile) {
+        $tasksToDisable += @{ Name = "ScheduledDefrag"; Path = "\Microsoft\Windows\Defrag\" }
+    }
+    foreach ($t in $tasksToDisable) {
+        $task = if ($t.Path) {
+            Get-ScheduledTask -TaskPath $t.Path -TaskName $t.Name -ErrorAction SilentlyContinue
+        } else {
+            Get-ScheduledTask -TaskName $t.Name -ErrorAction SilentlyContinue
         }
+        if ($task -and $task.State -ne "Disabled") {
+            if ($t.Path) {
+                Disable-ScheduledTask -TaskPath $t.Path -TaskName $t.Name -ErrorAction SilentlyContinue | Out-Null
+            } else {
+                Disable-ScheduledTask -TaskName $t.Name -ErrorAction SilentlyContinue | Out-Null
+            }
+            if ($t.Name -eq "ScheduledDefrag") {
+                Write-Host "  [x] HDD Protection: Suspended ScheduledDefrag background task (eliminates 100% disk freeze)." -ForegroundColor Yellow
+            } else {
+                Write-Host "  [x] Disabled telemetry task: $($t.Name)" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    # If HDD Profile is active, strictly terminate SysMain & WSearch immediately
+    if ($hw.HddProfile) {
+        Write-Host "  [*] HDD Profile Active: Enforcing disk thrash suppression..." -ForegroundColor Cyan
+        foreach ($sName in @("SysMain", "WSearch")) {
+            $svc = Get-Service -Name $sName -ErrorAction SilentlyContinue
+            if ($svc -and $svc.Status -eq "Running") {
+                try {
+                    Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [x] Stopped disk-thrashing service: $sName (HDD Protection)." -ForegroundColor Yellow
+                } catch {}
+            }
+        }
+    }
+
+    # If LowRamProfile, warn if pagefile missing and run aggressive memory trim
+    if ($hw.LowRamProfile) {
+        if ($hw.PagefileWarning) {
+            Write-Host "  [!] Low-RAM Guard Warning: $($hw.PagefileWarning)" -ForegroundColor Red
+        }
+        Optimize-SystemMemory -Aggressive | Out-Null
     }
 
     # 6. Terminate Running Bloat Processes Immediately
@@ -354,11 +411,10 @@ function Disable-UserStateAggressive {
     Set-WindowsWidgetsAndSearchGamingState -Disable $true | Out-Null
     Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $true | Out-Null
 
-    # 9. Apply AMD ULPS, GPU MSI Mode, Ryzen Core Parking & NTFS Tweaks
-    Set-AmdUlpsState -Enable 0 | Out-Null
-    Set-GpuMsiGamingConfig | Out-Null
-    Set-ProcessorIdleMinCores -Percent 100 | Out-Null
-    Set-NTFSGamingOptimizations | Out-Null
+    # 9. Apply Adaptive CPU, GPU & NTFS Optimizations
+    Apply-CpuGamingOptimizations -HardwareProfile $hw | Out-Null
+    Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
+    Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
 
     Write-Host "[+] User startup environment completely stripped and optimized for gaming." -ForegroundColor Green
 }
@@ -480,10 +536,25 @@ function Restore-SystemState {
 
     # Restore Scheduled Tasks
     if ($stateData -and $stateData.ScheduledTasks) {
-        Write-Host "`n[*] Restoring telemetry scheduled tasks..." -ForegroundColor Cyan
+        Write-Host "`n[*] Restoring scheduled maintenance and telemetry tasks..." -ForegroundColor Cyan
         foreach ($st in $stateData.ScheduledTasks) {
-            Enable-ScheduledTask -TaskName $st.TaskName -ErrorAction SilentlyContinue | Out-Null
-            Write-Host "  [+] Restored scheduled task: $($st.TaskName)" -ForegroundColor Green
+            $origState = if ($st -is [hashtable]) { $st["OriginalState"] } else { $st.OriginalState }
+            $tName     = if ($st -is [hashtable]) { $st["TaskName"] } else { $st.TaskName }
+            $tPath     = if ($st -is [hashtable]) { $st["TaskPath"] } else { $st.TaskPath }
+
+            if ($origState -ne "Disabled") {
+                $enabled = $false
+                if ($tPath) {
+                    try {
+                        $res = Enable-ScheduledTask -TaskPath $tPath -TaskName $tName -ErrorAction SilentlyContinue
+                        if ($res) { $enabled = $true }
+                    } catch {}
+                }
+                if (-not $enabled) {
+                    Enable-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue | Out-Null
+                }
+                Write-Host "  [+] Restored scheduled task: $tName" -ForegroundColor Green
+            }
         }
     }
 
@@ -509,9 +580,14 @@ function Restore-SystemState {
         Write-Host "  [+] GameDVR original settings restored." -ForegroundColor Green
     }
 
-    # Restore Ryzen Core Parking
+    # Restore Processor Core Parking
     if ($stateData -and ($null -ne $stateData.CoreParkingMinCores)) {
         Restore-ProcessorIdleMinCores -OriginalPercent $stateData.CoreParkingMinCores | Out-Null
+    }
+
+    # Restore Minimum Processor Frequency State
+    if ($stateData -and ($null -ne $stateData.ProcessorThrottleMin)) {
+        Restore-ProcessorThrottleMin -OriginalPercent $stateData.ProcessorThrottleMin | Out-Null
     }
 
     # Restore AMD ULPS

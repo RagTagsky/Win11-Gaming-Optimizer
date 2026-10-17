@@ -151,14 +151,28 @@ switch ($Action) {
                     if ($res) { $disabledCount++ }
                 }
 
-                # 2. Activate safe network gaming tweaks, power scheme and hardware optimizations
+                # 2. Activate safe network gaming tweaks, power scheme and adaptive hardware optimizations
+                $hw = Get-HardwareProfile
                 Enable-UltimatePerformance | Out-Null
                 Set-GamingMultimediaConfig | Out-Null
-                Set-ProcessorIdleMinCores -Percent 100 | Out-Null
-                Set-AmdUlpsState -Enable 0 | Out-Null
-                Set-GpuMsiGamingConfig | Out-Null
-                Set-NTFSGamingOptimizations | Out-Null
+                Apply-CpuGamingOptimizations -HardwareProfile $hw | Out-Null
+                Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
+                Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
                 Set-NetworkGamingOptimizations | Out-Null
+
+                # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
+                if ($hw.HddProfile) {
+                    Disable-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
+                    Disable-ScheduledTask -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
+                    foreach ($sName in @("SysMain", "WSearch")) {
+                        Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                    }
+                }
+
+                # If Low-RAM detected, aggressively reclaim memory
+                if ($hw.LowRamProfile) {
+                    Optimize-SystemMemory -Aggressive | Out-Null
+                }
 
                 # 3. Update state to active and capture boot timestamp
                 $stateData.State = "GameMode_Active"
@@ -254,6 +268,17 @@ switch ($Action) {
         }
         Write-Host " Current State: $currentState" -ForegroundColor $stateColor
 
+        # Universal Hardware Profile Badges
+        $hw = Get-HardwareProfile
+        $cpuBadge = "$($hw.CpuVendor) CPU$(if ($hw.LowCoreProfile){' | Low-Core Guard'})"
+        $gpuBadge = "$($hw.GpuVendor) GPU"
+        $ramBadge = if ($hw.LowRamProfile) { "Low-RAM Guard ($($hw.TotalRamGB)GB)" } else { "$($hw.TotalRamGB)GB RAM" }
+        $diskBadge = if ($hw.HddProfile) { "HDD Thrash Guard" } else { "SSD/NVMe Fast-I/O" }
+        Write-Host " Profile Badges: [$cpuBadge] [$gpuBadge] [$ramBadge] [$diskBadge]" -ForegroundColor Cyan
+        if ($hw.PagefileWarning) {
+            Write-Host " [!] Pagefile Alert: $($hw.PagefileWarning)" -ForegroundColor Red
+        }
+
         $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
         if ($task) {
             Write-Host " Boot Trigger:  ACTIVE (will strip services on next boot)" -ForegroundColor Red
@@ -283,19 +308,27 @@ switch ($Action) {
         $coresText = if ($cores -eq 100) { "Disabled (100% min cores active) [OPTIMAL]" } elseif ($null -ne $cores) { "Active ($cores% min cores)" } else { "N/A" }
         Write-Host " Core Parking:  $coresText" -ForegroundColor $(if ($cores -eq 100) { "Green" } else { "Yellow" })
 
-        $amdKeys = @(Get-AmdGpuDriverClassKeys)
-        if ($amdKeys.Count -gt 0) {
-            $firstKey = $amdKeys[0]
-            $ulpsVal = if ($firstKey -is [hashtable]) { $firstKey["EnableUlps"] } else { $firstKey.EnableUlps }
-            $ulpsText = if ($null -ne $ulpsVal -and [int]$ulpsVal -eq 0) { "Disabled (0) [OPTIMAL]" } else { "Enabled ($ulpsVal) [Can cause stutter on wake]" }
-            Write-Host " AMD ULPS:      $ulpsText" -ForegroundColor $(if ($null -ne $ulpsVal -and [int]$ulpsVal -eq 0) { "Green" } else { "Yellow" })
+        if ($hw.GpuVendor -eq "AMD" -or (Get-AmdGpuDriverClassKeys).Count -gt 0) {
+            $amdKeys = @(Get-AmdGpuDriverClassKeys)
+            if ($amdKeys.Count -gt 0) {
+                $firstKey = $amdKeys[0]
+                $ulpsVal = if ($firstKey -is [hashtable]) { $firstKey["EnableUlps"] } else { $firstKey.EnableUlps }
+                $ulpsText = if ($null -ne $ulpsVal -and [int]$ulpsVal -eq 0) { "Disabled (0) [OPTIMAL]" } else { "Enabled ($ulpsVal) [Can cause stutter on wake]" }
+                Write-Host " AMD ULPS:      $ulpsText" -ForegroundColor $(if ($null -ne $ulpsVal -and [int]$ulpsVal -eq 0) { "Green" } else { "Yellow" })
+            }
         }
 
         $msi = Get-GpuMsiConfig
         if ($msi) {
             $prioLabel = switch ($msi.DevicePriority) { 3 { "High (3)" } 2 { "Normal (2)" } 1 { "Low (1)" } default { "Default" } }
             $msiText = if ($msi.MSISupported -eq 1) { "Enabled (Priority: $prioLabel) [OPTIMAL]" } else { "Legacy Line-Based Interrupts" }
-            Write-Host " GPU MSI Mode:  $msiText" -ForegroundColor $(if ($msi.MSISupported -eq 1) { "Green" } else { "Yellow" })
+            Write-Host " GPU MSI Mode:  $($msi.DeviceName) ($($msi.Vendor)) -> $msiText" -ForegroundColor $(if ($msi.MSISupported -eq 1) { "Green" } else { "Yellow" })
+        }
+
+        if ($hw.HddProfile) {
+            $defragTask = Get-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue
+            $defragStatus = if ($defragTask -and $defragTask.State -eq "Disabled") { "Suspended [OPTIMAL FOR HDD]" } else { "Active ($($defragTask.State))" }
+            Write-Host " HDD Defrag:    $defragStatus" -ForegroundColor $(if ($defragStatus -like "*OPTIMAL*") { "Green" } else { "Yellow" })
         }
 
         $vbs = Get-VbsHvciDiagnosticInfo
@@ -307,7 +340,9 @@ switch ($Action) {
         Write-Host "=====================================================" -ForegroundColor Green
         Write-Host "           ON-DEMAND RAM & STANDBY LIST CLEANER      " -ForegroundColor Green
         Write-Host "=====================================================" -ForegroundColor Green
-        $freed = Optimize-SystemMemory
+        $hw = Get-HardwareProfile
+        $isAggressive = $hw.LowRamProfile
+        $freed = Optimize-SystemMemory -Aggressive:$isAggressive
         Write-Host "`n[SUCCESS] Memory optimization complete. Reclaimed $freed MB of RAM." -ForegroundColor Green
     }
 
@@ -325,7 +360,7 @@ switch ($Action) {
         Write-Host "=====================================================" -ForegroundColor Magenta
         $msi = Get-GpuMsiConfig
         if ($msi) {
-            Write-Host " GPU Name:        $($msi.DeviceName)" -ForegroundColor White
+            Write-Host " GPU Name:        $($msi.DeviceName) ($($msi.Vendor))" -ForegroundColor White
             Write-Host " PNP Device ID:   $($msi.PNPDeviceID)" -ForegroundColor Gray
             $msiStatus = if ($msi.MSISupported -eq 1) { "Enabled (1) [MSI Active]" } else { "Disabled / Legacy Line-Based ($($msi.MSISupported))" }
             $msiColor = if ($msi.MSISupported -eq 1) { "Green" } else { "Yellow" }
@@ -350,6 +385,50 @@ switch ($Action) {
         Write-Host "       SYSTEM READINESS & PRE-FLIGHT DIAGNOSTIC       " -ForegroundColor Cyan
         Write-Host "=====================================================" -ForegroundColor Cyan
 
+        # [0] Universal Hardware Auto-Detection Profile
+        $hw = Get-HardwareProfile
+
+        Write-Host "`n=====================================================" -ForegroundColor Magenta
+        Write-Host "       UNIVERSAL HARDWARE AUTO-DETECTION PROFILE      " -ForegroundColor Magenta
+        Write-Host "=====================================================" -ForegroundColor Magenta
+
+        # CPU info + Low-Core Mode status
+        $cpuLowText = if ($hw.LowCoreProfile) { "ACTIVE (Budget <=4 Logical Cores: Full unparking & clock boost enforced)" } else { "Standard Multi-Core ($($hw.LogicalCores) Threads: Multi-CCX unparked)" }
+        $cpuColor = if ($hw.LowCoreProfile) { "Yellow" } else { "Green" }
+        Write-Host "  CPU Detected:           $($hw.CpuName) ($($hw.CpuVendor) $($hw.CpuArchitecture), $($hw.PhysicalCores) Physical / $($hw.LogicalCores) Logical Cores)" -ForegroundColor White
+        Write-Host "  -> Low-Core Mode:       $cpuLowText" -ForegroundColor $cpuColor
+
+        # GPU info + Vendor MSI status
+        $msiStatQuick = if ($hw.GpuMsiSupported) { "Enabled (1) [High IRQ Priority Active]" } else { "Legacy Line-Based [Will be switched to MSI High Priority]" }
+        $gpuColor = if ($hw.GpuMsiSupported) { "Green" } else { "Yellow" }
+        Write-Host "  GPU Detected:           $($hw.GpuName) ($($hw.GpuVendor) | $($hw.GpuResolution))" -ForegroundColor White
+        Write-Host "  -> Vendor MSI Status:   $($hw.GpuVendor) MSI: $msiStatQuick" -ForegroundColor $gpuColor
+
+        # RAM info + Low-RAM Guard status
+        $ramGuardQuick = if ($hw.LowRamProfile) { "ACTIVE (<=8GB Budget RAM Guard: Aggressive WorkingSet & Standby List Flush)" } else { "Standard ($($hw.TotalRamGB) GB RAM)" }
+        $ramColor = if ($hw.LowRamProfile) { "Yellow" } else { "Green" }
+        Write-Host "  RAM Physical Total:     $($hw.TotalRamGB) GB RAM" -ForegroundColor White
+        Write-Host "  -> Low-RAM Guard:       $ramGuardQuick" -ForegroundColor $ramColor
+        if ($hw.PagefileWarning) {
+            Write-Host "  -> Pagefile Alert:      $($hw.PagefileWarning)" -ForegroundColor Red
+        } else {
+            $pfMode = if ($hw.PagefileManaged) { "System-Managed (Optimal for Gaming)" } else { "Custom Managed" }
+            Write-Host "  -> Pagefile Status:     $pfMode" -ForegroundColor Green
+        }
+
+        # Disk info + HDD Thrash Suppression status
+        $hddThrashQuick = if ($hw.IsHdd) {
+            "ACTIVE (System Drive C: Mechanical HDD: ScheduledDefrag suspended, NTFS LastAccess/8.3 disabled, SysMain/WSearch dead)"
+        } elseif ($hw.HasAnyHdd) {
+            "ACTIVE (Drive C: on $($hw.SystemDiskMediaType)/$($hw.SystemDiskBusType); Secondary HDD detected -> Defrag suspended to prevent game stutter)"
+        } else {
+            "Inactive (High-Speed $($hw.SystemDiskMediaType)/$($hw.SystemDiskBusType) Storage Detected)"
+        }
+        $diskColor = if ($hw.HddProfile) { "Yellow" } else { "Green" }
+        Write-Host "  System Drive C: Disk:   Disk $($hw.SystemDiskNumber) [$($hw.SystemDiskModel)] ($($hw.SystemDiskMediaType) / $($hw.SystemDiskBusType))" -ForegroundColor White
+        Write-Host "  -> HDD Thrash Guard:    $hddThrashQuick" -ForegroundColor $diskColor
+        Write-Host "=====================================================" -ForegroundColor Magenta
+
         # 1. Privileges
         Write-Host "`n[1] Privilege Level:" -ForegroundColor Yellow
         if ($isAdmin) {
@@ -358,8 +437,8 @@ switch ($Action) {
             Write-Host "  [!] Elevated Administrator: No (Running with limited user privileges)" -ForegroundColor Yellow
         }
 
-        # 2. Power Plan & Ryzen Core Parking
-        Write-Host "`n[2] Power Plan & Ryzen Core Parking:" -ForegroundColor Yellow
+        # 2. Power Plan & CPU Core Unparking (Intel & AMD)
+        Write-Host "`n[2] Power Plan & CPU Core Unparking ($($hw.CpuVendor)):" -ForegroundColor Yellow
         $curScheme = Get-ActivePowerSchemeGuid
         Write-Host "  Active Scheme GUID:     $curScheme" -ForegroundColor White
         $list = powercfg /list 2>&1
@@ -374,6 +453,12 @@ switch ($Action) {
             $cpText = if ($cpVal -eq 100) { "$cpVal% (Core Parking DISABLED - Maximum Responsiveness)" } else { "$cpVal% (Core Parking Active - Cores may sleep)" }
             $cpColor = if ($cpVal -eq 100) { "Green" } else { "Yellow" }
             Write-Host "  Processor CPMINCORES:   $cpText" -ForegroundColor $cpColor
+        }
+        $throttleMin = Get-ProcessorThrottleMin
+        if ($null -ne $throttleMin) {
+            $throttleText = if ($throttleMin -eq 100) { "$throttleMin% (Peak Frequency Ready)" } else { "$throttleMin% (Will be boosted to 100%)" }
+            $throttleColor = if ($throttleMin -eq 100) { "Green" } else { "Yellow" }
+            Write-Host "  Min Processor State:    $throttleText" -ForegroundColor $throttleColor
         }
 
         # 3. Multimedia & Network Profiles
@@ -403,8 +488,8 @@ switch ($Action) {
         $appCap = (Get-ItemProperty "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -ErrorAction SilentlyContinue).AppCaptureEnabled
         Write-Host "  GameDVR Enabled:        $gdvr | AppCaptureEnabled: $appCap" -ForegroundColor White
 
-        # 4. AMD Radeon & Ryzen Hardware Optimizations
-        Write-Host "`n[4] AMD Radeon & Ryzen Hardware Optimizations:" -ForegroundColor Yellow
+        # 4. GPU Hardware Optimizations
+        Write-Host "`n[4] GPU Hardware Optimizations ($($hw.GpuVendor)):" -ForegroundColor Yellow
         $amdKeys = @(Get-AmdGpuDriverClassKeys)
         if ($amdKeys.Count -gt 0) {
             foreach ($ak in $amdKeys) {
@@ -414,8 +499,12 @@ switch ($Action) {
                 $uColor = if ($null -ne $uVal -and [int]$uVal -eq 0) { "Green" } else { "Yellow" }
                 Write-Host "  - AMD Driver ($desc): EnableUlps = $uStatus" -ForegroundColor $uColor
             }
+        } elseif ($hw.GpuVendor -eq "NVIDIA") {
+            Write-Host "  - NVIDIA GeForce Driver: MSI High Priority enabled (ULPS not applicable)" -ForegroundColor Green
+        } elseif ($hw.GpuVendor -eq "Intel") {
+            Write-Host "  - Intel Graphics Driver: MSI mode supported" -ForegroundColor Green
         } else {
-            Write-Host "  - AMD GPU Driver Key: Not detected (non-AMD or generic driver)" -ForegroundColor Gray
+            Write-Host "  - GPU Driver Key: Generic / Standard Display Adapter" -ForegroundColor Gray
         }
 
         # Shader Cache Directories
@@ -445,7 +534,7 @@ switch ($Action) {
         if ($msiInfo) {
             $msiStat = if ($msiInfo.MSISupported -eq 1) { "Enabled (1) [PASS]" } else { "Disabled / Legacy [Will be enabled in Gaming Mode]" }
             $msiCol = if ($msiInfo.MSISupported -eq 1) { "Green" } else { "Yellow" }
-            Write-Host "  Device:                 $($msiInfo.DeviceName)" -ForegroundColor White
+            Write-Host "  Device:                 $($msiInfo.DeviceName) ($($msiInfo.Vendor))" -ForegroundColor White
             Write-Host "  MSI Supported:          $msiStat" -ForegroundColor $msiCol
             $prioStr = switch ($msiInfo.DevicePriority) {
                 3 { "High (3) [PASS]" }
@@ -476,6 +565,9 @@ switch ($Action) {
         $dot3Txt = if ($ntfs.NtfsDisable8dot3NameCreation -ne $null -and ($ntfs.NtfsDisable8dot3NameCreation -in @(1, 3))) { "Disabled (Optimized)" } else { "Enabled (Default)" }
         Write-Host "  DisableLastAccess:      $lastAccessTxt ($($ntfs.NtfsDisableLastAccessUpdate))" -ForegroundColor $(if ($lastAccessTxt -like "*Optimized*") { "Green" } else { "Yellow" })
         Write-Host "  Disable8dot3:           $dot3Txt ($($ntfs.NtfsDisable8dot3NameCreation))" -ForegroundColor $(if ($dot3Txt -like "*Optimized*") { "Green" } else { "Yellow" })
+        if ($hw.HddProfile) {
+            Write-Host "  HDD Thrash Suppression: Active (Eliminates disk head thrashing and read write amplification)" -ForegroundColor Green
+        }
 
         # 8. Whitelist / Anti-Cheat / Display Guard
         Write-Host "`n[8] Whitelist & Protection Guard:" -ForegroundColor Yellow
