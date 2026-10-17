@@ -1,0 +1,45 @@
+{
+  "Description": "Comprehensive startup suppression configuration for Ultra Gaming Mode.",
+  "ProtectedStartupNames": [
+    "ctfmon",
+    "AMDNoiseSuppression",
+    "RadeonSoftware",
+    "SecurityHealthSystray",
+    "Apple"
+  ],
+  "StartupRegistryPaths": [
+    "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+    "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+  ],
+  "StartupFolders": [
+    "$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+    "$env:ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+  ],
+  "TargetAppModelPackages": [
+    "28017CharlesMilette.TranslucentTB"
+  ],
+  "BlacklistProcesses": [
+    "TranslucentTB",
+    "Telegram",
+    "Discord",
+    "Spotify",
+    "firefox",
+    "chrome",
+    "msedge",
+    "msedgewebview2",
+    "CrossDeviceResume",
+    "PhoneExperienceHost",
+    "amdow",
+    "AMDRSServ",
+    "EpicGamesLauncher",
+    "AyuGram",
+    "TimeTracker",
+    "ege-tracker-sync",
+    "PulseSync",
+    "GoogleDriveFS",
+    "EALauncher",
+    "EADesktop",
+    "GeminiAppLauncher",
+    "updater"
+  ]
+}

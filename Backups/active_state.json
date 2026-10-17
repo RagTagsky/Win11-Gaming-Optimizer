@@ -1,0 +1,550 @@
+﻿{
+    "Version":  "2.0",
+    "MultimediaConfig":  {
+                             "SystemProfile":  {
+                                                   "NetworkThrottlingIndex":  4294967295,
+                                                   "SystemResponsiveness":  20
+                                               },
+                             "GamesTask":  {
+                                               "Priority":  2,
+                                               "Scheduling Category":  "Medium",
+                                               "SFIO Priority":  "Normal",
+                                               "GPU Priority":  8
+                                           }
+                         },
+    "ScheduledTasks":  [
+                           {
+                               "TaskName":  "MapsToastTask",
+                               "TaskPath":  "\\Microsoft\\Windows\\Maps\\",
+                               "OriginalState":  "Ready"
+                           },
+                           {
+                               "TaskName":  "ShowFeedbackToast",
+                               "TaskPath":  "\\Microsoft\\Windows\\PerformanceTrace\\",
+                               "OriginalState":  "Ready"
+                           },
+                           {
+                               "TaskName":  "SustainabilityTelemetry",
+                               "TaskPath":  "\\Microsoft\\Windows\\Sustainability\\",
+                               "OriginalState":  "Ready"
+                           }
+                       ],
+    "Timestamp":  "2026-10-17T19:56:37.7423127+04:00",
+    "State":  "Restored",
+    "Services":  [
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "Spooler",
+                         "DisplayName":  "Диспетчер печати"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PrintNotify",
+                         "DisplayName":  "Расширения и уведомления для принтеров"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "StiSvc",
+                         "DisplayName":  "Служба загрузки изображений Windows (WIA)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WiaRpc",
+                         "DisplayName":  "События получения неподвижных изображений"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "WSearch",
+                         "DisplayName":  "Windows Search"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "SysMain",
+                         "DisplayName":  "SysMain"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "wuauserv",
+                         "DisplayName":  "Центр обновления Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "bits",
+                         "DisplayName":  "Фоновая интеллектуальная служба передачи (BITS)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "dosvc",
+                         "DisplayName":  "Оптимизация доставки"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "UsoSvc",
+                         "DisplayName":  "Служба оркестратора обновлений"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WaaSMedicSvc",
+                         "DisplayName":  "WaaSMedicSvc"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "DiagTrack",
+                         "DisplayName":  "Функциональные возможности для подключенных пользователей и телеметрия"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "dmwappushservice",
+                         "DisplayName":  "Служба маршрутизации push-сообщений на основе протокола WAP (Wireless Application Protocol) для управления устройствами"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "diagsvc",
+                         "DisplayName":  "Diagnostic Execution Service"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "RemoteRegistry",
+                         "DisplayName":  "Удаленный реестр"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "RemoteAccess",
+                         "DisplayName":  "Маршрутизация и удаленный доступ"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "TrkWks",
+                         "DisplayName":  "Клиент отслеживания изменившихся связей"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "MapsBroker",
+                         "DisplayName":  "Диспетчер скачанных карт"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "bthserv",
+                         "DisplayName":  "Служба поддержки Bluetooth"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "BthAvctpSvc",
+                         "DisplayName":  "Служба AVCTP"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "BTAGService",
+                         "DisplayName":  "Служба звукового шлюза Bluetooth"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "CDPSvc",
+                         "DisplayName":  "Служба платформы подключенных устройств"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "DusmSvc",
+                         "DisplayName":  "Использование данных"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "ClipSVC",
+                         "DisplayName":  "Служба лицензий клиента (ClipSVC)"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "LicenseManager",
+                         "DisplayName":  "Служба Windows License Manager"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "AppXSvc",
+                         "DisplayName":  "Служба развертывания AppX (AppXSVC)"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "fdPHost",
+                         "DisplayName":  "Хост поставщика функции обнаружения"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "FDResPub",
+                         "DisplayName":  "Публикация ресурсов обнаружения функции"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "IKEEXT",
+                         "DisplayName":  "Модули ключей IPsec для обмена ключами в Интернете и протокола IP с проверкой подлинности"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PolicyAgent",
+                         "DisplayName":  "Агент политики IPsec"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "iphlpsvc",
+                         "DisplayName":  "Вспомогательная служба IP"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "lmhosts",
+                         "DisplayName":  "Модуль поддержки NetBIOS через TCP/IP"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "NcbService",
+                         "DisplayName":  "Посредник подключений к сети"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "NgcCtnrSvc",
+                         "DisplayName":  "Контейнер службы Microsoft Passport"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "RmSvc",
+                         "DisplayName":  "Служба управления радио"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "ShellHWDetection",
+                         "DisplayName":  "Определение оборудования оболочки"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "smphost",
+                         "DisplayName":  "SMP дисковых пространств (Майкрософт)"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "whesvc",
+                         "DisplayName":  "Работоспособность и оптимизированные взаимодействия Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "WpnService",
+                         "DisplayName":  "Служба системы push-уведомлений Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "WSLService",
+                         "DisplayName":  "WSL Service"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "HappService",
+                         "DisplayName":  "Happ Proxy Client Service"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "logi_lamparray_service",
+                         "DisplayName":  "Logitech LampArray Service"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "GoogleUpdaterInternalService157.0.8089.0",
+                         "DisplayName":  "Внутренний сервис Google Updater (GoogleUpdaterInternalService157.0.8089.0)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "GoogleUpdaterService157.0.8089.0",
+                         "DisplayName":  "Сервис Google Updater (GoogleUpdaterService157.0.8089.0)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "GoogleChromeElevationService",
+                         "DisplayName":  "Google Chrome Elevation Service (GoogleChromeElevationService)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Auto",
+                         "Name":  "edgeupdate",
+                         "DisplayName":  "Microsoft Edge Update Service (edgeupdate)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "edgeupdatem",
+                         "DisplayName":  "Microsoft Edge Update Service (edgeupdatem)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WbioSrvc",
+                         "DisplayName":  "Биометрическая служба Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PhoneSvc",
+                         "DisplayName":  "Телефонная связь"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SensorService",
+                         "DisplayName":  "Служба датчиков"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SensrSvc",
+                         "DisplayName":  "Служба наблюдения за датчиками"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SensorDataService",
+                         "DisplayName":  "Служба данных датчиков"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WalletService",
+                         "DisplayName":  "Служба кошелька"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WMPNetworkSvc",
+                         "DisplayName":  "Служба общих сетевых ресурсов проигрывателя Windows Media"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WPDBusEnum",
+                         "DisplayName":  "Служба перечислителя переносных устройств"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WpcMonSvc",
+                         "DisplayName":  "Родительский контроль"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SCardSvr",
+                         "DisplayName":  "Смарт-карта"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "ScDeviceEnum",
+                         "DisplayName":  "Служба перечисления устройств чтения смарт-карт"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SCPolicySvc",
+                         "DisplayName":  "Политика удаления смарт-карт"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SEMgrSvc",
+                         "DisplayName":  "Диспетчер платежей и NFC/защищенных элементов"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "tzautoupdate",
+                         "DisplayName":  "Автоматическое обновление часового пояса"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "PcaSvc",
+                         "DisplayName":  "Служба помощника по совместимости программ"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "wisvc",
+                         "DisplayName":  "Служба предварительной оценки Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "XblAuthManager",
+                         "DisplayName":  "Диспетчер проверки подлинности Xbox Live"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "XblGameSave",
+                         "DisplayName":  "Сохранение игр на Xbox Live"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "XboxGipSvc",
+                         "DisplayName":  "Xbox Accessory Management Service"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "XboxNetApiSvc",
+                         "DisplayName":  "Сетевая служба Xbox Live"
+                     },
+                     {
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SSDPSRV",
+                         "DisplayName":  "Обнаружение SSDP"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "UPnPHost",
+                         "DisplayName":  "Узел универсальных PNP-устройств"
+                     }
+                 ],
+    "GameDVRConfig":  {
+                          "AppCaptureEnabled":  0,
+                          "GameDVR_Enabled":  0,
+                          "GameDVR_FSEBehaviorMode":  2
+                      },
+    "AppModelStartupTasks":  [
+                                 {
+                                     "OriginalState":  2,
+                                     "RegistryPath":  "Microsoft.PowerShell.Core\\Registry::HKEY_CURRENT_USER\\Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\SystemAppData\\28017CharlesMilette.TranslucentTB_v826wp6bftszj\\TranslucentTB",
+                                     "TaskId":  "TranslucentTB",
+                                     "Package":  "28017CharlesMilette.TranslucentTB_v826wp6bftszj"
+                                 }
+                             ],
+    "NetworkLatencyConfig":  [
+                                 {
+                                     "Guid":  "{8eb6cecf-6919-4cf4-8c70-e55823aa4b53}",
+                                     "TCPNoDelay":  null,
+                                     "TcpAckFrequency":  null
+                                 },
+                                 {
+                                     "Guid":  "{ac46bc20-ec53-4485-8fa1-cdd08e34f382}",
+                                     "TCPNoDelay":  null,
+                                     "TcpAckFrequency":  null
+                                 },
+                                 {
+                                     "Guid":  "{c2fe9cd4-8e35-40c4-ac5b-397e8fc60e81}",
+                                     "TCPNoDelay":  null,
+                                     "TcpAckFrequency":  null
+                                 }
+                             ],
+    "StartupItems":  [
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "ctfmon",
+                             "Value":  "C:\\Windows\\System32\\ctfmon.exe"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "AMDNoiseSuppression",
+                             "Value":  "\"C:\\WINDOWS\\system32\\AMD\\ANR\\AMDNoiseSuppression.exe\""
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "Steam",
+                             "Value":  "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "Discord",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Discord\\Update.exe\" --processStart Discord.exe --process-start-args \"--start-inactive\""
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "GoogleDriveFS",
+                             "Value":  "\"C:\\Program Files\\Google\\Drive File Stream\\132.0.0.0\\GoogleDriveFS.exe\" --startup_mode"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "EADM",
+                             "Value":  "\"C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe\" -silentOs"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "pulsesync.app",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Programs\\PulseSync\\PulseSync.exe\""
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "GoogleUpdaterTaskUser157.0.8089.0",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Google\\GoogleUpdater\\157.0.8089.0\\updater.exe\" --wake"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "Gemini",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Google\\Gemini\\GeminiAppLauncher.exe\""
+                         }
+                     ],
+    "StartupShortcuts":  [
+                             {
+                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk",
+                                 "Name":  "AyuGram.lnk",
+                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk.ugm_backup"
+                             },
+                             {
+                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk",
+                                 "Name":  "ege-tracker-sync.lnk",
+                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk.ugm_backup"
+                             },
+                             {
+                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk",
+                                 "Name":  "TimeTracker.lnk",
+                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk.ugm_backup"
+                             }
+                         ],
+    "PowerScheme":  "929fef13-d38f-4d3a-b857-7c19197b2246",
+    "BootRunCount":  1,
+    "VisualConfig":  {
+                         "EnableTransparency":  1,
+                         "MinAnimate":  "0"
+                     }
+}

@@ -1,0 +1,1552 @@
+﻿<#
+.SYNOPSIS
+    Manages system state snapshots, JSON persistence, and aggressive state transitions for Ultra Gaming Mode.
+.DESCRIPTION
+    Creates timestamped backup snapshots of service configurations, startup apps, UWP AppModel tasks,
+    visual/DWM effects, telemetry tasks, and restores them cleanly when exiting Gaming Mode.
+#>
+
+# Resolve the Backups directory relative to the project root
+$Script:BackupDir = Join-Path -Path $PSScriptRoot -ChildPath "..\Backups"
+if (-not (Test-Path $Script:BackupDir)) {
+    New-Item -ItemType Directory -Path $Script:BackupDir -Force | Out-Null
+}
+$Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
+
+# Load optimizer module
+. (Join-Path $PSScriptRoot "SystemOptimizer.ps1")
+
+function Stop-BlacklistedProcesses {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ProcessNames
+    )
+
+    foreach ($name in $ProcessNames) {
+        $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
+        if ($procs) {
+            foreach ($p in $procs) {
+                try {
+                    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [x] Terminated running bloat process: $name (PID: $($p.Id))" -ForegroundColor Yellow
+                }
+                catch {}
+            }
+        }
+    }
+}
+
+function New-SystemStateBackup {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [array]$BlacklistConfig,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist,
+
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    Write-Host "`n[*] Creating pre-gaming system snapshot..." -ForegroundColor Cyan
+
+    $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    $origTransparency = 1
+    if (Test-Path $transparencyPath) {
+        $val = (Get-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -ErrorAction SilentlyContinue).EnableTransparency
+        if ($null -ne $val) { $origTransparency = [int]$val }
+    }
+
+    $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+    $origMinAnimate = "1"
+    if (Test-Path $metricsPath) {
+        $val = (Get-ItemProperty -Path $metricsPath -Name "MinAnimate" -ErrorAction SilentlyContinue).MinAnimate
+        if ($null -ne $val) { $origMinAnimate = [string]$val }
+    }
+
+    $snapshot = @{
+        Version              = "2.0"
+        Timestamp            = (Get-Date).ToString("o")
+        State                = "Armed"
+        BootRunCount         = 0
+        PowerScheme          = (Get-ActivePowerSchemeGuid)
+        MultimediaConfig     = (Get-MultimediaGamingConfig)
+        VisualConfig         = @{
+            EnableTransparency = $origTransparency
+            MinAnimate         = $origMinAnimate
+        }
+        Services             = @()
+        StartupItems         = @()
+        StartupShortcuts     = @()
+        AppModelStartupTasks = @()
+        ScheduledTasks       = @()
+        NetworkLatencyConfig = @()
+        GameDVRConfig        = @{}
+    }
+
+    # 1. Services Snapshot
+    foreach ($item in $BlacklistConfig) {
+        $sName = $item.Name
+        # Skip whitelisted services entirely
+        if ($Whitelist -contains $sName) { continue }
+
+        $svc = Get-Service -Name $sName -ErrorAction SilentlyContinue
+        if ($svc) {
+            $wmiSvc = Get-CimInstance -ClassName Win32_Service -Filter "Name='$sName'" -ErrorAction SilentlyContinue
+            $startMode = if ($wmiSvc) { $wmiSvc.StartMode } else { "Manual" }
+
+            $snapshot.Services += @{
+                Name                = $sName
+                DisplayName         = $svc.DisplayName
+                OriginalStartupType = $startMode
+                OriginalStatus      = $svc.Status.ToString()
+            }
+        }
+    }
+
+    # 2. HKCU & HKLM Run Registry Items Snapshot
+    $runHives = @(
+        @{ Scope = "HKCU"; Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" },
+        @{ Scope = "HKLM"; Path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" }
+    )
+    foreach ($hive in $runHives) {
+        if (Test-Path $hive.Path) {
+            $props = Get-ItemProperty -Path $hive.Path
+            $props.PSObject.Properties | Where-Object {
+                $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
+            } | ForEach-Object {
+                $snapshot.StartupItems += @{
+                    Name  = $_.Name
+                    Value = $_.Value
+                    Scope = $hive.Scope
+                }
+            }
+        }
+    }
+
+    # 3. Startup Folder Shortcuts (.lnk / .url) Snapshot
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
+                $snapshot.StartupShortcuts += @{
+                    Name         = $_.Name
+                    OriginalPath = $_.FullName
+                    BackupPath   = "$($_.FullName).ugm_backup"
+                }
+            }
+        }
+    }
+
+    # 4. UWP AppModel Startup Tasks Snapshot (TranslucentTB, etc.)
+    $uwpRoot = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData"
+    if (Test-Path $uwpRoot) {
+        Get-ChildItem -Path $uwpRoot | ForEach-Object {
+            $pkg = $_
+            if ($pkg.PSChildName -like "*Apple*") { return }
+
+            Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $task = $_
+                if ($task.PSChildName -like "*Apple*") { return }
+
+                $props = Get-ItemProperty -Path $task.PSPath -ErrorAction SilentlyContinue
+                if ($null -ne $props -and $props.PSObject.Properties["State"]) {
+                    $curState = [int]$props.State
+                    if ($curState -eq 2) { # 2 = Enabled
+                        $snapshot.AppModelStartupTasks += @{
+                            Package       = $pkg.PSChildName
+                            TaskId        = $task.PSChildName
+                            RegistryPath  = $task.PSPath
+                            OriginalState = $curState
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # 5. Telemetry Scheduled Tasks Snapshot
+    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
+    foreach ($tName in $telemetryTaskNames) {
+        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne "Disabled") {
+            $snapshot.ScheduledTasks += @{
+                TaskName      = $tName
+                TaskPath      = $task.TaskPath
+                OriginalState = $task.State.ToString()
+            }
+        }
+    }
+
+    # 6. Network Latency Interfaces Snapshot
+    $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
+    if (Test-Path $interfacesPath) {
+        Get-ChildItem -Path $interfacesPath | ForEach-Object {
+            $props = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+            if ($props.DhcpIPAddress -or $props.IPAddress) {
+                $snapshot.NetworkLatencyConfig += @{
+                    Guid            = $_.PSChildName
+                    TcpAckFrequency = $props.TcpAckFrequency
+                    TCPNoDelay      = $props.TCPNoDelay
+                }
+            }
+        }
+    }
+
+    # 7. GameDVR Snapshot
+    $gameDvrPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR"
+    if (Test-Path $gameDvrPath) {
+        $props = Get-ItemProperty -Path $gameDvrPath -ErrorAction SilentlyContinue
+        $snapshot.GameDVRConfig["AppCaptureEnabled"] = $props.AppCaptureEnabled
+    }
+    $configStorePath = "HKCU:\System\GameConfigStore"
+    if (Test-Path $configStorePath) {
+        $props = Get-ItemProperty -Path $configStorePath -ErrorAction SilentlyContinue
+        $snapshot.GameDVRConfig["GameDVR_Enabled"] = $props.GameDVR_Enabled
+        $snapshot.GameDVRConfig["GameDVR_FSEBehaviorMode"] = $props.GameDVR_FSEBehaviorMode
+    }
+
+    # Write snapshot to disk
+    $snapshot | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    Write-Host "[+] Snapshot securely saved to '$Script:ActiveStateFile'." -ForegroundColor Green
+    return $Script:ActiveStateFile
+}
+
+function Disable-UserStateAggressive {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    Write-Host "`n[*] Suppressing user-level startup applications and visual bloat..." -ForegroundColor Cyan
+
+    $protectedStartup = $StartupConfig.ProtectedStartupNames
+
+    # 1. Suppress HKCU / HKLM Run items (preserving only protected items like ctfmon, AMDNoiseSuppression)
+    $runHives = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+    )
+    foreach ($regPath in $runHives) {
+        if (-not (Test-Path $regPath)) { continue }
+        $props = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+        if (-not $props) { continue }
+
+        $props.PSObject.Properties | Where-Object {
+            $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
+        } | ForEach-Object {
+            $propName = $_.Name
+            $isProtected = $false
+            foreach ($prot in $protectedStartup) {
+                if ($propName -like "*$prot*") { $isProtected = $true; break }
+            }
+            if (-not $isProtected) {
+                Remove-ItemProperty -Path $regPath -Name $propName -ErrorAction SilentlyContinue
+                Write-Host "  [x] Removed startup entry: $propName" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "  [v] Retained protected startup entry: $propName" -ForegroundColor Green
+            }
+        }
+    }
+
+    # 2. Temporarily disable Startup folder shortcuts (.lnk -> .lnk.ugm_backup)
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
+                $backupName = "$($_.Name).ugm_backup"
+                Move-Item -Path <#
+.SYNOPSIS
+    Manages system state snapshots, JSON persistence, and aggressive state transitions for Ultra Gaming Mode.
+.DESCRIPTION
+    Creates timestamped backup snapshots of service configurations, startup apps, UWP AppModel tasks,
+    visual/DWM effects, telemetry tasks, and restores them cleanly when exiting Gaming Mode.
+#>
+
+# Resolve the Backups directory relative to the project root
+$Script:BackupDir = Join-Path -Path $PSScriptRoot -ChildPath "..\Backups"
+if (-not (Test-Path $Script:BackupDir)) {
+    New-Item -ItemType Directory -Path $Script:BackupDir -Force | Out-Null
+}
+$Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
+
+# Load optimizer module
+. (Join-Path $PSScriptRoot "SystemOptimizer.ps1")
+
+function Stop-BlacklistedProcesses {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ProcessNames
+    )
+
+    foreach ($name in $ProcessNames) {
+        $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
+        if ($procs) {
+            foreach ($p in $procs) {
+                try {
+                    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [x] Terminated running bloat process: $name (PID: $($p.Id))" -ForegroundColor Yellow
+                }
+                catch {}
+            }
+        }
+    }
+}
+
+function New-SystemStateBackup {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [array]$BlacklistConfig,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist,
+
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    Write-Host "`n[*] Creating pre-gaming system snapshot..." -ForegroundColor Cyan
+
+    $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    $origTransparency = 1
+    if (Test-Path $transparencyPath) {
+        $val = (Get-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -ErrorAction SilentlyContinue).EnableTransparency
+        if ($null -ne $val) { $origTransparency = [int]$val }
+    }
+
+    $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+    $origMinAnimate = "1"
+    if (Test-Path $metricsPath) {
+        $val = (Get-ItemProperty -Path $metricsPath -Name "MinAnimate" -ErrorAction SilentlyContinue).MinAnimate
+        if ($null -ne $val) { $origMinAnimate = [string]$val }
+    }
+
+    $snapshot = @{
+        Version              = "2.0"
+        Timestamp            = (Get-Date).ToString("o")
+        State                = "Armed"
+        BootRunCount         = 0
+        PowerScheme          = (Get-ActivePowerSchemeGuid)
+        MultimediaConfig     = (Get-MultimediaGamingConfig)
+        VisualConfig         = @{
+            EnableTransparency = $origTransparency
+            MinAnimate         = $origMinAnimate
+        }
+        Services             = @()
+        StartupItems         = @()
+        StartupShortcuts     = @()
+        AppModelStartupTasks = @()
+        ScheduledTasks       = @()
+        NetworkLatencyConfig = @()
+        GameDVRConfig        = @{}
+    }
+
+    # 1. Services Snapshot
+    foreach ($item in $BlacklistConfig) {
+        $sName = $item.Name
+        # Skip whitelisted services entirely
+        if ($Whitelist -contains $sName) { continue }
+
+        $svc = Get-Service -Name $sName -ErrorAction SilentlyContinue
+        if ($svc) {
+            $wmiSvc = Get-CimInstance -ClassName Win32_Service -Filter "Name='$sName'" -ErrorAction SilentlyContinue
+            $startMode = if ($wmiSvc) { $wmiSvc.StartMode } else { "Manual" }
+
+            $snapshot.Services += @{
+                Name                = $sName
+                DisplayName         = $svc.DisplayName
+                OriginalStartupType = $startMode
+                OriginalStatus      = $svc.Status.ToString()
+            }
+        }
+    }
+
+    # 2. HKCU & HKLM Run Registry Items Snapshot
+    $runHives = @(
+        @{ Scope = "HKCU"; Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" },
+        @{ Scope = "HKLM"; Path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" }
+    )
+    foreach ($hive in $runHives) {
+        if (Test-Path $hive.Path) {
+            $props = Get-ItemProperty -Path $hive.Path
+            $props.PSObject.Properties | Where-Object {
+                $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
+            } | ForEach-Object {
+                $snapshot.StartupItems += @{
+                    Name  = $_.Name
+                    Value = $_.Value
+                    Scope = $hive.Scope
+                }
+            }
+        }
+    }
+
+    # 3. Startup Folder Shortcuts (.lnk / .url) Snapshot
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
+                $snapshot.StartupShortcuts += @{
+                    Name         = $_.Name
+                    OriginalPath = $_.FullName
+                    BackupPath   = "$($_.FullName).ugm_backup"
+                }
+            }
+        }
+    }
+
+    # 4. UWP AppModel Startup Tasks Snapshot (TranslucentTB, etc.)
+    $uwpRoot = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData"
+    if (Test-Path $uwpRoot) {
+        Get-ChildItem -Path $uwpRoot | ForEach-Object {
+            $pkg = $_
+            if ($pkg.PSChildName -like "*Apple*") { return }
+
+            Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $task = $_
+                if ($task.PSChildName -like "*Apple*") { return }
+
+                $props = Get-ItemProperty -Path $task.PSPath -ErrorAction SilentlyContinue
+                if ($null -ne $props -and $props.PSObject.Properties["State"]) {
+                    $curState = [int]$props.State
+                    if ($curState -eq 2) { # 2 = Enabled
+                        $snapshot.AppModelStartupTasks += @{
+                            Package       = $pkg.PSChildName
+                            TaskId        = $task.PSChildName
+                            RegistryPath  = $task.PSPath
+                            OriginalState = $curState
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # 5. Telemetry Scheduled Tasks Snapshot
+    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
+    foreach ($tName in $telemetryTaskNames) {
+        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne "Disabled") {
+            $snapshot.ScheduledTasks += @{
+                TaskName      = $tName
+                TaskPath      = $task.TaskPath
+                OriginalState = $task.State.ToString()
+            }
+        }
+    }
+
+    # 6. Network Latency Interfaces Snapshot
+    $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
+    if (Test-Path $interfacesPath) {
+        Get-ChildItem -Path $interfacesPath | ForEach-Object {
+            $props = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+            if ($props.DhcpIPAddress -or $props.IPAddress) {
+                $snapshot.NetworkLatencyConfig += @{
+                    Guid            = $_.PSChildName
+                    TcpAckFrequency = $props.TcpAckFrequency
+                    TCPNoDelay      = $props.TCPNoDelay
+                }
+            }
+        }
+    }
+
+    # 7. GameDVR Snapshot
+    $gameDvrPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR"
+    if (Test-Path $gameDvrPath) {
+        $props = Get-ItemProperty -Path $gameDvrPath -ErrorAction SilentlyContinue
+        $snapshot.GameDVRConfig["AppCaptureEnabled"] = $props.AppCaptureEnabled
+    }
+    $configStorePath = "HKCU:\System\GameConfigStore"
+    if (Test-Path $configStorePath) {
+        $props = Get-ItemProperty -Path $configStorePath -ErrorAction SilentlyContinue
+        $snapshot.GameDVRConfig["GameDVR_Enabled"] = $props.GameDVR_Enabled
+        $snapshot.GameDVRConfig["GameDVR_FSEBehaviorMode"] = $props.GameDVR_FSEBehaviorMode
+    }
+
+    # Write snapshot to disk
+    $snapshot | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    Write-Host "[+] Snapshot securely saved to '$Script:ActiveStateFile'." -ForegroundColor Green
+    return $Script:ActiveStateFile
+}
+
+function Disable-UserStateAggressive {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    Write-Host "`n[*] Suppressing user-level startup applications and visual bloat..." -ForegroundColor Cyan
+
+    $protectedStartup = $StartupConfig.ProtectedStartupNames
+
+    # 1. Suppress HKCU / HKLM Run items (preserving only protected items like ctfmon, AMDNoiseSuppression)
+    $runHives = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+    )
+    foreach ($regPath in $runHives) {
+        if (-not (Test-Path $regPath)) { continue }
+        $props = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+        if (-not $props) { continue }
+
+        $props.PSObject.Properties | Where-Object {
+            $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
+        } | ForEach-Object {
+            $propName = $_.Name
+            $isProtected = $false
+            foreach ($prot in $protectedStartup) {
+                if ($propName -like "*$prot*") { $isProtected = $true; break }
+            }
+            if (-not $isProtected) {
+                Remove-ItemProperty -Path $regPath -Name $propName -ErrorAction SilentlyContinue
+                Write-Host "  [x] Removed startup entry: $propName" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "  [v] Retained protected startup entry: $propName" -ForegroundColor Green
+            }
+        }
+    }
+
+    # 2. Temporarily disable Startup folder shortcuts (.lnk -> .lnk.ugm_backup)
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
+                $backupName = "$($_.Name).ugm_backup"
+                Rename-Item -Path $_.FullName -NewName $backupName -Force -ErrorAction SilentlyContinue
+                Write-Host "  [x] Disabled startup folder shortcut: $($_.Name)" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    # 3. Suppress UWP AppModel Startup Tasks (TranslucentTB, etc.)
+    $uwpRoot = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData"
+    if (Test-Path $uwpRoot) {
+        Get-ChildItem -Path $uwpRoot | ForEach-Object {
+            $pkg = $_
+            if ($pkg.PSChildName -like "*Apple*") { return }
+
+            Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $task = $_
+                if ($task.PSChildName -like "*Apple*") { return }
+
+                $props = Get-ItemProperty -Path $task.PSPath -ErrorAction SilentlyContinue
+                if ($null -ne $props -and $props.PSObject.Properties["State"]) {
+                    if ([int]$props.State -eq 2) {
+                        # 1 = Disabled by user in Windows Task Manager / Settings
+                        Set-ItemProperty -Path $task.PSPath -Name "State" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                        Write-Host "  [x] Disabled UWP AppModel startup task: $($task.PSChildName)" -ForegroundColor Yellow
+                    }
+                }
+            }
+        }
+    }
+
+    # 4. Disable Desktop DWM Transparency & Minimize Animations
+    $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    if (Test-Path $transparencyPath) {
+        Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] DWM transparency disabled for minimum compositor latency." -ForegroundColor Green
+    }
+
+    $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+    if (Test-Path $metricsPath) {
+        Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value "0" -Type String -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] Window animation latency disabled." -ForegroundColor Green
+    }
+
+    # 5. Disable Telemetry Scheduled Tasks
+    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
+    foreach ($tName in $telemetryTaskNames) {
+        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne "Disabled") {
+            Disable-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  [x] Disabled telemetry task: $tName" -ForegroundColor Yellow
+        }
+    }
+
+    # 6. Terminate Running Bloat Processes Immediately
+    if ($StartupConfig.BlacklistProcesses) {
+        Stop-BlacklistedProcesses -ProcessNames $StartupConfig.BlacklistProcesses
+    }
+
+    # 7. Apply Deep GameDVR and Ultra Low Latency Network (TCPNoDelay & EEE Disable)
+    Set-DeepGameDVROptimizations | Out-Null
+    Set-NetworkGamingOptimizations | Out-Null
+
+    # 8. Apply Defender, Widgets & Focus Assist optimizations
+    Set-DefenderGamingState -Disable $true | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $true | Out-Null
+    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $true | Out-Null
+
+    Write-Host "[+] User startup environment completely stripped for gaming." -ForegroundColor Green
+}
+
+function Restore-SystemState {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist,
+
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    if (-not (Test-Path $Script:ActiveStateFile)) {
+        Write-Warning "No active backup state file found at '$Script:ActiveStateFile'. Checking for residual backup shortcuts..."
+    }
+    else {
+        $stateData = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+
+    Write-Host "`n[*] Restoring system services to original state..." -ForegroundColor Cyan
+
+    $restoredCount = 0
+    $failedCount = 0
+
+    if ($stateData -and $stateData.Services) {
+        foreach ($svcEntry in $stateData.Services) {
+            $sName = $svcEntry.Name
+            $origMode = switch ($svcEntry.OriginalStartupType) {
+                "Auto"      { "Automatic" }
+                "Automatic" { "Automatic" }
+                "Manual"    { "Manual" }
+                "Disabled"  { "Disabled" }
+                default     { "Manual" }
+            }
+
+            Write-Host "  [*] Restoring '$sName' -> $origMode..." -ForegroundColor Gray
+            $result = Set-ServiceStateSafe -ServiceName $sName -StartupType $origMode -Whitelist $Whitelist -IsRestoring
+
+            if ($result) {
+                $restoredCount++
+                if ($svcEntry.OriginalStatus -eq "Running") {
+                    $null = sc.exe start "$sName" 2>&1
+                }
+            }
+            else {
+                $failedCount++
+            }
+        }
+    }
+
+    # Restore startup registry items
+    if ($stateData -and $stateData.StartupItems) {
+        Write-Host "`n[*] Restoring startup registry items..." -ForegroundColor Cyan
+        foreach ($startupItem in $stateData.StartupItems) {
+            $regPath = "$($startupItem.Scope):\Software\Microsoft\Windows\CurrentVersion\Run"
+            if (Test-Path $regPath) {
+                $currentVal = (Get-ItemProperty -Path $regPath -Name $startupItem.Name -ErrorAction SilentlyContinue).$($startupItem.Name)
+                if (-not $currentVal) {
+                    Set-ItemProperty -Path $regPath -Name $startupItem.Name -Value $startupItem.Value -ErrorAction SilentlyContinue
+                    Write-Host "  [+] Restored startup item: $($startupItem.Name)" -ForegroundColor Green
+                }
+            }
+        }
+    }
+
+    # Restore Startup folder shortcuts (.ugm_backup -> .lnk/.url)
+    Write-Host "`n[*] Restoring startup folder shortcuts..." -ForegroundColor Cyan
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
+                $origName = $_.Name -replace '\.ugm_backup$', ''
+                Rename-Item -Path $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored startup shortcut: $origName" -ForegroundColor Green
+            }
+        }
+    }
+
+    # Restore UWP AppModel Startup Tasks
+    if ($stateData -and $stateData.AppModelStartupTasks) {
+        Write-Host "`n[*] Restoring UWP AppModel startup tasks (TranslucentTB, etc.)..." -ForegroundColor Cyan
+        foreach ($uwpEntry in $stateData.AppModelStartupTasks) {
+            if ($uwpEntry.RegistryPath -and (Test-Path $uwpEntry.RegistryPath)) {
+                Set-ItemProperty -Path $uwpEntry.RegistryPath -Name "State" -Value $uwpEntry.OriginalState -Type DWord -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored UWP startup task: $($uwpEntry.TaskId) -> State $($uwpEntry.OriginalState)" -ForegroundColor Green
+            }
+        }
+    }
+
+    # Restore Visual / DWM Settings
+    if ($stateData -and $stateData.VisualConfig) {
+        Write-Host "`n[*] Restoring visual effects & DWM transparency..." -ForegroundColor Cyan
+        $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        if (Test-Path $transparencyPath) {
+            Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value $stateData.VisualConfig.EnableTransparency -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+        if (Test-Path $metricsPath) {
+            Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value $stateData.VisualConfig.MinAnimate -Type String -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] Visual transparency & animations restored." -ForegroundColor Green
+    }
+
+    # Restore Power Scheme
+    if ($stateData -and $stateData.PowerScheme) {
+        Write-Host "  [*] Restoring original power scheme ($($stateData.PowerScheme))..." -ForegroundColor Gray
+        Set-PowerSchemeSafe -Guid $stateData.PowerScheme | Out-Null
+    }
+
+    # Restore Multimedia/MMCSS Settings
+    if ($stateData -and $stateData.MultimediaConfig) {
+        Restore-MultimediaConfig -Config $stateData.MultimediaConfig | Out-Null
+    }
+
+    # Restore Scheduled Tasks
+    if ($stateData -and $stateData.ScheduledTasks) {
+        Write-Host "`n[*] Restoring telemetry scheduled tasks..." -ForegroundColor Cyan
+        foreach ($st in $stateData.ScheduledTasks) {
+            Enable-ScheduledTask -TaskName $st.TaskName -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  [+] Restored scheduled task: $($st.TaskName)" -ForegroundColor Green
+        }
+    }
+
+    # Restore Network Latency Optimizations
+    if ($stateData -and $stateData.NetworkLatencyConfig) {
+        Restore-NetworkGamingOptimizations -NetworkLatencyConfig $stateData.NetworkLatencyConfig | Out-Null
+    }
+
+    # Restore GameDVR Settings
+    if ($stateData -and $stateData.GameDVRConfig) {
+        $gdvr = $stateData.GameDVRConfig
+        if ($null -ne $gdvr.AppCaptureEnabled) {
+            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $gdvr.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_Enabled) {
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $gdvr.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_FSEBehaviorMode) {
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] GameDVR original settings restored." -ForegroundColor Green
+    }
+
+    # Guarantee Microphone, Steam, LanmanServer, and peripheral services are unblocked
+    Repair-CoreServices | Out-Null
+
+    # Restore Windows Defender, Widgets & Focus Assist
+    Set-DefenderGamingState -Disable $false | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
+    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
+
+    # Mark state as restored
+    if ($stateData) {
+        $stateData.State = "Restored"
+        $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    }
+
+    Write-Host "`n[+] System state restored. Services: $restoredCount restored, $failedCount failed." -ForegroundColor Green
+    return $true
+}
+
+function Get-CurrentStateStatus {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-Path $Script:ActiveStateFile)) {
+        return "Normal"
+    }
+    try {
+        $data = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        return $data.State
+    }
+    catch {
+        return "Normal"
+    }
+}
+
+.FullName -Destination (Join-Path $Script:BackupDir "StartupShortcuts\$(<#
+.SYNOPSIS
+    Manages system state snapshots, JSON persistence, and aggressive state transitions for Ultra Gaming Mode.
+.DESCRIPTION
+    Creates timestamped backup snapshots of service configurations, startup apps, UWP AppModel tasks,
+    visual/DWM effects, telemetry tasks, and restores them cleanly when exiting Gaming Mode.
+#>
+
+# Resolve the Backups directory relative to the project root
+$Script:BackupDir = Join-Path -Path $PSScriptRoot -ChildPath "..\Backups"
+if (-not (Test-Path $Script:BackupDir)) {
+    New-Item -ItemType Directory -Path $Script:BackupDir -Force | Out-Null
+}
+$Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
+
+# Load optimizer module
+. (Join-Path $PSScriptRoot "SystemOptimizer.ps1")
+
+function Stop-BlacklistedProcesses {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$ProcessNames
+    )
+
+    foreach ($name in $ProcessNames) {
+        $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
+        if ($procs) {
+            foreach ($p in $procs) {
+                try {
+                    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [x] Terminated running bloat process: $name (PID: $($p.Id))" -ForegroundColor Yellow
+                }
+                catch {}
+            }
+        }
+    }
+}
+
+function New-SystemStateBackup {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [array]$BlacklistConfig,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist,
+
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    Write-Host "`n[*] Creating pre-gaming system snapshot..." -ForegroundColor Cyan
+
+    $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    $origTransparency = 1
+    if (Test-Path $transparencyPath) {
+        $val = (Get-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -ErrorAction SilentlyContinue).EnableTransparency
+        if ($null -ne $val) { $origTransparency = [int]$val }
+    }
+
+    $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+    $origMinAnimate = "1"
+    if (Test-Path $metricsPath) {
+        $val = (Get-ItemProperty -Path $metricsPath -Name "MinAnimate" -ErrorAction SilentlyContinue).MinAnimate
+        if ($null -ne $val) { $origMinAnimate = [string]$val }
+    }
+
+    $snapshot = @{
+        Version              = "2.0"
+        Timestamp            = (Get-Date).ToString("o")
+        State                = "Armed"
+        BootRunCount         = 0
+        PowerScheme          = (Get-ActivePowerSchemeGuid)
+        MultimediaConfig     = (Get-MultimediaGamingConfig)
+        VisualConfig         = @{
+            EnableTransparency = $origTransparency
+            MinAnimate         = $origMinAnimate
+        }
+        Services             = @()
+        StartupItems         = @()
+        StartupShortcuts     = @()
+        AppModelStartupTasks = @()
+        ScheduledTasks       = @()
+        NetworkLatencyConfig = @()
+        GameDVRConfig        = @{}
+    }
+
+    # 1. Services Snapshot
+    foreach ($item in $BlacklistConfig) {
+        $sName = $item.Name
+        # Skip whitelisted services entirely
+        if ($Whitelist -contains $sName) { continue }
+
+        $svc = Get-Service -Name $sName -ErrorAction SilentlyContinue
+        if ($svc) {
+            $wmiSvc = Get-CimInstance -ClassName Win32_Service -Filter "Name='$sName'" -ErrorAction SilentlyContinue
+            $startMode = if ($wmiSvc) { $wmiSvc.StartMode } else { "Manual" }
+
+            $snapshot.Services += @{
+                Name                = $sName
+                DisplayName         = $svc.DisplayName
+                OriginalStartupType = $startMode
+                OriginalStatus      = $svc.Status.ToString()
+            }
+        }
+    }
+
+    # 2. HKCU & HKLM Run Registry Items Snapshot
+    $runHives = @(
+        @{ Scope = "HKCU"; Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" },
+        @{ Scope = "HKLM"; Path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" }
+    )
+    foreach ($hive in $runHives) {
+        if (Test-Path $hive.Path) {
+            $props = Get-ItemProperty -Path $hive.Path
+            $props.PSObject.Properties | Where-Object {
+                $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
+            } | ForEach-Object {
+                $snapshot.StartupItems += @{
+                    Name  = $_.Name
+                    Value = $_.Value
+                    Scope = $hive.Scope
+                }
+            }
+        }
+    }
+
+    # 3. Startup Folder Shortcuts (.lnk / .url) Snapshot
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
+                $snapshot.StartupShortcuts += @{
+                    Name         = $_.Name
+                    OriginalPath = $_.FullName
+                    BackupPath   = "$($_.FullName).ugm_backup"
+                }
+            }
+        }
+    }
+
+    # 4. UWP AppModel Startup Tasks Snapshot (TranslucentTB, etc.)
+    $uwpRoot = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData"
+    if (Test-Path $uwpRoot) {
+        Get-ChildItem -Path $uwpRoot | ForEach-Object {
+            $pkg = $_
+            if ($pkg.PSChildName -like "*Apple*") { return }
+
+            Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $task = $_
+                if ($task.PSChildName -like "*Apple*") { return }
+
+                $props = Get-ItemProperty -Path $task.PSPath -ErrorAction SilentlyContinue
+                if ($null -ne $props -and $props.PSObject.Properties["State"]) {
+                    $curState = [int]$props.State
+                    if ($curState -eq 2) { # 2 = Enabled
+                        $snapshot.AppModelStartupTasks += @{
+                            Package       = $pkg.PSChildName
+                            TaskId        = $task.PSChildName
+                            RegistryPath  = $task.PSPath
+                            OriginalState = $curState
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # 5. Telemetry Scheduled Tasks Snapshot
+    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
+    foreach ($tName in $telemetryTaskNames) {
+        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne "Disabled") {
+            $snapshot.ScheduledTasks += @{
+                TaskName      = $tName
+                TaskPath      = $task.TaskPath
+                OriginalState = $task.State.ToString()
+            }
+        }
+    }
+
+    # 6. Network Latency Interfaces Snapshot
+    $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
+    if (Test-Path $interfacesPath) {
+        Get-ChildItem -Path $interfacesPath | ForEach-Object {
+            $props = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+            if ($props.DhcpIPAddress -or $props.IPAddress) {
+                $snapshot.NetworkLatencyConfig += @{
+                    Guid            = $_.PSChildName
+                    TcpAckFrequency = $props.TcpAckFrequency
+                    TCPNoDelay      = $props.TCPNoDelay
+                }
+            }
+        }
+    }
+
+    # 7. GameDVR Snapshot
+    $gameDvrPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR"
+    if (Test-Path $gameDvrPath) {
+        $props = Get-ItemProperty -Path $gameDvrPath -ErrorAction SilentlyContinue
+        $snapshot.GameDVRConfig["AppCaptureEnabled"] = $props.AppCaptureEnabled
+    }
+    $configStorePath = "HKCU:\System\GameConfigStore"
+    if (Test-Path $configStorePath) {
+        $props = Get-ItemProperty -Path $configStorePath -ErrorAction SilentlyContinue
+        $snapshot.GameDVRConfig["GameDVR_Enabled"] = $props.GameDVR_Enabled
+        $snapshot.GameDVRConfig["GameDVR_FSEBehaviorMode"] = $props.GameDVR_FSEBehaviorMode
+    }
+
+    # Write snapshot to disk
+    $snapshot | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    Write-Host "[+] Snapshot securely saved to '$Script:ActiveStateFile'." -ForegroundColor Green
+    return $Script:ActiveStateFile
+}
+
+function Disable-UserStateAggressive {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    Write-Host "`n[*] Suppressing user-level startup applications and visual bloat..." -ForegroundColor Cyan
+
+    $protectedStartup = $StartupConfig.ProtectedStartupNames
+
+    # 1. Suppress HKCU / HKLM Run items (preserving only protected items like ctfmon, AMDNoiseSuppression)
+    $runHives = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+    )
+    foreach ($regPath in $runHives) {
+        if (-not (Test-Path $regPath)) { continue }
+        $props = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+        if (-not $props) { continue }
+
+        $props.PSObject.Properties | Where-Object {
+            $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
+        } | ForEach-Object {
+            $propName = $_.Name
+            $isProtected = $false
+            foreach ($prot in $protectedStartup) {
+                if ($propName -like "*$prot*") { $isProtected = $true; break }
+            }
+            if (-not $isProtected) {
+                Remove-ItemProperty -Path $regPath -Name $propName -ErrorAction SilentlyContinue
+                Write-Host "  [x] Removed startup entry: $propName" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "  [v] Retained protected startup entry: $propName" -ForegroundColor Green
+            }
+        }
+    }
+
+    # 2. Temporarily disable Startup folder shortcuts (.lnk -> .lnk.ugm_backup)
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
+                $backupName = "$($_.Name).ugm_backup"
+                Rename-Item -Path $_.FullName -NewName $backupName -Force -ErrorAction SilentlyContinue
+                Write-Host "  [x] Disabled startup folder shortcut: $($_.Name)" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    # 3. Suppress UWP AppModel Startup Tasks (TranslucentTB, etc.)
+    $uwpRoot = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData"
+    if (Test-Path $uwpRoot) {
+        Get-ChildItem -Path $uwpRoot | ForEach-Object {
+            $pkg = $_
+            if ($pkg.PSChildName -like "*Apple*") { return }
+
+            Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $task = $_
+                if ($task.PSChildName -like "*Apple*") { return }
+
+                $props = Get-ItemProperty -Path $task.PSPath -ErrorAction SilentlyContinue
+                if ($null -ne $props -and $props.PSObject.Properties["State"]) {
+                    if ([int]$props.State -eq 2) {
+                        # 1 = Disabled by user in Windows Task Manager / Settings
+                        Set-ItemProperty -Path $task.PSPath -Name "State" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                        Write-Host "  [x] Disabled UWP AppModel startup task: $($task.PSChildName)" -ForegroundColor Yellow
+                    }
+                }
+            }
+        }
+    }
+
+    # 4. Disable Desktop DWM Transparency & Minimize Animations
+    $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    if (Test-Path $transparencyPath) {
+        Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] DWM transparency disabled for minimum compositor latency." -ForegroundColor Green
+    }
+
+    $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+    if (Test-Path $metricsPath) {
+        Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value "0" -Type String -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] Window animation latency disabled." -ForegroundColor Green
+    }
+
+    # 5. Disable Telemetry Scheduled Tasks
+    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
+    foreach ($tName in $telemetryTaskNames) {
+        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne "Disabled") {
+            Disable-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  [x] Disabled telemetry task: $tName" -ForegroundColor Yellow
+        }
+    }
+
+    # 6. Terminate Running Bloat Processes Immediately
+    if ($StartupConfig.BlacklistProcesses) {
+        Stop-BlacklistedProcesses -ProcessNames $StartupConfig.BlacklistProcesses
+    }
+
+    # 7. Apply Deep GameDVR and Ultra Low Latency Network (TCPNoDelay & EEE Disable)
+    Set-DeepGameDVROptimizations | Out-Null
+    Set-NetworkGamingOptimizations | Out-Null
+
+    # 8. Apply Defender, Widgets & Focus Assist optimizations
+    Set-DefenderGamingState -Disable $true | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $true | Out-Null
+    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $true | Out-Null
+
+    Write-Host "[+] User startup environment completely stripped for gaming." -ForegroundColor Green
+}
+
+function Restore-SystemState {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist,
+
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    if (-not (Test-Path $Script:ActiveStateFile)) {
+        Write-Warning "No active backup state file found at '$Script:ActiveStateFile'. Checking for residual backup shortcuts..."
+    }
+    else {
+        $stateData = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+
+    Write-Host "`n[*] Restoring system services to original state..." -ForegroundColor Cyan
+
+    $restoredCount = 0
+    $failedCount = 0
+
+    if ($stateData -and $stateData.Services) {
+        foreach ($svcEntry in $stateData.Services) {
+            $sName = $svcEntry.Name
+            $origMode = switch ($svcEntry.OriginalStartupType) {
+                "Auto"      { "Automatic" }
+                "Automatic" { "Automatic" }
+                "Manual"    { "Manual" }
+                "Disabled"  { "Disabled" }
+                default     { "Manual" }
+            }
+
+            Write-Host "  [*] Restoring '$sName' -> $origMode..." -ForegroundColor Gray
+            $result = Set-ServiceStateSafe -ServiceName $sName -StartupType $origMode -Whitelist $Whitelist -IsRestoring
+
+            if ($result) {
+                $restoredCount++
+                if ($svcEntry.OriginalStatus -eq "Running") {
+                    $null = sc.exe start "$sName" 2>&1
+                }
+            }
+            else {
+                $failedCount++
+            }
+        }
+    }
+
+    # Restore startup registry items
+    if ($stateData -and $stateData.StartupItems) {
+        Write-Host "`n[*] Restoring startup registry items..." -ForegroundColor Cyan
+        foreach ($startupItem in $stateData.StartupItems) {
+            $regPath = "$($startupItem.Scope):\Software\Microsoft\Windows\CurrentVersion\Run"
+            if (Test-Path $regPath) {
+                $currentVal = (Get-ItemProperty -Path $regPath -Name $startupItem.Name -ErrorAction SilentlyContinue).$($startupItem.Name)
+                if (-not $currentVal) {
+                    Set-ItemProperty -Path $regPath -Name $startupItem.Name -Value $startupItem.Value -ErrorAction SilentlyContinue
+                    Write-Host "  [+] Restored startup item: $($startupItem.Name)" -ForegroundColor Green
+                }
+            }
+        }
+    }
+
+    # Restore Startup folder shortcuts (.ugm_backup -> .lnk/.url)
+    Write-Host "`n[*] Restoring startup folder shortcuts..." -ForegroundColor Cyan
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
+                $origName = $_.Name -replace '\.ugm_backup$', ''
+                Rename-Item -Path $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored startup shortcut: $origName" -ForegroundColor Green
+            }
+        }
+    }
+
+    # Restore UWP AppModel Startup Tasks
+    if ($stateData -and $stateData.AppModelStartupTasks) {
+        Write-Host "`n[*] Restoring UWP AppModel startup tasks (TranslucentTB, etc.)..." -ForegroundColor Cyan
+        foreach ($uwpEntry in $stateData.AppModelStartupTasks) {
+            if ($uwpEntry.RegistryPath -and (Test-Path $uwpEntry.RegistryPath)) {
+                Set-ItemProperty -Path $uwpEntry.RegistryPath -Name "State" -Value $uwpEntry.OriginalState -Type DWord -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored UWP startup task: $($uwpEntry.TaskId) -> State $($uwpEntry.OriginalState)" -ForegroundColor Green
+            }
+        }
+    }
+
+    # Restore Visual / DWM Settings
+    if ($stateData -and $stateData.VisualConfig) {
+        Write-Host "`n[*] Restoring visual effects & DWM transparency..." -ForegroundColor Cyan
+        $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        if (Test-Path $transparencyPath) {
+            Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value $stateData.VisualConfig.EnableTransparency -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+        if (Test-Path $metricsPath) {
+            Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value $stateData.VisualConfig.MinAnimate -Type String -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] Visual transparency & animations restored." -ForegroundColor Green
+    }
+
+    # Restore Power Scheme
+    if ($stateData -and $stateData.PowerScheme) {
+        Write-Host "  [*] Restoring original power scheme ($($stateData.PowerScheme))..." -ForegroundColor Gray
+        Set-PowerSchemeSafe -Guid $stateData.PowerScheme | Out-Null
+    }
+
+    # Restore Multimedia/MMCSS Settings
+    if ($stateData -and $stateData.MultimediaConfig) {
+        Restore-MultimediaConfig -Config $stateData.MultimediaConfig | Out-Null
+    }
+
+    # Restore Scheduled Tasks
+    if ($stateData -and $stateData.ScheduledTasks) {
+        Write-Host "`n[*] Restoring telemetry scheduled tasks..." -ForegroundColor Cyan
+        foreach ($st in $stateData.ScheduledTasks) {
+            Enable-ScheduledTask -TaskName $st.TaskName -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  [+] Restored scheduled task: $($st.TaskName)" -ForegroundColor Green
+        }
+    }
+
+    # Restore Network Latency Optimizations
+    if ($stateData -and $stateData.NetworkLatencyConfig) {
+        Restore-NetworkGamingOptimizations -NetworkLatencyConfig $stateData.NetworkLatencyConfig | Out-Null
+    }
+
+    # Restore GameDVR Settings
+    if ($stateData -and $stateData.GameDVRConfig) {
+        $gdvr = $stateData.GameDVRConfig
+        if ($null -ne $gdvr.AppCaptureEnabled) {
+            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $gdvr.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_Enabled) {
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $gdvr.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_FSEBehaviorMode) {
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] GameDVR original settings restored." -ForegroundColor Green
+    }
+
+    # Guarantee Microphone, Steam, LanmanServer, and peripheral services are unblocked
+    Repair-CoreServices | Out-Null
+
+    # Restore Windows Defender, Widgets & Focus Assist
+    Set-DefenderGamingState -Disable $false | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
+    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
+
+    # Mark state as restored
+    if ($stateData) {
+        $stateData.State = "Restored"
+        $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    }
+
+    Write-Host "`n[+] System state restored. Services: $restoredCount restored, $failedCount failed." -ForegroundColor Green
+    return $true
+}
+
+function Get-CurrentStateStatus {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-Path $Script:ActiveStateFile)) {
+        return "Normal"
+    }
+    try {
+        $data = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        return $data.State
+    }
+    catch {
+        return "Normal"
+    }
+}
+
+.Name)") -Force -ErrorAction SilentlyContinue
+                Write-Host "  [x] Disabled startup folder shortcut: $($_.Name)" -ForegroundColor Yellow
+            }
+        }
+    }
+
+    # 3. Suppress UWP AppModel Startup Tasks (TranslucentTB, etc.)
+    $uwpRoot = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData"
+    if (Test-Path $uwpRoot) {
+        Get-ChildItem -Path $uwpRoot | ForEach-Object {
+            $pkg = $_
+            if ($pkg.PSChildName -like "*Apple*") { return }
+
+            Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $task = $_
+                if ($task.PSChildName -like "*Apple*") { return }
+
+                $props = Get-ItemProperty -Path $task.PSPath -ErrorAction SilentlyContinue
+                if ($null -ne $props -and $props.PSObject.Properties["State"]) {
+                    if ([int]$props.State -eq 2) {
+                        # 1 = Disabled by user in Windows Task Manager / Settings
+                        Set-ItemProperty -Path $task.PSPath -Name "State" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                        Write-Host "  [x] Disabled UWP AppModel startup task: $($task.PSChildName)" -ForegroundColor Yellow
+                    }
+                }
+            }
+        }
+    }
+
+    # 4. Disable Desktop DWM Transparency & Minimize Animations
+    $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+    if (Test-Path $transparencyPath) {
+        Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] DWM transparency disabled for minimum compositor latency." -ForegroundColor Green
+    }
+
+    $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+    if (Test-Path $metricsPath) {
+        Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value "0" -Type String -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] Window animation latency disabled." -ForegroundColor Green
+    }
+
+    # 5. Disable Telemetry Scheduled Tasks
+    $telemetryTaskNames = @("MapsToastTask", "ShowFeedbackToast", "SustainabilityTelemetry")
+    foreach ($tName in $telemetryTaskNames) {
+        $task = Get-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue
+        if ($task -and $task.State -ne "Disabled") {
+            Disable-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  [x] Disabled telemetry task: $tName" -ForegroundColor Yellow
+        }
+    }
+
+    # 6. Terminate Running Bloat Processes Immediately
+    if ($StartupConfig.BlacklistProcesses) {
+        Stop-BlacklistedProcesses -ProcessNames $StartupConfig.BlacklistProcesses
+    }
+
+    # 7. Apply Deep GameDVR and Ultra Low Latency Network (TCPNoDelay & EEE Disable)
+    Set-DeepGameDVROptimizations | Out-Null
+    Set-NetworkGamingOptimizations | Out-Null
+
+    # 8. Apply Defender, Widgets & Focus Assist optimizations
+    Set-DefenderGamingState -Disable $true | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $true | Out-Null
+    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $true | Out-Null
+
+    Write-Host "[+] User startup environment completely stripped for gaming." -ForegroundColor Green
+}
+
+function Restore-SystemState {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist,
+
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$StartupConfig
+    )
+
+    if (-not (Test-Path $Script:ActiveStateFile)) {
+        Write-Warning "No active backup state file found at '$Script:ActiveStateFile'. Checking for residual backup shortcuts..."
+    }
+    else {
+        $stateData = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+
+    Write-Host "`n[*] Restoring system services to original state..." -ForegroundColor Cyan
+
+    $restoredCount = 0
+    $failedCount = 0
+
+    if ($stateData -and $stateData.Services) {
+        foreach ($svcEntry in $stateData.Services) {
+            $sName = $svcEntry.Name
+            $origMode = switch ($svcEntry.OriginalStartupType) {
+                "Auto"      { "Automatic" }
+                "Automatic" { "Automatic" }
+                "Manual"    { "Manual" }
+                "Disabled"  { "Disabled" }
+                default     { "Manual" }
+            }
+
+            Write-Host "  [*] Restoring '$sName' -> $origMode..." -ForegroundColor Gray
+            $result = Set-ServiceStateSafe -ServiceName $sName -StartupType $origMode -Whitelist $Whitelist -IsRestoring
+
+            if ($result) {
+                $restoredCount++
+                if ($svcEntry.OriginalStatus -eq "Running") {
+                    $null = sc.exe start "$sName" 2>&1
+                }
+            }
+            else {
+                $failedCount++
+            }
+        }
+    }
+
+    # Restore startup registry items
+    if ($stateData -and $stateData.StartupItems) {
+        Write-Host "`n[*] Restoring startup registry items..." -ForegroundColor Cyan
+        foreach ($startupItem in $stateData.StartupItems) {
+            $regPath = "$($startupItem.Scope):\Software\Microsoft\Windows\CurrentVersion\Run"
+            if (Test-Path $regPath) {
+                $currentVal = (Get-ItemProperty -Path $regPath -Name $startupItem.Name -ErrorAction SilentlyContinue).$($startupItem.Name)
+                if (-not $currentVal) {
+                    Set-ItemProperty -Path $regPath -Name $startupItem.Name -Value $startupItem.Value -ErrorAction SilentlyContinue
+                    Write-Host "  [+] Restored startup item: $($startupItem.Name)" -ForegroundColor Green
+                }
+            }
+        }
+    }
+
+    # Restore Startup folder shortcuts (.ugm_backup -> .lnk/.url)
+    Write-Host "`n[*] Restoring startup folder shortcuts..." -ForegroundColor Cyan
+    $startupDirs = @(
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+    foreach ($sDir in $startupDirs) {
+        if (Test-Path $sDir) {
+            Get-ChildItem -Path $sDir -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
+                $origName = $_.Name -replace '\.ugm_backup$', ''
+                Rename-Item -Path $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored startup shortcut: $origName" -ForegroundColor Green
+            }
+        }
+    }
+
+    # Restore UWP AppModel Startup Tasks
+    if ($stateData -and $stateData.AppModelStartupTasks) {
+        Write-Host "`n[*] Restoring UWP AppModel startup tasks (TranslucentTB, etc.)..." -ForegroundColor Cyan
+        foreach ($uwpEntry in $stateData.AppModelStartupTasks) {
+            if ($uwpEntry.RegistryPath -and (Test-Path $uwpEntry.RegistryPath)) {
+                Set-ItemProperty -Path $uwpEntry.RegistryPath -Name "State" -Value $uwpEntry.OriginalState -Type DWord -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored UWP startup task: $($uwpEntry.TaskId) -> State $($uwpEntry.OriginalState)" -ForegroundColor Green
+            }
+        }
+    }
+
+    # Restore Visual / DWM Settings
+    if ($stateData -and $stateData.VisualConfig) {
+        Write-Host "`n[*] Restoring visual effects & DWM transparency..." -ForegroundColor Cyan
+        $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        if (Test-Path $transparencyPath) {
+            Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value $stateData.VisualConfig.EnableTransparency -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+        if (Test-Path $metricsPath) {
+            Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value $stateData.VisualConfig.MinAnimate -Type String -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] Visual transparency & animations restored." -ForegroundColor Green
+    }
+
+    # Restore Power Scheme
+    if ($stateData -and $stateData.PowerScheme) {
+        Write-Host "  [*] Restoring original power scheme ($($stateData.PowerScheme))..." -ForegroundColor Gray
+        Set-PowerSchemeSafe -Guid $stateData.PowerScheme | Out-Null
+    }
+
+    # Restore Multimedia/MMCSS Settings
+    if ($stateData -and $stateData.MultimediaConfig) {
+        Restore-MultimediaConfig -Config $stateData.MultimediaConfig | Out-Null
+    }
+
+    # Restore Scheduled Tasks
+    if ($stateData -and $stateData.ScheduledTasks) {
+        Write-Host "`n[*] Restoring telemetry scheduled tasks..." -ForegroundColor Cyan
+        foreach ($st in $stateData.ScheduledTasks) {
+            Enable-ScheduledTask -TaskName $st.TaskName -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "  [+] Restored scheduled task: $($st.TaskName)" -ForegroundColor Green
+        }
+    }
+
+    # Restore Network Latency Optimizations
+    if ($stateData -and $stateData.NetworkLatencyConfig) {
+        Restore-NetworkGamingOptimizations -NetworkLatencyConfig $stateData.NetworkLatencyConfig | Out-Null
+    }
+
+    # Restore GameDVR Settings
+    if ($stateData -and $stateData.GameDVRConfig) {
+        $gdvr = $stateData.GameDVRConfig
+        if ($null -ne $gdvr.AppCaptureEnabled) {
+            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $gdvr.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_Enabled) {
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $gdvr.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_FSEBehaviorMode) {
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] GameDVR original settings restored." -ForegroundColor Green
+    }
+
+    # Guarantee Microphone, Steam, LanmanServer, and peripheral services are unblocked
+    Repair-CoreServices | Out-Null
+
+    # Restore Windows Defender, Widgets & Focus Assist
+    Set-DefenderGamingState -Disable $false | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
+    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
+
+    # Mark state as restored
+    if ($stateData) {
+        $stateData.State = "Restored"
+        $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    }
+
+    Write-Host "`n[+] System state restored. Services: $restoredCount restored, $failedCount failed." -ForegroundColor Green
+    return $true
+}
+
+function Get-CurrentStateStatus {
+    [CmdletBinding()]
+    param()
+
+    if (-not (Test-Path $Script:ActiveStateFile)) {
+        return "Normal"
+    }
+    try {
+        $data = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        return $data.State
+    }
+    catch {
+        return "Normal"
+    }
+}
+
+

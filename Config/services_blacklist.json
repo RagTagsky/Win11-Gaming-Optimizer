@@ -1,0 +1,697 @@
+﻿{
+    "Description":  "Services disabled during Ultra Gaming Mode to free up CPU cycles, reduce DPC latency and RAM usage without impacting display/GPU drivers, audio/mic stack, network, controllers, game launchers, or anti-cheats.",
+    "TargetServices":  [
+                           {
+                               "Name":  "Spooler",
+                               "Reason":  "Print Spooler"
+                           },
+                           {
+                               "Name":  "PrintNotify",
+                               "Reason":  "Printer Extensions and Notifications"
+                           },
+                           {
+                               "Name":  "Fax",
+                               "Reason":  "Fax Service"
+                           },
+                           {
+                               "Name":  "StiSvc",
+                               "Reason":  "Windows Image Acquisition (WIA scanners/cameras)"
+                           },
+                           {
+                               "Name":  "WiaRpc",
+                               "Reason":  "Still Image Acquisition Events"
+                           },
+                           {
+                               "Name":  "WSearch",
+                               "Reason":  "Windows Search Indexer (Disk I/O latency reduction)"
+                           },
+                           {
+                               "Name":  "SysMain",
+                               "Reason":  "Superfetch / Memory compression disk thrashing"
+                           },
+                           {
+                               "Name":  "wuauserv",
+                               "Reason":  "Windows Update background downloads"
+                           },
+                           {
+                               "Name":  "bits",
+                               "Reason":  "Background Intelligent Transfer Service"
+                           },
+                           {
+                               "Name":  "dosvc",
+                               "Reason":  "Delivery Optimization peer updates"
+                           },
+                           {
+                               "Name":  "UsoSvc",
+                               "Reason":  "Update Orchestrator Service"
+                           },
+                           {
+                               "Name":  "WaaSMedicSvc",
+                               "Reason":  "Windows Update Medic Service"
+                           },
+                           {
+                               "Name":  "DiagTrack",
+                               "Reason":  "Connected User Experiences and Telemetry"
+                           },
+                           {
+                               "Name":  "dmwappushservice",
+                               "Reason":  "WAP Push Message Routing Service"
+                           },
+                           {
+                               "Name":  "diagsvc",
+                               "Reason":  "Diagnostic Execution Service"
+                           },
+                           {
+                               "Name":  "RemoteRegistry",
+                               "Reason":  "Remote Registry Service"
+                           },
+                           {
+                               "Name":  "RemoteAccess",
+                               "Reason":  "Routing and Remote Access"
+                           },
+                           {
+                               "Name":  "TrkWks",
+                               "Reason":  "Distributed Link Tracking Client"
+                           },
+                           {
+                               "Name":  "MapsBroker",
+                               "Reason":  "Downloaded Maps Manager"
+                           },
+                           {
+                               "Name":  "bthserv",
+                               "Reason":  "Bluetooth Support Service"
+                           },
+                           {
+                               "Name":  "BthAvctpSvc",
+                               "Reason":  "Audio Video Control Transport Protocol (Bluetooth)"
+                           },
+                           {
+                               "Name":  "BTAGService",
+                               "Reason":  "Bluetooth Audio Gateway Service"
+                           },
+                           {
+                               "Name":  "CDPSvc",
+                               "Reason":  "Connected Devices Platform Service"
+                           },
+                           {
+                               "Name":  "DusmSvc",
+                               "Reason":  "Data Usage Monitoring Service"
+                           },
+                           {
+                               "Name":  "ClipSVC",
+                               "Reason":  "Client License Service (Microsoft Store licensing)"
+                           },
+                           {
+                               "Name":  "LicenseManager",
+                               "Reason":  "Windows License Manager Service (Store UWP licensing)"
+                           },
+                           {
+                               "Name":  "AppXSvc",
+                               "Reason":  "AppX Deployment Service (UWP package manager)"
+                           },
+                           {
+                               "Name":  "GamingServices",
+                               "Reason":  "Xbox Gaming Services Host"
+                           },
+                           {
+                               "Name":  "GamingServicesNet",
+                               "Reason":  "Xbox Gaming Services Network"
+                           },
+                           {
+                               "Name":  "fdPHost",
+                               "Reason":  "Function Discovery Provider Host"
+                           },
+                           {
+                               "Name":  "FDResPub",
+                               "Reason":  "Function Discovery Resource Publication"
+                           },
+                           {
+                               "Name":  "IKEEXT",
+                               "Reason":  "IKE and AuthIP IPsec Keying Modules"
+                           },
+                           {
+                               "Name":  "PolicyAgent",
+                               "Reason":  "IPsec Policy Agent"
+                           },
+                           {
+                               "Name":  "iphlpsvc",
+                               "Reason":  "IP Helper (IPv6 transition protocols)"
+                           },
+                           {
+                               "Name":  "lmhosts",
+                               "Reason":  "TCP/IP NetBIOS Helper"
+                           },
+                           {
+                               "Name":  "NcbService",
+                               "Reason":  "Network Connection Broker"
+                           },
+                           {
+                               "Name":  "NgcCtnrSvc",
+                               "Reason":  "Microsoft Passport Container"
+                           },
+                           {
+                               "Name":  "RmSvc",
+                               "Reason":  "Radio Management Service"
+                           },
+                           {
+                               "Name":  "ShellHWDetection",
+                               "Reason":  "Shell Hardware Detection"
+                           },
+                           {
+                               "Name":  "smphost",
+                               "Reason":  "Microsoft Storage Spaces SMP"
+                           },
+                           {
+                               "Name":  "whesvc",
+                               "Reason":  "Windows Hotspot / Cellular Service"
+                           },
+                           {
+                               "Name":  "WpnService",
+                               "Reason":  "Windows Push Notifications System Service"
+                           },
+                           {
+                               "Name":  "WSLService",
+                               "Reason":  "Windows Subsystem for Linux Service"
+                           },
+                           {
+                               "Name":  "HappService",
+                               "Reason":  "Happ Proxy Client Service"
+                           },
+                           {
+                               "Name":  "logi_lamparray_service",
+                               "Reason":  "Logitech LampArray RGB Sync Service"
+                           },
+                           {
+                               "Name":  "AdobeARMservice",
+                               "Reason":  "Adobe Acrobat Update Service"
+                           },
+                           {
+                               "Name":  "gupdate",
+                               "Reason":  "Google Update Service"
+                           },
+                           {
+                               "Name":  "gupdatem",
+                               "Reason":  "Google Update Service Medium"
+                           },
+                           {
+                               "Name":  "GoogleUpdaterInternalService157.0.8089.0",
+                               "Reason":  "Google Updater Internal Service"
+                           },
+                           {
+                               "Name":  "GoogleUpdaterService157.0.8089.0",
+                               "Reason":  "Google Updater Service"
+                           },
+                           {
+                               "Name":  "GoogleChromeElevationService",
+                               "Reason":  "Google Chrome Elevation Service"
+                           },
+                           {
+                               "Name":  "edgeupdate",
+                               "Reason":  "Microsoft Edge Update Service"
+                           },
+                           {
+                               "Name":  "edgeupdatem",
+                               "Reason":  "Microsoft Edge Update Service Medium"
+                           },
+                           {
+                               "Name":  "WbioSrvc",
+                               "Reason":  "Windows Biometric Service"
+                           },
+                           {
+                               "Name":  "PhoneSvc",
+                               "Reason":  "Phone Service"
+                           },
+                           {
+                               "Name":  "SensorService",
+                               "Reason":  "Sensor Service"
+                           },
+                           {
+                               "Name":  "SensrSvc",
+                               "Reason":  "Sensor Monitoring Service"
+                           },
+                           {
+                               "Name":  "SensorDataService",
+                               "Reason":  "Sensor Data Service"
+                           },
+                           {
+                               "Name":  "WalletService",
+                               "Reason":  "Wallet Service"
+                           },
+                           {
+                               "Name":  "WMPNetworkSvc",
+                               "Reason":  "Windows Media Player Network Sharing"
+                           },
+                           {
+                               "Name":  "WPDBusEnum",
+                               "Reason":  "Portable Device Enumerator Service"
+                           },
+                           {
+                               "Name":  "WpcMonSvc",
+                               "Reason":  "Parental Controls Monitoring"
+                           },
+                           {
+                               "Name":  "RetailDemo",
+                               "Reason":  "Retail Demo Service"
+                           },
+                           {
+                               "Name":  "SCardSvr",
+                               "Reason":  "Smart Card Service"
+                           },
+                           {
+                               "Name":  "ScDeviceEnum",
+                               "Reason":  "Smart Card Device Enumeration Service"
+                           },
+                           {
+                               "Name":  "SCPolicySvc",
+                               "Reason":  "Smart Card Removal Policy Service"
+                           },
+                           {
+                               "Name":  "TabletInputService",
+                               "Reason":  "Touch Keyboard and Handwriting Panel Service"
+                           },
+                           {
+                               "Name":  "SEMgrSvc",
+                               "Reason":  "Payments and NFC/SE Manager"
+                           },
+                           {
+                               "Name":  "SharedRealitySvc",
+                               "Reason":  "Spatial Data Service (Mixed Reality)"
+                           },
+                           {
+                               "Name":  "MixedRealityOpenXRSvc",
+                               "Reason":  "Windows Mixed Reality OpenXR Service"
+                           },
+                           {
+                               "Name":  "AJRouter",
+                               "Reason":  "AllJoyn Router Service"
+                           },
+                           {
+                               "Name":  "tzautoupdate",
+                               "Reason":  "Auto Time Zone Updater"
+                           },
+                           {
+                               "Name":  "PcaSvc",
+                               "Reason":  "Program Compatibility Assistant Service"
+                           },
+                           {
+                               "Name":  "wisvc",
+                               "Reason":  "Windows Insider Service"
+                           },
+                           {
+                               "Name":  "XblAuthManager",
+                               "Reason":  "Xbox Live Auth Manager"
+                           },
+                           {
+                               "Name":  "XblGameSave",
+                               "Reason":  "Xbox Live Game Save"
+                           },
+                           {
+                               "Name":  "XboxGipSvc",
+                               "Reason":  "Xbox Accessory Management Service"
+                           },
+                           {
+                               "Name":  "XboxNetApiSvc",
+                               "Reason":  "Xbox Live Networking Service"
+                           },
+                           {
+                               "Name":  "SSDPSRV",
+                               "Reason":  "SSDP Discovery Service"
+                           },
+                           {
+                               "Name":  "UPnPHost",
+                               "Reason":  "UPnP Device Host"
+                           },
+                           {
+                               "Name":  "EABackgroundService",
+                               "Reason":  "EA App background service and telemetry"
+                           },
+                           {
+                               "Name":  "LibreOfficeMaintenance",
+                               "Reason":  "LibreOffice background update maintenance"
+                           },
+                           {
+                               "Name":  "TermService",
+                               "Reason":  "Remote Desktop Services daemon"
+                           },
+                           {
+                               "Name":  "SessionEnv",
+                               "Reason":  "Remote Desktop Configuration"
+                           },
+                           {
+                               "Name":  "UmRdpService",
+                               "Reason":  "Remote Desktop Device Redirector"
+                           },
+                           {
+                               "Name":  "WinRM",
+                               "Reason":  "Windows Remote Management (WS-Management)"
+                           },
+                           {
+                               "Name":  "HvHost",
+                               "Reason":  "Hyper-V Host Service"
+                           },
+                           {
+                               "Name":  "vmicguestinterface",
+                               "Reason":  "Hyper-V Guest Service Interface"
+                           },
+                           {
+                               "Name":  "vmicheartbeat",
+                               "Reason":  "Hyper-V Heartbeat Service"
+                           },
+                           {
+                               "Name":  "vmickvpexchange",
+                               "Reason":  "Hyper-V Data Exchange Service"
+                           },
+                           {
+                               "Name":  "vmicrdv",
+                               "Reason":  "Hyper-V Remote Desktop Virtualization Service"
+                           },
+                           {
+                               "Name":  "vmicshutdown",
+                               "Reason":  "Hyper-V Guest Shutdown Service"
+                           },
+                           {
+                               "Name":  "vmictimesync",
+                               "Reason":  "Hyper-V Time Synchronization Service"
+                           },
+                           {
+                               "Name":  "vmicvmsession",
+                               "Reason":  "Hyper-V VM Session Service"
+                           },
+                           {
+                               "Name":  "vmicvss",
+                               "Reason":  "Hyper-V Volume Shadow Copy Requestor"
+                           },
+                           {
+                               "Name":  "MSiSCSI",
+                               "Reason":  "Microsoft iSCSI Initiator Service"
+                           },
+                           {
+                               "Name":  "SNMPTrap",
+                               "Reason":  "SNMP Trap Service"
+                           },
+                           {
+                               "Name":  "RpcLocator",
+                               "Reason":  "RPC Locator Service"
+                           },
+                           {
+                               "Name":  "fhsvc",
+                               "Reason":  "File History Service (Background file backup I/O)"
+                           },
+                           {
+                               "Name":  "wbengine",
+                               "Reason":  "Block Level Backup Engine Service"
+                           },
+                           {
+                               "Name":  "SDRSVC",
+                               "Reason":  "Windows Backup Service"
+                           },
+                           {
+                               "Name":  "CloudBackupRestoreSvc",
+                               "Reason":  "Cloud Backup and Restore Service"
+                           },
+                           {
+                               "Name":  "OneSyncSvc",
+                               "Reason":  "Sync Host (Background mail/calendar sync)"
+                           },
+                           {
+                               "Name":  "wuqisvc",
+                               "Reason":  "Microsoft Quality and Reliability Analytics Telemetry"
+                           },
+                           {
+                               "Name":  "wmiApSrv",
+                               "Reason":  "WMI Performance Adapter (CPU polling overhead)"
+                           },
+                           {
+                               "Name":  "pla",
+                               "Reason":  "Performance Logs \u0026 Alerts"
+                           },
+                           {
+                               "Name":  "Wecsvc",
+                               "Reason":  "Windows Event Collector"
+                           },
+                           {
+                               "Name":  "TroubleshootingSvc",
+                               "Reason":  "Recommended Troubleshooting Service"
+                           },
+                           {
+                               "Name":  "WManSvc",
+                               "Reason":  "Windows Management Service"
+                           },
+                           {
+                               "Name":  "AppMgmt",
+                               "Reason":  "Application Management Group Policy Service"
+                           },
+                           {
+                               "Name":  "AppVClient",
+                               "Reason":  "Microsoft App-V Virtualization Client"
+                           },
+                           {
+                               "Name":  "UevAgentService",
+                               "Reason":  "User Experience Virtualization Service"
+                           },
+                           {
+                               "Name":  "shpamsvc",
+                               "Reason":  "Shared PC Account Manager"
+                           },
+                           {
+                               "Name":  "perceptionsimulation",
+                               "Reason":  "Windows Perception Simulation Service"
+                           },
+                           {
+                               "Name":  "WSAIFabricSvc",
+                               "Reason":  "Windows Subsystem for Android / AI Fabric Service"
+                           },
+                           {
+                               "Name":  "PeerDistSvc",
+                               "Reason":  "BranchCache Subnet Cache"
+                           },
+                           {
+                               "Name":  "CscService",
+                               "Reason":  "Offline Files Sync"
+                           },
+                           {
+                               "Name":  "WebClient",
+                               "Reason":  "WebDAV WebClient Service"
+                           },
+                           {
+                               "Name":  "WdiSystemHost",
+                               "Reason":  "Diagnostic System Host"
+                           },
+                           {
+                               "Name":  "WdiServiceHost",
+                               "Reason":  "Diagnostic Service Host"
+                           },
+                           {
+                               "Name":  "DPS",
+                               "Reason":  "Diagnostic Policy Service"
+                           },
+                           {
+                               "Name":  "PrintScanBrokerService",
+                               "Reason":  "Print and Scan Broker Service"
+                           },
+                           {
+                               "Name":  "PrintDeviceConfigurationService",
+                               "Reason":  "Print Device Configuration Service"
+                           },
+                           {
+                               "Name":  "PrintWorkflowUserSvc",
+                               "Reason":  "Print Workflow User Service"
+                           },
+                           {
+                               "Name":  "icssvc",
+                               "Reason":  "Windows Mobile Hotspot Service"
+                           },
+                           {
+                               "Name":  "autotimesvc",
+                               "Reason":  "Cellular Network Time Sync Service"
+                           },
+                           {
+                               "Name":  "lfsvc",
+                               "Reason":  "Geolocation Service (Background location tracking)"
+                           },
+                           {
+                               "Name":  "WFDSConMgrSvc",
+                               "Reason":  "Wi-Fi Direct Services Connection Manager"
+                           },
+                           {
+                               "Name":  "CertPropSvc",
+                               "Reason":  "Smart Card Certificate Propagation Service"
+                           },
+                           {
+                               "Name":  "LocalKdc",
+                               "Reason":  "Local Kerberos Key Distribution Center"
+                           },
+                           {
+                               "Name":  "BDESVC",
+                               "Reason":  "BitLocker Drive Encryption Service"
+                           },
+                           {
+                               "Name":  "EFS",
+                               "Reason":  "Encrypting File System Service"
+                           },
+                           {
+                               "Name":  "NaturalAuthentication",
+                               "Reason":  "Natural Authentication Service"
+                           },
+                           {
+                               "Name":  "InstallService",
+                               "Reason":  "Microsoft Store Install Service"
+                           },
+                           {
+                               "Name":  "PushToInstall",
+                               "Reason":  "PushToInstall Windows Service"
+                           },
+                           {
+                               "Name":  "AxInstSV",
+                               "Reason":  "ActiveX Installer Service"
+                           },
+                           {
+                               "Name":  "CDPUserSvc",
+                               "Reason":  "Connected Devices Platform User Service"
+                           },
+                           {
+                               "Name":  "BluetoothUserService",
+                               "Reason":  "Bluetooth User Support Service"
+                           },
+                           {
+                               "Name":  "CaptureService",
+                               "Reason":  "Windows Screen Capture \u0026 DVR Service"
+                           },
+                           {
+                               "Name":  "BcastDVRUserService",
+                               "Reason":  "Game DVR and Broadcast User Service"
+                           },
+                           {
+                               "Name":  "DevicePickerUserSvc",
+                               "Reason":  "Device Picker User Service"
+                           },
+                           {
+                               "Name":  "DevicesFlowUserSvc",
+                               "Reason":  "Devices Flow User Service"
+                           },
+                           {
+                               "Name":  "DeviceAssociationBrokerSvc",
+                               "Reason":  "Device Association Broker Service"
+                           },
+                           {
+                               "Name":  "SmsRouter",
+                               "Reason":  "Microsoft Windows SMS Router Service"
+                           },
+                           {
+                               "Name":  "MessagingService",
+                               "Reason":  "Messaging Service"
+                           },
+                           {
+                               "Name":  "PenService",
+                               "Reason":  "Pen and Stylus Service"
+                           },
+                           {
+                               "Name":  "P9RdrService",
+                               "Reason":  "Plan 9 Network Redirector Service"
+                           },
+                           {
+                               "Name":  "AarSvc",
+                               "Reason":  "Agent Activation Runtime (Voice Assistant activation)"
+                           },
+                           {
+                               "Name":  "UserDataSvc",
+                               "Reason":  "User Data Access Service"
+                           },
+                           {
+                               "Name":  "UnistoreSvc",
+                               "Reason":  "User Data Storage Service"
+                           },
+                           {
+                               "Name":  "PimIndexMaintenanceSvc",
+                               "Reason":  "Contact Data Indexing Service"
+                           },
+                           {
+                               "Name":  "ConsentUxUserSvc",
+                               "Reason":  "ConsentUX User Service"
+                           },
+                           {
+                               "Name":  "UdkUserSvc",
+                               "Reason":  "UDK User Service"
+                           },
+                           {
+                               "Name":  "cbdhsvc",
+                               "Reason":  "Clipboard User Service (Cloud clipboard sync)"
+                           },
+                           {
+                               "Name":  "NPSMSvc",
+                               "Reason":  "Now Playing Session Manager Service"
+                           },
+                           {
+                               "Name":  "DialogBlockingService",
+                               "Reason":  "Windows Dialog Blocking Service"
+                           },
+                           {
+                               "Name":  "refsdedupsvc",
+                               "Reason":  "ReFS Deduplication Service"
+                           },
+                           {
+                               "Name":  "TieringEngineService",
+                               "Reason":  "Storage Tiering Management Service"
+                           },
+                           {
+                               "Name":  "EntAppSvc",
+                               "Reason":  "Enterprise Application Management Service"
+                           },
+                           {
+                               "Name":  "McmSvc",
+                               "Reason":  "Mobile Connection Management Service"
+                           },
+                           {
+                               "Name":  "ADPSvc",
+                               "Reason":  "Aggregated Data Platform Telemetry Service"
+                           },
+                           {
+                               "Name":  "cloudidsvc",
+                               "Reason":  "Microsoft Cloud Identity Service"
+                           },
+                           {
+                               "Name":  "DmEnrollmentSvc",
+                               "Reason":  "Device Management Enrollment Service (MDM)"
+                           },
+                           {
+                               "Name":  "dcsvc",
+                               "Reason":  "Declared Configuration Service (MDM)"
+                           },
+                           {
+                               "Name":  "wlpasvc",
+                               "Reason":  "Local Profile Assistant Service"
+                           },
+                           {
+                               "Name":  "DsSvc",
+                               "Reason":  "Data Sharing Service"
+                           },
+                           {
+                               "Name":  "WEPHOSTSVC",
+                               "Reason":  "Windows Encryption Provider Host Service"
+                           },
+                           {
+                               "Name":  "hpatchmon",
+                               "Reason":  "Hotpatch Monitoring Service"
+                           },
+                           {
+                               "Name":  "McpManagementService",
+                               "Reason":  "MCP Management Enterprise Service"
+                           },
+                           {
+                               "Name":  "embeddedmode",
+                               "Reason":  "Embedded Mode IoT Service"
+                           },
+                           {
+                               "Name":  "svsvc",
+                               "Reason":  "Spot Verifier Background Chkdsk Service"
+                           },
+                           {
+                               "Name":  "WarpJITSvc",
+                               "Reason":  "Warp JIT Software Rasterizer Service"
+                           },
+                           {
+                               "Name":  "IsolationSession",
+                               "Reason":  "Isolation Session Service"
+                           }
+                       ]
+}
