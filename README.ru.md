@@ -1,14 +1,14 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode для Windows 11
-### *Extreme Precision Stripper Edition (v2.3)*
+### *Extreme Precision & Hardware Tuning Edition (v2.4)*
 
-**Высокоточный оптимизатор задержек (input latency) и плавности фреймтайма с нулевым риском для Windows 10/11.**  
-Временно выгружает фоновый мусор, приостанавливает синхронное сканирование диска Защитником, оптимизирует мультимедийный планировщик и гарантирует 100% автоматическое безопасное восстановление при следующей перезагрузке.
+**Высокоточный оптимизатор задержек (input latency), фреймтайма и аппаратной части с нулевым риском для Windows 10/11.**  
+Временно выгружает фоновый мусор, приостанавливает синхронное сканирование диска Защитником, оптимизирует аппаратную часть AMD Radeon/Ryzen (ULPS, парковка ядер, кэш шейдеров), переводит GPU в режим MSI Mode и гарантирует 100% автоматическое безопасное восстановление при следующей перезагрузке.
 
 [![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
 [![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Версия](https://img.shields.io/badge/Версия-v2.3--Extreme-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
+[![Версия](https://img.shields.io/badge/Версия-v2.4--Extreme-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
 [![Лицензия: MIT](https://img.shields.io/badge/Лицензия-MIT-success.svg?style=for-the-badge)](LICENSE)
 [![Zero-Risk Сторож](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#гарантия-безопасности-и-fail-safe-сторож)
 [![Протестировано на AMD](https://img.shields.io/badge/Платформа-Ryzen%20%2B%20Radeon-ED1C24?logo=amd&logoColor=white&style=for-the-badge)](#реальные-тесты-и-телеметрия-движка)
@@ -37,8 +37,13 @@
   - [4. Жесткая выгрузка фонового софта](#4-жесткая-выгрузка-фонового-софта)
   - [5. Отключение виджетов Windows 11 и веб-поиска Bing](#5-отключение-виджетов-windows-11-и-веб-поиска-bing)
   - [6. Сетевые твики и оптимизация задержки ядра](#6-сетевые-твики-и-оптимизация-задержки-ядра)
-  - [7. Очистка оперативной памяти по требованию (Working Sets & Standby List)](#7-очистка-оперативной-памяти-по-требованию-working-sets-standby-list)
-  - [8. Инструменты экстренного восстановления (DisplayPort и звук/микрофон)](#8-инструменты-экстренного-восстановления-displayport-и-звукмикрофон)
+  - [7. Аппаратные оптимизации AMD Radeon и Ryzen (ULPS, кэш шейдеров, парковка ядер)](#7-аппаратные-оптимизации-amd-radeon-и-ryzen-ulps-кэш-шейдеров-парковка-ядер)
+  - [8. Режим GPU MSI (Message Signaled Interrupts) и высокий приоритет](#8-режим-gpu-msi-message-signaled-interrupts-и-высокий-приоритет)
+  - [9. Диагностика и переключение VBS / HVCI (изоляция ядра)](#9-диагностика-и-переключение-vbs--hvci-изоляция-ядра)
+  - [10. Оптимизации файловой системы NTFS](#10-оптимизации-файловой-системы-ntfs)
+  - [11. Твики физических сетевых карт (FlowControl и InterruptModeration)](#11-твики-физических-сетевых-карт-flowcontrol-и-interruptmoderation)
+  - [12. Очистка оперативной памяти по требованию (Working Sets & Standby List)](#12-очистка-оперативной-памяти-по-требованию-working-sets--standby-list)
+  - [13. Инструменты экстренного восстановления (DisplayPort и звук/микрофон)](#13-инструменты-экстренного-восстановления-displayport-и-звукмикрофон)
 - [Быстрый старт](#быстрый-старт)
   - [Вариант А: Интерактивное меню (рекомендуется)](#вариант-а-интерактивное-меню-рекомендуется)
   - [Вариант Б: Использование через PowerShell CLI](#вариант-б-использование-через-powershell-cli)
@@ -208,13 +213,35 @@
 - **Отключение алгоритма Нагла:** Устанавливает `TCPNoDelay = 1` и `TcpAckFrequency = 1` для сетевых интерфейсов, устраняя буферизацию пакетов в мультиплеере.
 - **Отключение Energy-Efficient Ethernet (*EEE):** Запрещает сетевой карте переходить в энергосберегающий сон (`*EEE = 0`, `EnableGreenEthernet = 0`), устраняя микроразрывы и скачки пинга.
 
-### 7. Очистка оперативной памяти по требованию (Working Sets & Standby List)
-- Использует прямой вызов Win32 API `psapi.dll!EmptyWorkingSet`.
-- Сбрасывает рабочий набор второстепенных процессов в кэш ожидания, запускает сборщик мусора и освобождает сотни мегабайт физической памяти на лету.
+### 7. Аппаратные оптимизации AMD Radeon и Ryzen (ULPS, кэш шейдеров, парковка ядер)
+- **Отключение AMD ULPS (Ultra Low Power State):** Автоматически определяет ключи драйвера AMD Radeon в `HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\000*` и устанавливает `EnableUlps = 0`. Предотвращает микрофризы глубокого сна GPU, задержку пробуждения второго монитора и провалы частот (исходное значение сохраняется в снимке и восстанавливается при выходе).
+- **Очистка кэша шейдеров DirectX и Vulkan:** Пункт **`[7]`** безопасно удаляет поврежденный или раздутый кэш шейдеров AMD и DirectX (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\D3DSCache`), полностью устраняя микрофризы от компиляции шейдеров и выпадение кадров в соревновательных играх, таких как *CS2*.
+- **Отключение парковки ядер Ryzen (Core Parking):** Автоматически настраивает активную схему электропитания, выставляя минимальное число активных ядер процессора на 100% (`powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100`). Это удерживает все 6 физических ядер и 12 потоков процессора Ryzen 5 5600X в постоянной готовности и исключает задержки межъядерных переходов CCX.
 
-### 8. Инструменты экстренного восстановления (DisplayPort и звук/микрофон)
-- **Пункт [5] Сброс топологии DisplayPort:** Очищает поврежденный кэш конфигурации мониторов в реестре (`Configuration`, `Connectivity`, `ScaleFactors`), нормализует приоритеты MMCSS (`Affinity = 0`) и принудительно инициирует свежее согласование DisplayPort Link Training.
-- **Пункт [6] Разблокировка микрофона и базовых служб:** Мгновенно восстанавливает и запускает `camsvc` (исправляет блокировку микрофона в Discord/CS2), службу RPC `LanmanServer` и переводит службы Steam и Bluetooth в режим ручного запуска.
+### 8. Режим GPU MSI (Message Signaled Interrupts) и высокий приоритет
+- Находит дискретный графический адаптер PCI (AMD Radeon RX 6600) и настраивает режим прерываний Message Signaled Interrupts (`MSISupported = 1`) в ветке `Device Parameters\Interrupt Management\MessageSignaledInterruptProperties`.
+- Настраивает политику приоритета прерываний (`DevicePriority = 3`, высокий приоритет) в ветке `Device Parameters\Interrupt Management\Affinity Policy`.
+- Заменяет устаревший построчный механизм IRQ-шеринга (где GPU делит линию прерываний с другими устройствами) на прямую запись в память через MSI. Это исключает аппаратные конфликты и снижает время доставки кадров DPC от видеокарты к процессору. Исходные значения сохраняются и восстанавливаются.
+
+### 9. Диагностика и переключение VBS / HVCI (изоляция ядра)
+- Диагностирует статус Virtualization-Based Security (VBS) и Hypervisor-Enforced Code Integrity (HVCI / Целостность памяти) через пространство WMI/CIM `root\Microsoft\Windows\DeviceGuard` (`Win32_DeviceGuard`).
+- Пункт **`[8]`** предоставляет безопасное переключение для отключения или включения VBS/HVCI в системном реестре (`EnableVirtualizationBasedSecurity` и `HypervisorEnforcedCodeIntegrity\Enabled`), снижая оверхед виртуализации CPU и выводя предупреждение о необходимости перезагрузки.
+
+### 10. Оптимизации файловой системы NTFS
+- Применяет команду `fsutil behavior set disablelastaccess 1`, запрещая Windows обновлять отметку времени последнего доступа к файлам при каждом чтении, снижая паразитную нагрузку на SSD во время потоковой загрузки игровых текстур.
+- Применяет `fsutil behavior set disable8dot3 1`, отключая генерацию коротких имен формата DOS 8.3 для ускорения чтения директорий. Обе настройки сохраняются в снимке и корректно восстанавливаются в штатном режиме.
+
+### 11. Твики физических сетевых карт (FlowControl и InterruptModeration)
+- Для физических Ethernet и Wi-Fi адаптеров автоматически отключает `*FlowControl` (устраняет искусственные паузы передачи, вызывающие спайки пинга) и `*InterruptModeration` (мгновенно передает входящие пакеты процессору для минимально возможной сетевой задержки).
+- **Железная безопасность:** Полностью игнорирует и защищает адаптеры Apple Mobile Device Ethernet (`Ethernet 2` для USB-модема iPhone) и туннели Wintun (`wwan99`).
+
+### 12. Очистка оперативной памяти по требованию (Working Sets & Standby List)
+- Использует прямой вызов Win32 API `psapi.dll!EmptyWorkingSet`.
+- Сбрасывает рабочий набор второстепенных процессов в кэш ожидания, запускает сборщик мусора и освобождает сотни мегабайт физической памяти на лету без перезапуска ПК.
+
+### 13. Инструменты экстренного восстановления (DisplayPort и звук/микрофон)
+- **Пункт [5] Сброс топологии DisplayPort:** Очищает поврежденный кэш конфигурации мониторов в реестре `HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers` (`Configuration`, `Connectivity`, `ScaleFactors`), нормализует приоритеты MMCSS (`Affinity = 0`), перезапускает службы дисплея и принудительно инициирует свежее согласование DisplayPort Link Training.
+- **Пункт [6] Разблокировка микрофона и базовых служб:** Мгновенно восстанавливает и запускает `camsvc` (исправляет блокировку доступа к микрофону в Discord/CS2), службу RPC `LanmanServer` и переводит службы Steam и Bluetooth в режим ручного запуска.
 
 ---
 
@@ -234,7 +261,7 @@
 
 ```
 ============================================================
-           ULTRA GAMING MODE CONTROLLER  v2.3
+           ULTRA GAMING MODE CONTROLLER  v2.4
 ============================================================
 
  [1] Arm Ultra Gaming Mode for Next Boot
@@ -243,8 +270,11 @@
  [4] Run System Diagnostic / Pre-Flight Check
  [5] Repair Display + Reset DisplayPort Cache (Emergency Fix)
  [6] Repair Microphone, Steam + Core Services (Instant Fix)
- [7] Check Current Status
- [8] Exit
+ [7] Purge AMD / DirectX / Vulkan Shader Cache
+ [8] Check & Toggle VBS / HVCI (Core Isolation)
+ [9] Check GPU MSI Mode & Device Priority Status
+[10] Check Current Status
+[11] Exit
 ============================================================
 ```
 
@@ -263,6 +293,15 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Diagn
 
 # Подготовить игровой режим на следующую перезагрузку
 powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Enable
+
+# Очистить кэш шейдеров AMD / DirectX / Vulkan
+powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action FlushShaderCache
+
+# Проверить и переключить VBS / HVCI (Изоляция ядра)
+powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action ToggleVBS
+
+# Проверить статус режима GPU MSI и приоритет прерываний
+powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action GpuMsiStatus
 
 # Освободить оперативную память прямо сейчас
 powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action CleanMemory
@@ -283,14 +322,17 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 
 | Пункт меню | Команда CLI | Описание |
 |:---:|:---|:---|
-| **`[1]`** | `-Action Enable` | Создает снимок системы JSON, подавляет автозапуск софта и регистрирует задачу загрузки от имени SYSTEM. |
-| **`[2]`** | `-Action Restore` | Возвращает все 173 службы к их исходному типу запуска, включает Защитник Windows, удаляет задачи загрузки и восстанавливает автозапуск. |
+| **`[1]`** | `-Action Enable` | Создает снимок системы (службы, ULPS, MSI, NTFS, Core Parking, сетевые карты), подавляет автозапуск софта и регистрирует задачу загрузки от имени SYSTEM. |
+| **`[2]`** | `-Action Restore` | Возвращает все 173 службы и настройки железа (ULPS, MSI, Core Parking, NTFS, сеть) к исходному состоянию, включает Защитник Windows, удаляет задачи загрузки и восстанавливает автозапуск. |
 | **`[3]`** | `-Action CleanMemory` | Вызывает `EmptyWorkingSet` через Win32 API для сброса кэша и освобождения RAM на лету. |
-| **`[4]`** | `-Action Diagnostic` | Полный аудит: проверка прав администратора, профиля MMCSS, схемы электропитания, белого и черного списков. |
+| **`[4]`** | `-Action Diagnostic` | Полный аудит: проверка прав администратора, схем питания и парковки ядер Ryzen, MMCSS, сетевых адаптеров, AMD ULPS, кэша шейдеров, GPU MSI, VBS/HVCI, NTFS, защиты белого списка и фоновых служб. |
 | **`[5]`** | `-Action RepairDisplay` | Экстренное исправление: очистка кэшей топологии мониторов в реестре и сброс настроек планировщика MMCSS. |
 | **`[6]`** | `-Action RepairServices`| Экстренное исправление: восстанавливает и запускает `camsvc` (доступ к микрофону), `LanmanServer` (RPC) и Steam. |
-| **`[7]`** | `-Action Status` | Показывает текущий статус системы (`Normal`, `Armed`, `GameMode_Active`, `Restored`) и число активных фоновых служб. |
-| **`[8]`** | `Exit` | Закрывает командное меню. |
+| **`[7]`** | `-Action FlushShaderCache`| Очищает кэши шейдеров AMD DirectX, Vulkan и D3D (`DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `D3DSCache`) для устранения микрофризов компиляции шейдеров. |
+| **`[8]`** | `-Action ToggleVBS` | Проверяет и переключает VBS / HVCI (целостность памяти) в реестре для устранения оверхеда виртуализации. |
+| **`[9]`** | `-Action GpuMsiStatus` | Показывает статус режима Message Signaled Interrupts (MSI) видеокарты и приоритет прерываний (`DevicePriority = 3`). |
+| **`[10]`**| `-Action Status` | Показывает текущий статус системы (`Normal`, `Armed`, `GameMode_Active`, `Restored`), число активных служб, состояние Core Parking, AMD ULPS, GPU MSI и VBS. |
+| **`[11]`**| `Exit` | Закрывает командное меню. |
 
 ---
 

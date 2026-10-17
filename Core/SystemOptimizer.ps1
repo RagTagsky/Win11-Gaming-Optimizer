@@ -328,13 +328,54 @@ function Repair-DisplayPipeline {
     return $true
 }
 
+function Get-PhysicalGamingAdapters {
+    [CmdletBinding()]
+    param()
+
+    return @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
+        $name = $_.Name
+        $desc = $_.InterfaceDescription
+        ($name -ne "Ethernet 2") -and
+        ($name -ne "wwan99") -and
+        ($name -notmatch '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V|vEthernet') -and
+        ($desc -notmatch '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V')
+    })
+}
+
+function Get-NetworkAdapterGamingProperties {
+    [CmdletBinding()]
+    param()
+
+    $results = @()
+    $adapters = Get-PhysicalGamingAdapters
+    foreach ($adapter in $adapters) {
+        $allProps = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue
+        $flow = $allProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
+        $mod  = $allProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
+        $eee  = $allProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
+        $grn  = $allProps | Where-Object { $_.RegistryKeyword -eq "EnableGreenEthernet" }
+        $pwr  = $allProps | Where-Object { $_.RegistryKeyword -eq "PowerSavingMode" }
+
+        $results += @{
+            AdapterName         = $adapter.Name
+            InterfaceDesc       = $adapter.InterfaceDescription
+            FlowControl         = if ($flow) { ($flow.RegistryValue | Select-Object -First 1) } else { $null }
+            InterruptModeration = if ($mod) { ($mod.RegistryValue | Select-Object -First 1) } else { $null }
+            EEE                 = if ($eee) { ($eee.RegistryValue | Select-Object -First 1) } else { $null }
+            GreenEthernet       = if ($grn) { ($grn.RegistryValue | Select-Object -First 1) } else { $null }
+            PowerSavingMode     = if ($pwr) { ($pwr.RegistryValue | Select-Object -First 1) } else { $null }
+        }
+    }
+    return ,$results
+}
+
 function Set-NetworkGamingOptimizations {
     [CmdletBinding()]
     param()
 
-    Write-Host "[*] Applying Ultra Low Latency Network (TCPNoDelay & EEE Disable)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying Ultra Low Latency Network (TCPNoDelay, FlowControl=0, InterruptModeration=0)..." -ForegroundColor Cyan
 
-    # 1. Disable Nagle's algorithm (TCPNoDelay = 1, TcpAckFrequency = 1) across all active interfaces
+    # 1. Disable Nagle's algorithm (TCPNoDelay = 1, TcpAckFrequency = 1) across all active IP interfaces
     $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
     if (Test-Path $interfacesPath) {
         Get-ChildItem -Path $interfacesPath | ForEach-Object {
@@ -347,15 +388,28 @@ function Set-NetworkGamingOptimizations {
         Write-Host "  [+] TCPNoDelay & TcpAckFrequency set to 1 (Nagle's buffering delay eliminated)." -ForegroundColor Green
     }
 
-    # 2. Disable Energy Efficient Ethernet and Green Ethernet power-saving sleep transitions on physical adapters
-    try {
-        Set-NetAdapterAdvancedProperty -Name "*" -RegistryKeyword "*EEE" -RegistryValue 0 -ErrorAction SilentlyContinue
-        Set-NetAdapterAdvancedProperty -Name "*" -RegistryKeyword "EnableGreenEthernet" -RegistryValue 0 -ErrorAction SilentlyContinue
-        Set-NetAdapterAdvancedProperty -Name "*" -RegistryKeyword "PowerSavingMode" -RegistryValue 0 -ErrorAction SilentlyContinue
-        Write-Host "  [+] Physical network adapter energy-saving sleep states disabled (*EEE, GreenEthernet)." -ForegroundColor Green
-    }
-    catch {
-        Write-Verbose "Network adapter property modification skipped: $($_.Exception.Message)"
+    # 2. Configure physical gaming network adapters strictly skipping Apple Mobile Device and Wintun tunnel
+    $adapters = Get-PhysicalGamingAdapters
+    foreach ($adapter in $adapters) {
+        try {
+            $advProps = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue
+            $fcProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
+            $imProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
+            $eeeProp = $advProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
+            $grnProp = $advProps | Where-Object { $_.RegistryKeyword -eq "EnableGreenEthernet" }
+            $pwrProp = $advProps | Where-Object { $_.RegistryKeyword -eq "PowerSavingMode" }
+
+            if ($fcProp)  { Set-NetAdapterAdvancedProperty -InputObject $fcProp -RegistryValue "0" -ErrorAction SilentlyContinue }
+            if ($imProp)  { Set-NetAdapterAdvancedProperty -InputObject $imProp -RegistryValue "0" -ErrorAction SilentlyContinue }
+            if ($eeeProp) { Set-NetAdapterAdvancedProperty -InputObject $eeeProp -RegistryValue "0" -ErrorAction SilentlyContinue }
+            if ($grnProp) { Set-NetAdapterAdvancedProperty -InputObject $grnProp -RegistryValue "0" -ErrorAction SilentlyContinue }
+            if ($pwrProp) { Set-NetAdapterAdvancedProperty -InputObject $pwrProp -RegistryValue "0" -ErrorAction SilentlyContinue }
+
+            Write-Host "  [+] Optimized '$($adapter.Name)' ($($adapter.InterfaceDescription)): FlowControl=0, InterruptModeration=0." -ForegroundColor Green
+        }
+        catch {
+            Write-Verbose "Could not configure adapter $($adapter.Name): $($_.Exception.Message)"
+        }
     }
 
     return $true
@@ -365,10 +419,13 @@ function Restore-NetworkGamingOptimizations {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
-        [array]$NetworkLatencyConfig
+        [array]$NetworkLatencyConfig,
+
+        [Parameter(Mandatory = $false)]
+        [array]$NetworkAdapterProperties
     )
 
-    Write-Host "[*] Restoring network adapter latency settings..." -ForegroundColor Cyan
+    Write-Host "[*] Restoring network adapter latency and driver settings..." -ForegroundColor Cyan
 
     $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
     if ($NetworkLatencyConfig -and (Test-Path $interfacesPath)) {
@@ -389,15 +446,62 @@ function Restore-NetworkGamingOptimizations {
         }
     }
 
-    # Restore EEE on physical adapters
-    try {
-        Set-NetAdapterAdvancedProperty -Name "*" -RegistryKeyword "*EEE" -RegistryValue 1 -ErrorAction SilentlyContinue
-        Set-NetAdapterAdvancedProperty -Name "*" -RegistryKeyword "EnableGreenEthernet" -RegistryValue 1 -ErrorAction SilentlyContinue
-        Set-NetAdapterAdvancedProperty -Name "*" -RegistryKeyword "PowerSavingMode" -RegistryValue 1 -ErrorAction SilentlyContinue
-    }
-    catch {}
+    # Restore advanced properties on physical adapters
+    if ($NetworkAdapterProperties) {
+        foreach ($item in @($NetworkAdapterProperties)) {
+            $aName = if ($item -is [hashtable]) { $item["AdapterName"] } else { $item.AdapterName }
+            if (-not $aName) { continue }
 
-    Write-Host "  [+] Network latency settings restored to original state." -ForegroundColor Green
+            $fc  = if ($item -is [hashtable]) { $item["FlowControl"] } else { $item.FlowControl }
+            $im  = if ($item -is [hashtable]) { $item["InterruptModeration"] } else { $item.InterruptModeration }
+            $eee = if ($item -is [hashtable]) { $item["EEE"] } else { $item.EEE }
+            $grn = if ($item -is [hashtable]) { $item["GreenEthernet"] } else { $item.GreenEthernet }
+            $pwr = if ($item -is [hashtable]) { $item["PowerSavingMode"] } else { $item.PowerSavingMode }
+
+            try {
+                $advProps = Get-NetAdapterAdvancedProperty -Name $aName -ErrorAction SilentlyContinue
+                if ($null -ne $fc) {
+                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
+                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$fc) -ErrorAction SilentlyContinue }
+                }
+                if ($null -ne $im) {
+                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
+                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$im) -ErrorAction SilentlyContinue }
+                }
+                if ($null -ne $eee) {
+                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
+                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$eee) -ErrorAction SilentlyContinue }
+                }
+                if ($null -ne $grn) {
+                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "EnableGreenEthernet" }
+                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$grn) -ErrorAction SilentlyContinue }
+                }
+                if ($null -ne $pwr) {
+                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "PowerSavingMode" }
+                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$pwr) -ErrorAction SilentlyContinue }
+                }
+                Write-Host "  [+] Restored adapter settings on '$aName'." -ForegroundColor Green
+            }
+            catch {}
+        }
+    }
+    else {
+        $adapters = Get-PhysicalGamingAdapters
+        foreach ($adapter in $adapters) {
+            try {
+                $advProps = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue
+                $fcProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
+                $imProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
+                $eeeProp = $advProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
+                if ($fcProp)  { Set-NetAdapterAdvancedProperty -InputObject $fcProp -RegistryValue "3" -ErrorAction SilentlyContinue }
+                if ($imProp)  { Set-NetAdapterAdvancedProperty -InputObject $imProp -RegistryValue "1" -ErrorAction SilentlyContinue }
+                if ($eeeProp) { Set-NetAdapterAdvancedProperty -InputObject $eeeProp -RegistryValue "1" -ErrorAction SilentlyContinue }
+            }
+            catch {}
+        }
+    }
+
+    Write-Host "  [+] Network settings restored to original state." -ForegroundColor Green
     return $true
 }
 
@@ -623,6 +727,603 @@ function Set-FocusAssistAndSoundsGamingState {
             Set-ItemProperty -Path $notifPath -Name "NOC_GLOBAL_SETTING_TOASTS_ENABLED" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         }
         Write-Host "  [+] Windows notifications restored." -ForegroundColor Green
+    }
+    return $true
+}
+
+# ── AMD Radeon & Ryzen Hardware Optimizations ──────────────────────────────
+
+function Get-AmdGpuDriverClassKeys {
+    [CmdletBinding()]
+    param()
+
+    $keys = @()
+    $classPath = "SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    try {
+        $base = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($classPath)
+        if ($base) {
+            $subNames = $base.GetSubKeyNames() | Where-Object { $_ -match '^\d{4}$' }
+            foreach ($sub in $subNames) {
+                $sk = $base.OpenSubKey($sub)
+                if ($sk) {
+                    $desc = $sk.GetValue("DriverDesc")
+                    $prov = $sk.GetValue("ProviderName")
+                    $ulps = $sk.GetValue("EnableUlps")
+                    if (($desc -match '(?i)AMD|Radeon') -or ($prov -match '(?i)Advanced Micro Devices') -or ($null -ne $ulps)) {
+                        $keys += @{
+                            SubKeyName = $sub
+                            Path       = "HKLM:\$classPath\$sub"
+                            DriverDesc = $desc
+                            EnableUlps = $ulps
+                        }
+                    }
+                    $sk.Close()
+                }
+            }
+            $base.Close()
+        }
+    }
+    catch {
+        Write-Warning "Could not enumerate GPU driver class keys: $($_.Exception.Message)"
+    }
+    return ,$keys
+}
+
+function Set-AmdUlpsState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$Enable
+    )
+
+    $stateText = if ($Enable -eq 0) { "Disabling (0)" } else { "Enabling (1)" }
+    Write-Host "[*] $stateText AMD ULPS (Ultra Low Power State)..." -ForegroundColor Cyan
+
+    $keys = @(Get-AmdGpuDriverClassKeys)
+    if ($keys.Count -eq 0) {
+        Write-Host "  [i] No AMD GPU driver keys found. ULPS configuration skipped." -ForegroundColor Gray
+        return $false
+    }
+
+    $allSuccess = $true
+    foreach ($k in $keys) {
+        $p = if ($k -is [hashtable]) { $k["Path"] } else { $k.Path }
+        $sub = if ($k -is [hashtable]) { $k["SubKeyName"] } else { $k.SubKeyName }
+        $desc = if ($k -is [hashtable]) { $k["DriverDesc"] } else { $k.DriverDesc }
+        try {
+            Set-ItemProperty -Path $p -Name "EnableUlps" -Value $Enable -Type DWord -Force -ErrorAction Stop
+            Write-Host "  [+] Set EnableUlps = $Enable on $sub ($desc)." -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Failed to set EnableUlps on $p`: $($_.Exception.Message)"
+            $allSuccess = $false
+        }
+    }
+    return $allSuccess
+}
+
+function Restore-AmdUlpsState {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [array]$UlpsConfig
+    )
+
+    if ($UlpsConfig) {
+        Write-Host "[*] Restoring AMD ULPS settings..." -ForegroundColor Cyan
+        foreach ($item in @($UlpsConfig)) {
+            $regPath = if ($item -is [hashtable]) { $item["Path"] } else { $item.Path }
+            $origVal = if ($item -is [hashtable]) { $item["EnableUlps"] } else { $item.EnableUlps }
+            if ($regPath) {
+                try {
+                    if ($null -ne $origVal) {
+                        Set-ItemProperty -Path $regPath -Name "EnableUlps" -Value $origVal -Type DWord -Force -ErrorAction Stop
+                        Write-Host "  [+] Restored EnableUlps = $origVal on $regPath." -ForegroundColor Green
+                    } else {
+                        Remove-ItemProperty -Path $regPath -Name "EnableUlps" -ErrorAction Stop
+                        Write-Host "  [+] Removed EnableUlps on $regPath (restored to original state)." -ForegroundColor Green
+                    }
+                }
+                catch {
+                    Write-Warning "Failed to restore EnableUlps on $regPath`: $($_.Exception.Message)"
+                }
+            }
+        }
+    }
+    return $true
+}
+
+function Clear-AmdShaderCache {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "`n=====================================================" -ForegroundColor Magenta
+    Write-Host "        AMD & DIRECTX / VULKAN SHADER CACHE PURGE    " -ForegroundColor Magenta
+    Write-Host "=====================================================" -ForegroundColor Magenta
+
+    $targetDirs = @(
+        (Join-Path $env:LOCALAPPDATA "AMD\DxCache"),
+        (Join-Path $env:LOCALAPPDATA "AMD\VkCache"),
+        (Join-Path $env:LOCALAPPDATA "AMD\DxcCache"),
+        (Join-Path $env:LOCALAPPDATA "AMD\DX9Cache"),
+        (Join-Path $env:LOCALAPPDATA "AMD\OglCache"),
+        (Join-Path $env:LOCALAPPDATA "D3DSCache")
+    )
+
+    $totalPurgedFiles = 0
+    $totalFreedBytes = 0
+
+    foreach ($dir in $targetDirs) {
+        if (-not (Test-Path $dir)) {
+            continue
+        }
+
+        Write-Host "[*] Inspecting cache directory: $dir" -ForegroundColor Cyan
+        $filesBefore = Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue
+        $dirFileCount = if ($filesBefore) { $filesBefore.Count } else { 0 }
+        $dirBytes = 0
+        if ($filesBefore) {
+            $measure = $filesBefore | Measure-Object -Property Length -Sum
+            $dirBytes = if ($measure.Sum) { $measure.Sum } else { 0 }
+        }
+
+        $dirMb = [math]::Round($dirBytes / 1MB, 2)
+        Write-Host "  [+] Found $dirFileCount cache files ($dirMb MB)." -ForegroundColor White
+
+        $items = Get-ChildItem -Path $dir -ErrorAction SilentlyContinue
+        foreach ($item in $items) {
+            try {
+                Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            catch {}
+        }
+
+        $filesAfter = Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue
+        $remainingCount = if ($filesAfter) { $filesAfter.Count } else { 0 }
+        $remainingBytes = 0
+        if ($filesAfter) {
+            $remMeasure = $filesAfter | Measure-Object -Property Length -Sum
+            $remainingBytes = if ($remMeasure.Sum) { $remMeasure.Sum } else { 0 }
+        }
+
+        $actuallyPurgedFiles = [Math]::Max(0, ($dirFileCount - $remainingCount))
+        $actuallyFreedBytes  = [Math]::Max(0, ($dirBytes - $remainingBytes))
+
+        $totalPurgedFiles += $actuallyPurgedFiles
+        $totalFreedBytes  += $actuallyFreedBytes
+
+        $leafName = Split-Path $dir -Leaf
+        if ($dir -match '(?i)AMD\\') { $leafName = "AMD\$leafName" }
+        Write-Host "  [+] Purged $actuallyPurgedFiles files in $leafName." -ForegroundColor Green
+    }
+
+    $totalFreedMb = [math]::Round($totalFreedBytes / 1MB, 2)
+    Write-Host "`n[SUCCESS] Shader cache purge complete. Cleaned $totalPurgedFiles files, freed $totalFreedMb MB." -ForegroundColor Green
+    Write-Host "  [i] Shaders will cleanly recompile in-game without stutter or corruption." -ForegroundColor Gray
+    return $totalFreedMb
+}
+
+function Get-ProcessorIdleMinCores {
+    [CmdletBinding()]
+    param()
+
+    try {
+        # 1. Fast, exact, locale-independent registry query
+        $activeGuid = Get-ActivePowerSchemeGuid
+        if ($activeGuid) {
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$activeGuid\54533251-82be-4824-96c1-47b60b740d00\0cc5b647-c1df-4637-891a-dec35c318583"
+            if (Test-Path $regPath) {
+                $p = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+                if ($null -ne $p.ACSettingIndex) {
+                    return [int]$p.ACSettingIndex
+                }
+            }
+        }
+
+        # 2. Locale-aware command line parsing fallback
+        $raw = powercfg /q SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 2>&1 | Out-String
+        if ($raw -match "(?im)(?:AC|сети|secteur|wechselstrom|ca)[^:\r\n]*:\s*0x([0-9a-fA-F]+)") {
+            return [Convert]::ToInt32($matches[1], 16)
+        }
+        $currentLines = ($raw -split "[\r\n]+") | Where-Object { $_ -match "(?i)(?:current|текущий)" -and $_ -match ":\s*0x([0-9a-fA-F]+)" }
+        if ($currentLines.Count -gt 0 -and $currentLines[0] -match ":\s*0x([0-9a-fA-F]+)") {
+            return [Convert]::ToInt32($matches[1], 16)
+        }
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
+function Set-ProcessorIdleMinCores {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [int]$Percent = 100
+    )
+
+    Write-Host "[*] Configuring Processor Core Parking (CPMINCORES = $Percent%)..." -ForegroundColor Cyan
+    try {
+        $out1 = powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES $Percent 2>&1
+        $out2 = powercfg -setactive SCHEME_CURRENT 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "powercfg failed to apply CPMINCORES ($LASTEXITCODE): $out1 $out2"
+            return $false
+        }
+        if ($Percent -eq 100) {
+            Write-Host "  [+] Ryzen Core Parking DISABLED (all CPU cores kept active, CPMINCORES = 100%)." -ForegroundColor Green
+        }
+        else {
+            Write-Host "  [+] Processor CPMINCORES set to $Percent%." -ForegroundColor Green
+        }
+        return $true
+    }
+    catch {
+        Write-Warning "Failed to set CPMINCORES: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-ProcessorIdleMinCores {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$OriginalPercent
+    )
+
+    if ($null -ne $OriginalPercent) {
+        Write-Host "[*] Restoring Processor Core Parking..." -ForegroundColor Cyan
+        try {
+            $p = [int]$OriginalPercent
+            $out1 = powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES $p 2>&1
+            $out2 = powercfg -setactive SCHEME_CURRENT 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "powercfg failed to restore CPMINCORES ($LASTEXITCODE): $out1 $out2"
+                return $false
+            }
+            Write-Host "  [+] Processor core parking restored to $p%." -ForegroundColor Green
+            return $true
+        }
+        catch {
+            Write-Warning "Exception restoring CPMINCORES: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    return $true
+}
+
+# ── GPU MSI (Message Signaled Interrupts) Mode ─────────────────────────────
+
+function Get-GpuPnpDeviceId {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
+        $amd = $gpus | Where-Object { $_.PNPDeviceID -match "^PCI" -and ($_.Name -like "*AMD*" -or $_.Name -like "*Radeon*") } | Select-Object -First 1
+        if ($amd) { return $amd }
+
+        $pciGpu = $gpus | Where-Object { $_.PNPDeviceID -match "^PCI" } | Select-Object -First 1
+        return $pciGpu
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-GpuMsiConfig {
+    [CmdletBinding()]
+    param()
+
+    $gpu = Get-GpuPnpDeviceId
+    if (-not $gpu -or -not $gpu.PNPDeviceID) { return $null }
+
+    $basePath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($gpu.PNPDeviceID)\Device Parameters\Interrupt Management"
+    $msiPath = Join-Path $basePath "MessageSignaledInterruptProperties"
+    $affPath = Join-Path $basePath "Affinity Policy"
+
+    $msiSupp = $null
+    $devPrio = $null
+
+    if (Test-Path $msiPath) {
+        $p = Get-ItemProperty -Path $msiPath -ErrorAction SilentlyContinue
+        if ($null -ne $p.MSISupported) { $msiSupp = [int]$p.MSISupported }
+    }
+    if (Test-Path $affPath) {
+        $p = Get-ItemProperty -Path $affPath -ErrorAction SilentlyContinue
+        if ($null -ne $p.DevicePriority) { $devPrio = [int]$p.DevicePriority }
+    }
+
+    return @{
+        PNPDeviceID    = $gpu.PNPDeviceID
+        DeviceName     = $gpu.Name
+        BasePath       = $basePath
+        MSISupported   = $msiSupp
+        DevicePriority = $devPrio
+    }
+}
+
+function Set-GpuMsiGamingConfig {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Enabling MSI (Message Signaled Interrupts) & High Priority for GPU..." -ForegroundColor Cyan
+
+    $gpu = Get-GpuPnpDeviceId
+    if (-not $gpu -or -not $gpu.PNPDeviceID) {
+        Write-Warning "Could not detect PCI GPU for MSI configuration."
+        return $false
+    }
+
+    $basePath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$($gpu.PNPDeviceID)\Device Parameters\Interrupt Management"
+    $msiPath = Join-Path $basePath "MessageSignaledInterruptProperties"
+    $affPath = Join-Path $basePath "Affinity Policy"
+
+    try {
+        if (-not (Test-Path $msiPath)) { New-Item -Path $msiPath -Force -ErrorAction Stop | Out-Null }
+        Set-ItemProperty -Path $msiPath -Name "MSISupported" -Value 1 -Type DWord -Force -ErrorAction Stop
+        Write-Host "  [+] GPU '$($gpu.Name)': MSISupported set to 1 (MSI mode active)." -ForegroundColor Green
+
+        if (-not (Test-Path $affPath)) { New-Item -Path $affPath -Force -ErrorAction Stop | Out-Null }
+        Set-ItemProperty -Path $affPath -Name "DevicePriority" -Value 3 -Type DWord -Force -ErrorAction Stop
+        Write-Host "  [+] GPU '$($gpu.Name)': DevicePriority set to 3 (High IRQ Priority)." -ForegroundColor Green
+        return $true
+    }
+    catch {
+        Write-Warning "Failed to set GPU MSI mode: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-GpuMsiConfig {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$MSIConfig
+    )
+
+    if ($MSIConfig) {
+        Write-Host "[*] Restoring GPU MSI and Interrupt Priority settings..." -ForegroundColor Cyan
+        $basePath = if ($MSIConfig -is [hashtable]) { $MSIConfig["BasePath"] } else { $MSIConfig.BasePath }
+        $origMsi  = if ($MSIConfig -is [hashtable]) { $MSIConfig["MSISupported"] } else { $MSIConfig.MSISupported }
+        $origPrio = if ($MSIConfig -is [hashtable]) { $MSIConfig["DevicePriority"] } else { $MSIConfig.DevicePriority }
+
+        if ($basePath) {
+            $msiPath = Join-Path $basePath "MessageSignaledInterruptProperties"
+            $affPath = Join-Path $basePath "Affinity Policy"
+
+            try {
+                if (Test-Path $msiPath) {
+                    if ($null -ne $origMsi) {
+                        Set-ItemProperty -Path $msiPath -Name "MSISupported" -Value $origMsi -Type DWord -Force -ErrorAction Stop
+                        Write-Host "  [+] GPU MSI mode restored to $origMsi." -ForegroundColor Green
+                    } else {
+                        Remove-ItemProperty -Path $msiPath -Name "MSISupported" -Force -ErrorAction Stop
+                        Write-Host "  [+] GPU MSISupported removed (restored to original state)." -ForegroundColor Green
+                    }
+                }
+
+                if (Test-Path $affPath) {
+                    if ($null -ne $origPrio) {
+                        Set-ItemProperty -Path $affPath -Name "DevicePriority" -Value $origPrio -Type DWord -Force -ErrorAction Stop
+                        Write-Host "  [+] GPU DevicePriority restored to $origPrio." -ForegroundColor Green
+                    }
+                    else {
+                        Remove-ItemProperty -Path $affPath -Name "DevicePriority" -Force -ErrorAction Stop
+                        Write-Host "  [+] GPU DevicePriority removed (restored to default)." -ForegroundColor Green
+                    }
+                }
+                return $true
+            }
+            catch {
+                Write-Warning "Failed to restore GPU MSI settings: $($_.Exception.Message)"
+                return $false
+            }
+        }
+    }
+    return $true
+}
+
+# ── VBS / HVCI (Virtualization-Based Security / Memory Integrity) ────────────
+
+function Get-VbsHvciDiagnosticInfo {
+    [CmdletBinding()]
+    param()
+
+    $info = @{
+        VbsRunning          = $false
+        VbsStatus           = "Disabled (0)"
+        HvciRunning         = $false
+        VbsRegistryEnabled  = $false
+        HvciRegistryEnabled = $false
+    }
+
+    try {
+        $dg = Get-CimInstance -Namespace root\Microsoft\Windows\DeviceGuard -ClassName Win32_DeviceGuard -ErrorAction SilentlyContinue
+        if (-not $dg) {
+            $dg = Get-CimInstance -ClassName Win32_DeviceGuard -ErrorAction SilentlyContinue
+        }
+        if ($dg) {
+            $statusVal = [int]$dg.VirtualizationBasedSecurityStatus
+            $info.VbsStatus = switch ($statusVal) {
+                0 { "Disabled (0)" }
+                1 { "Enabled but not running (1)" }
+                2 { "Enabled and running (2)" }
+                default { "Unknown ($statusVal)" }
+            }
+            $info.VbsRunning = ($statusVal -eq 2)
+
+            $secRunning = $dg.SecurityServicesRunning
+            if ($secRunning -and ($secRunning -contains 2)) {
+                $info.HvciRunning = $true
+            }
+        }
+    }
+    catch {}
+
+    $dgPath = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard"
+    if (Test-Path $dgPath) {
+        $p = Get-ItemProperty -Path $dgPath -ErrorAction SilentlyContinue
+        if ($null -ne $p.EnableVirtualizationBasedSecurity -and [int]$p.EnableVirtualizationBasedSecurity -eq 1) {
+            $info.VbsRegistryEnabled = $true
+        }
+    }
+
+    $hvciPath = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
+    if (Test-Path $hvciPath) {
+        $p = Get-ItemProperty -Path $hvciPath -ErrorAction SilentlyContinue
+        if ($null -ne $p.Enabled -and [int]$p.Enabled -eq 1) {
+            $info.HvciRegistryEnabled = $true
+        }
+    }
+
+    return $info
+}
+
+function Toggle-VbsHvciState {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "`n=====================================================" -ForegroundColor Yellow
+    Write-Host "    VBS / HVCI (CORE ISOLATION & MEMORY INTEGRITY)   " -ForegroundColor Yellow
+    Write-Host "=====================================================" -ForegroundColor Yellow
+
+    $current = Get-VbsHvciDiagnosticInfo
+    Write-Host " Current VBS Status:          $($current.VbsStatus)" -ForegroundColor White
+    Write-Host " Current HVCI Running:        $($current.HvciRunning)" -ForegroundColor White
+    Write-Host " VBS Registry Config:         $($current.VbsRegistryEnabled)" -ForegroundColor White
+    Write-Host " HVCI Registry Config:        $($current.HvciRegistryEnabled)" -ForegroundColor White
+
+    $dgPath = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard"
+    $hvciPath = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity"
+
+    # Read explicit registry configuration first to allow clean toggling before reboot
+    $regVbs = $null
+    $regHvci = $null
+    if (Test-Path $dgPath) {
+        $val = (Get-ItemProperty -Path $dgPath -Name "EnableVirtualizationBasedSecurity" -ErrorAction SilentlyContinue).EnableVirtualizationBasedSecurity
+        if ($null -ne $val) { $regVbs = [int]$val }
+    }
+    if (Test-Path $hvciPath) {
+        $val = (Get-ItemProperty -Path $hvciPath -Name "Enabled" -ErrorAction SilentlyContinue).Enabled
+        if ($null -ne $val) { $regHvci = [int]$val }
+    }
+
+    $isCurrentlyActive = if ($null -ne $regHvci) {
+        ($regHvci -eq 1)
+    } elseif ($null -ne $regVbs) {
+        ($regVbs -eq 1)
+    } else {
+        ($current.VbsRunning -or $current.HvciRunning)
+    }
+
+    $targetState = if ($isCurrentlyActive) { 0 } else { 1 }
+
+    try {
+        if (-not (Test-Path $dgPath)) { New-Item -Path $dgPath -Force -ErrorAction Stop | Out-Null }
+        if (-not (Test-Path $hvciPath)) { New-Item -Path $hvciPath -Force -ErrorAction Stop | Out-Null }
+
+        Set-ItemProperty -Path $dgPath -Name "EnableVirtualizationBasedSecurity" -Value $targetState -Type DWord -Force -ErrorAction Stop
+        Set-ItemProperty -Path $hvciPath -Name "Enabled" -Value $targetState -Type DWord -Force -ErrorAction Stop
+
+        if ($targetState -eq 0) {
+            Write-Host "`n[+] VBS & HVCI (Memory Integrity) successfully DISABLED in registry." -ForegroundColor Green
+            Write-Host "  [+] Hypervisor ring virtualization overhead removed for lower gaming latency." -ForegroundColor Green
+        }
+        else {
+            Write-Host "`n[+] VBS & HVCI (Memory Integrity) successfully ENABLED in registry." -ForegroundColor Green
+        }
+
+        Write-Host "`n[IMPORTANT WARNING] A PC restart is REQUIRED for VBS/HVCI changes to take effect!" -ForegroundColor Red
+        return $true
+    }
+    catch {
+        Write-Error "Failed to modify VBS/HVCI registry keys: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# ── NTFS File System I/O Optimizations ─────────────────────────────────────
+
+function Get-NTFSFileSystemConfig {
+    [CmdletBinding()]
+    param()
+
+    $fsPath = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+    $lastAccess = $null
+    $dot3 = $null
+
+    if (Test-Path $fsPath) {
+        $p = Get-ItemProperty -Path $fsPath -ErrorAction SilentlyContinue
+        if ($null -ne $p.NtfsDisableLastAccessUpdate) { $lastAccess = [int64]$p.NtfsDisableLastAccessUpdate }
+        if ($null -ne $p.NtfsDisable8dot3NameCreation) { $dot3 = [int64]$p.NtfsDisable8dot3NameCreation }
+    }
+
+    return @{
+        NtfsDisableLastAccessUpdate  = $lastAccess
+        NtfsDisable8dot3NameCreation = $dot3
+    }
+}
+
+function Set-NTFSGamingOptimizations {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Applying NTFS File System I/O Optimizations (DisableLastAccess & Disable8dot3)..." -ForegroundColor Cyan
+    try {
+        $out1 = fsutil behavior set disablelastaccess 1 2>&1
+        $code1 = $LASTEXITCODE
+        $out2 = fsutil behavior set disable8dot3 1 2>&1
+        $code2 = $LASTEXITCODE
+
+        if ($code1 -eq 0) {
+            Write-Host "  [+] NTFS last access timestamp updates disabled (eliminates file read write amplification)." -ForegroundColor Green
+        } else {
+            Write-Warning "Could not configure disablelastaccess ($code1): $out1"
+        }
+
+        if ($code2 -eq 0) {
+            Write-Host "  [+] NTFS 8.3 legacy short name generation disabled (speeds up directory lookups)." -ForegroundColor Green
+        } else {
+            Write-Warning "Could not configure disable8dot3 ($code2): $out2"
+        }
+
+        return ($code1 -eq 0 -and $code2 -eq 0)
+    }
+    catch {
+        Write-Warning "Could not configure NTFS optimizations: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-NTFSGamingOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$NTFSConfig
+    )
+
+    if ($NTFSConfig) {
+        Write-Host "[*] Restoring NTFS File System settings..." -ForegroundColor Cyan
+        $fsPath = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+        $origLast = if ($NTFSConfig -is [hashtable]) { $NTFSConfig["NtfsDisableLastAccessUpdate"] } else { $NTFSConfig.NtfsDisableLastAccessUpdate }
+        $orig8dot3 = if ($NTFSConfig -is [hashtable]) { $NTFSConfig["NtfsDisable8dot3NameCreation"] } else { $NTFSConfig.NtfsDisable8dot3NameCreation }
+
+        try {
+            if ($null -ne $origLast) {
+                Set-ItemProperty -Path $fsPath -Name "NtfsDisableLastAccessUpdate" -Value $origLast -Type DWord -Force -ErrorAction Stop
+            }
+            if ($null -ne $orig8dot3) {
+                Set-ItemProperty -Path $fsPath -Name "NtfsDisable8dot3NameCreation" -Value $orig8dot3 -Type DWord -Force -ErrorAction Stop
+            }
+            Write-Host "  [+] NTFS settings restored to original values." -ForegroundColor Green
+            return $true
+        }
+        catch {
+            Write-Warning "Failed to restore NTFS settings: $($_.Exception.Message)"
+            return $false
+        }
     }
     return $true
 }

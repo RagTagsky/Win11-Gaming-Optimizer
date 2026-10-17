@@ -1,14 +1,14 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode for Windows 11
-### *Extreme Precision Stripper Edition (v2.3)*
+### *Extreme Precision & Hardware Tuning Edition (v2.4)*
 
-**A zero-risk, high-precision latency and frame pacing optimizer for Windows 10/11.**  
-Temporarily strips background bloat, halts real-time disk scanning, locks multimedia scheduling, and guarantees 100% automated failsafe recovery on next boot.
+**A zero-risk, high-precision latency, frame pacing, and hardware optimizer for Windows 10/11.**  
+Temporarily strips background bloat, halts real-time disk scanning, tunes AMD Radeon/Ryzen hardware (ULPS, Core Parking, Shader Cache), activates GPU MSI Mode, and guarantees 100% automated failsafe recovery on next boot.
 
 [![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
 [![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Version](https://img.shields.io/badge/Version-v2.3--Extreme-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
+[![Version](https://img.shields.io/badge/Version-v2.4--Extreme-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-success.svg?style=for-the-badge)](LICENSE)
 [![Zero-Risk Watchdog](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#the-zero-risk-watchdog-guarantee)
 [![Tested On AMD](https://img.shields.io/badge/Hardware-Ryzen%20%2B%20Radeon-ED1C24?logo=amd&logoColor=white&style=for-the-badge)](#real-world-benchmarks-engine-telemetry)
@@ -37,8 +37,13 @@ Temporarily strips background bloat, halts real-time disk scanning, locks multim
   - [4. Background Process & Bloatware Annihilator](#4-background-process-bloatware-annihilator)
   - [5. Windows 11 Widgets & Bing Search Elimination](#5-windows-11-widgets-bing-search-elimination)
   - [6. Network & Latency Kernel Optimizations](#6-network-latency-kernel-optimizations)
-  - [7. On-Demand Memory Trimming (Working Sets & Standby List)](#7-on-demand-memory-trimming-working-sets-standby-list)
-  - [8. Emergency Repair Toolkit (DisplayPort & Audio/Microphone)](#8-emergency-repair-toolkit-displayport-audiomicrophone)
+  - [7. AMD Radeon & Ryzen Hardware Optimizations (ULPS, Shader Cache, Core Parking)](#7-amd-radeon--ryzen-hardware-optimizations-ulps-shader-cache-core-parking)
+  - [8. GPU MSI (Message Signaled Interrupts) Mode & High Priority](#8-gpu-msi-message-signaled-interrupts-mode--high-priority)
+  - [9. VBS / HVCI (Core Isolation / Memory Integrity) Diagnostics & Toggle](#9-vbs--hvci-core-isolation--memory-integrity-diagnostics--toggle)
+  - [10. NTFS File System I/O Optimizations](#10-ntfs-file-system-io-optimizations)
+  - [11. Physical Network Adapter Driver Tweaks (FlowControl & InterruptModeration)](#11-physical-network-adapter-driver-tweaks-flowcontrol--interruptmoderation)
+  - [12. On-Demand Memory Trimming (Working Sets & Standby List)](#12-on-demand-memory-trimming-working-sets--standby-list)
+  - [13. Emergency Repair Toolkit (DisplayPort & Audio/Microphone)](#13-emergency-repair-toolkit-displayport--audiomicrophone)
 - [Quick Start Guide](#quick-start-guide)
   - [Option A: Interactive Menu (Recommended)](#option-a-interactive-menu-recommended)
   - [Option B: PowerShell CLI Usage](#option-b-powershell-cli-usage)
@@ -205,14 +210,36 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 - Disables Bing online search recommendations inside the Start Menu (`BingSearchEnabled = 0`, `DisableSearchBoxSuggestions = 1`), saving CPU cycles on desktop interactions.
 
 ### 6. Network & Latency Kernel Optimizations
-- **Nagle's Algorithm Disabled:** Sets `TCPNoDelay = 1` and `TcpAckFrequency = 1` across all active network adapters, eliminating network packet buffering delays in online multiplayer.
-- **Energy-Efficient Ethernet (*EEE) Disabled:** Deactivates power-saving sleep transitions on physical NICs (`*EEE = 0`, `EnableGreenEthernet = 0`), stopping micro-disconnects and packet jitter.
+- **Nagle's Algorithm Disabled:** Sets `TCPNoDelay = 1` and `TcpAckFrequency = 1` across all active IP interfaces, eliminating network packet buffering delays in online multiplayer.
+- **Energy-Efficient Ethernet (*EEE) Disabled:** Deactivates power-saving sleep transitions on physical NICs (`*EEE = 0`, `EnableGreenEthernet = 0`, `PowerSavingMode = 0`), stopping micro-disconnects and packet jitter.
 
-### 7. On-Demand Memory Trimming (Working Sets & Standby List)
+### 7. AMD Radeon & Ryzen Hardware Optimizations (ULPS, Shader Cache, Core Parking)
+- **AMD ULPS (Ultra Low Power State) Disabled:** Automatically detects AMD Radeon graphics driver keys in `HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\000*` and sets `EnableUlps = 0`. Eliminates GPU deep sleep stutter, dual-monitor wake latency, and clock-ramp hitches (original state backed up in snapshot and restored on exit).
+- **DirectX & Vulkan Shader Cache Purge:** Option **`[7]`** safely scrubs corrupt or bloated AMD and DirectX shader cache directories (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\D3DSCache`), eliminating shader compilation micro-stutters and dropped frames in titles like *CS2*.
+- **Ryzen Core Parking Disabled:** Automatically tunes active power plans by setting processor idle minimum cores to 100% (`powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100`), ensuring all 6 physical cores and 12 threads of the Ryzen 5 5600X remain active and eliminating CCX cross-core sleep transitions.
+
+### 8. GPU MSI (Message Signaled Interrupts) Mode & High Priority
+- Detects the discrete PCI graphics adapter (AMD Radeon RX 6600) and configures Message Signaled Interrupts (`MSISupported = 1`) under `Device Parameters\Interrupt Management\MessageSignaledInterruptProperties`.
+- Configures interrupt affinity policy (`DevicePriority = 3`, High Priority) under `Device Parameters\Interrupt Management\Affinity Policy`.
+- Replaces legacy line-based IRQ sharing (where the GPU shares interrupt lines with other hardware) with direct MSI memory writes, eliminating interrupt conflicts and reducing GPU-to-CPU DPC frame submission latency. Original values are saved and restored on exit.
+
+### 9. VBS / HVCI (Core Isolation / Memory Integrity) Diagnostics & Toggle
+- Diagnoses Virtualization-Based Security (VBS) and Hypervisor-Enforced Code Integrity (HVCI) via WMI/CIM namespace `root\Microsoft\Windows\DeviceGuard` (`Win32_DeviceGuard`).
+- Option **`[8]`** provides a safe toggle to enable or disable VBS/HVCI in the registry (`EnableVirtualizationBasedSecurity` and `HypervisorEnforcedCodeIntegrity\Enabled`), removing hypervisor nested-ring CPU overhead and providing clear warnings that a reboot is required.
+
+### 10. NTFS File System I/O Optimizations
+- Applies `fsutil behavior set disablelastaccess 1` to stop Windows from updating the last-access timestamp on disk whenever a file is read, eliminating write amplification during game asset streaming.
+- Applies `fsutil behavior set disable8dot3 1` to stop creating legacy DOS 8.3 short filename directory entries, accelerating directory traversals. Both settings are backed up and cleanly restored on normal state restoration.
+
+### 11. Physical Network Adapter Driver Tweaks (FlowControl & InterruptModeration)
+- For physical Ethernet and Wi-Fi adapters, automatically disables `*FlowControl` (prevents artificial pause frames that cause ping spikes) and `*InterruptModeration` (delivers incoming packets immediately to the CPU for the lowest possible network latency).
+- **Ironclad Safety Exclusions:** Strictly ignores and protects Apple Mobile Device Ethernet (`Ethernet 2` for iPhone tethering) and Wintun tunnel adapters (`wwan99`).
+
+### 12. On-Demand Memory Trimming (Working Sets & Standby List)
 - Features native Win32 P/Invoke calling `psapi.dll!EmptyWorkingSet`.
 - Flushes bloated background process working sets into the standby cache, triggers garbage collection, and yields hundreds of megabytes of free RAM on the fly without restarting.
 
-### 8. Emergency Repair Toolkit (DisplayPort & Audio/Microphone)
+### 13. Emergency Repair Toolkit (DisplayPort & Audio/Microphone)
 - **Option [5] DisplayPort Topology Reset:** Clears corrupt multi-monitor configuration caches in `HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers` (`Configuration`, `Connectivity`, `ScaleFactors`). Cleans invalid MMCSS thread priorities (`Affinity = 0`), restarts display services, and forces a clean DisplayPort Link Training handshake.
 - **Option [6] Microphone & Core Services Unblock:** Instantly resets and starts `camsvc` (fixes microphone access in Discord/CS2), starts `LanmanServer`, and switches `Steam Client Service` and `bthserv` to Demand start.
 
@@ -234,7 +261,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ```
 ============================================================
-           ULTRA GAMING MODE CONTROLLER  v2.3
+           ULTRA GAMING MODE CONTROLLER  v2.4
 ============================================================
 
  [1] Arm Ultra Gaming Mode for Next Boot
@@ -243,8 +270,11 @@ The optimizer strictly checks every operation against an inviolable whitelist:
  [4] Run System Diagnostic / Pre-Flight Check
  [5] Repair Display + Reset DisplayPort Cache (Emergency Fix)
  [6] Repair Microphone, Steam + Core Services (Instant Fix)
- [7] Check Current Status
- [8] Exit
+ [7] Purge AMD / DirectX / Vulkan Shader Cache
+ [8] Check & Toggle VBS / HVCI (Core Isolation)
+ [9] Check GPU MSI Mode & Device Priority Status
+[10] Check Current Status
+[11] Exit
 ============================================================
 ```
 
@@ -263,6 +293,15 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Diagn
 
 # Arm Ultra Gaming Mode for next boot
 powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Enable
+
+# Purge AMD / DirectX / Vulkan shader cache
+powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action FlushShaderCache
+
+# Check and toggle VBS / HVCI Memory Integrity
+powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action ToggleVBS
+
+# Check GPU MSI Mode and IRQ Priority status
+powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action GpuMsiStatus
 
 # Clean RAM working sets on demand
 powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action CleanMemory
@@ -283,14 +322,17 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 
 | Menu Option | CLI Action Flag | Description |
 |:---:|:---|:---|
-| **`[1]`** | `-Action Enable` | Creates backup snapshot, suppresses user startup apps, and arms Task Scheduler boot trigger under SYSTEM. |
-| **`[2]`** | `-Action Restore` | Restores all 173 services to their original saved states, re-enables Windows Defender, unregisters boot triggers, and restores startup apps. |
+| **`[1]`** | `-Action Enable` | Creates backup snapshot (services, ULPS, MSI, NTFS, Core Parking, NIC settings), suppresses user startup apps, and arms Task Scheduler boot trigger under SYSTEM. |
+| **`[2]`** | `-Action Restore` | Restores all 173 services, hardware settings (ULPS, MSI, Core Parking, NTFS, NIC), re-enables Windows Defender, unregisters boot triggers, and restores startup apps. |
 | **`[3]`** | `-Action CleanMemory` | Calls `EmptyWorkingSet` via Win32 API to reclaim standby cache and process memory instantly. |
-| **`[4]`** | `-Action Diagnostic` | Runs pre-flight audit: checks administrator privileges, MMCSS profiles, power plans, whitelist safety, blacklist count, and startup bloat. |
+| **`[4]`** | `-Action Diagnostic` | Runs pre-flight audit: checks administrator privileges, power plans & Ryzen Core Parking, MMCSS profiles, network adapters, AMD ULPS, shader caches, GPU MSI mode, VBS/HVCI status, NTFS settings, whitelist protection, and bloat services. |
 | **`[5]`** | `-Action RepairDisplay` | Emergency fix: wipes corrupt registry display topology caches and resets MMCSS game scheduling to default safe parameters. |
 | **`[6]`** | `-Action RepairServices`| Emergency fix: repairs and starts `camsvc` (Microphone privacy), `LanmanServer` (RPC session), and unblocks Steam/Bluetooth. |
-| **`[7]`** | `-Action Status` | Displays current active mode (`Normal`, `Armed`, `GameMode_Active`, `Restored`) and counts active background services. |
-| **`[8]`** | `Exit` | Exits the interactive launcher. |
+| **`[7]`** | `-Action FlushShaderCache`| Purges AMD DirectX, Vulkan, and D3D shader caches (`DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `D3DSCache`) to eliminate shader pipeline micro-stutters. |
+| **`[8]`** | `-Action ToggleVBS` | Checks and toggles Virtualization-Based Security (VBS) and Memory Integrity (HVCI) in registry to eliminate virtualization overhead. |
+| **`[9]`** | `-Action GpuMsiStatus` | Displays GPU Message Signaled Interrupts (MSI) status and IRQ priority (`DevicePriority = 3`). |
+| **`[10]`**| `-Action Status` | Displays current active mode, boot trigger, fail-safe watchdog, active services count, Core Parking, AMD ULPS, GPU MSI, and VBS status. |
+| **`[11]`**| `Exit` | Exits the interactive launcher. |
 
 ---
 

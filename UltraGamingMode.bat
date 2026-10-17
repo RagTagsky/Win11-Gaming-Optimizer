@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 REM ============================================================
-REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.3
+REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.4
 REM  Automatically elevates to admin safely with recursion guard.
 REM ============================================================
 
@@ -24,12 +24,12 @@ exit /b
 
 :start
 cd /d "%~dp0"
-title Ultra Gaming Mode Controller v2.3
+title Ultra Gaming Mode Controller v2.4
 
 :menu
 cls
 echo ============================================================
-echo            ULTRA GAMING MODE CONTROLLER  v2.3
+echo            ULTRA GAMING MODE CONTROLLER  v2.4
 echo ============================================================
 echo.
 echo  [1] Arm Ultra Gaming Mode for Next Boot
@@ -38,11 +38,14 @@ echo  [3] Flush and Clean RAM Cache Now (Standby List)
 echo  [4] Run System Diagnostic / Pre-Flight Check
 echo  [5] Repair Display + Reset DisplayPort Cache (Emergency Fix)
 echo  [6] Repair Microphone, Steam + Core Services (Instant Fix)
-echo  [7] Check Current Status
-echo  [8] Exit
+echo  [7] Purge AMD / DirectX / Vulkan Shader Cache
+echo  [8] Check & Toggle VBS / HVCI (Core Isolation)
+echo  [9] Check GPU MSI Mode & Device Priority Status
+echo [10] Check Current Status
+echo [11] Exit
 echo.
 echo ============================================================
-set /p choice="Select an option [1-8]: "
+set /p choice="Select an option [1-11]: "
 
 if "%choice%"=="1" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Enable
@@ -81,12 +84,33 @@ if "%choice%"=="6" (
     goto menu
 )
 if "%choice%"=="7" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Status
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action FlushShaderCache
     echo.
     pause
     goto menu
 )
 if "%choice%"=="8" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action ToggleVBS
+    echo.
+    pause
+    goto menu
+)
+if "%choice%"=="9" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action GpuMsiStatus
+    echo.
+    pause
+    goto menu
+)
+if "%choice%"=="10" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Status
+    echo.
+    pause
+    goto menu
+)
+if "%choice%"=="11" (
+    exit
+)
+if /i "%choice%"=="q" (
     exit
 )
 
