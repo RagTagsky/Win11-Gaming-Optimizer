@@ -1,12 +1,3 @@
-function Test-IsServiceProtected {
-    [CmdletBinding()]
-    param (
-        [Parameter(Mandatory = $true)] [string]$ServiceName,
-        [Parameter(Mandatory = $true)] [string[]]$Whitelist
-    )
-    return ($Whitelist -contains $ServiceName)
-}
-
 function Set-ServiceStateSafe {
     [CmdletBinding()]
     param (
@@ -29,7 +20,7 @@ function Set-ServiceStateSafe {
         }
     }
 
-    if (-not $IsRestoring -and $Whitelist -and (Test-IsServiceProtected -ServiceName $ServiceName -Whitelist $Whitelist)) {
+    if (-not $IsRestoring -and $Whitelist -and ($Whitelist -contains $ServiceName)) {
         Write-Warning "Service '$ServiceName' is protected by the Whitelist. Skipping modification."
         return $false
     }
@@ -39,11 +30,6 @@ function Set-ServiceStateSafe {
         "Manual"    { 3 }
         "Disabled"  { 4 }
     }
-    $scType = switch ($StartupType) {
-        "Automatic" { "auto" }
-        "Manual"    { "demand" }
-        "Disabled"  { "disabled" }
-    }
 
     $configured = $false
     try {
@@ -52,36 +38,29 @@ function Set-ServiceStateSafe {
         $configured = $true
     }
     catch {
-        $null = sc.exe config "$ServiceName" start= $scType 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "  [+] Service '$ServiceName' configured via sc.exe fallback ($scType)." -ForegroundColor Green
-            $configured = $true
-        }
-        else {
-            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
-            if (Test-Path $regPath) {
-                try {
-                    Set-ItemProperty -Path $regPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction Stop
-                    Write-Host "  [+] Service '$ServiceName' configured via Direct Registry ($StartupType / Start=$startVal)." -ForegroundColor Green
-                    $configured = $true
-                }
-                catch {
-                    Write-Warning "Failed to configure service '$ServiceName': $($_.Exception.Message)"
-                }
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+        if (Test-Path $regPath) {
+            try {
+                Set-ItemProperty -Path $regPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction Stop
+                Write-Host "  [+] Service '$ServiceName' configured via Direct Registry ($StartupType / Start=$startVal)." -ForegroundColor Green
+                $configured = $true
+            }
+            catch {
+                Write-Warning "Failed to configure service '$ServiceName': $($_.Exception.Message)"
             }
         }
     }
 
     if ($StopNow) {
         if ($service.Status -eq 'Running') {
-            $null = sc.exe stop "$ServiceName" 2>&1
+            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
             Write-Host "  [!] Sent stop command to '$ServiceName'." -ForegroundColor Yellow
         }
         # Also stop any active per-user service instances (e.g. CaptureService_5e3a4, CDPUserSvc_5e3a4)
         $userInstances = Get-Service -Name "$($ServiceName)_*" -ErrorAction SilentlyContinue
         foreach ($uInst in $userInstances) {
             if ($uInst.Status -eq 'Running') {
-                $null = sc.exe stop "$($uInst.Name)" 2>&1
+                Stop-Service -Name $uInst.Name -Force -ErrorAction SilentlyContinue
                 Write-Host "  [!] Sent stop command to per-user instance '$($uInst.Name)'." -ForegroundColor Yellow
             }
         }
@@ -89,3 +68,4 @@ function Set-ServiceStateSafe {
 
     return $configured
 }
+

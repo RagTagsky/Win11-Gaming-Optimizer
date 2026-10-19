@@ -131,8 +131,7 @@ function Enable-UltimatePerformance {
     # If the user already has a tuned high-performance scheme (like Bitsum, Revision, Ultimate), keep it!
     $activeGuid = Get-ActivePowerSchemeGuid
     $activeRaw = powercfg /getactivescheme 2>&1
-    $isAlreadyHighPerf = ($activeGuid -in @("e9a42b02-d5df-448d-aa00-03f14749eb61", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c")) -or
-                         ($activeRaw -match "(?i)Bitsum|Ultimate|Revision|High [P|p]erformance|Max|Высокая производительность|Максимальная производительность")
+    $isAlreadyHighPerf = Test-IsHighPerformanceScheme -SchemeGuid $activeGuid -RawOutput $activeRaw
     if ($isAlreadyHighPerf) {
         Write-Host "  [+] Current active power scheme is already optimized: $activeRaw" -ForegroundColor Green
         Write-Host "  [+] Retaining active plan to avoid PCIe Link State / DisplayPort timing disruptions." -ForegroundColor Green
@@ -306,47 +305,17 @@ function Optimize-SystemMemory {
     Write-Host "[*] Flushing $modeText..." -ForegroundColor Cyan
 
     $initialMem = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory
-    $trimmedProcesses = 0
-
-    # Whitelist all kernel, display, GPU driver, audio, and shell infrastructure processes
-    $protectedProcNames = @(
-        "System", "Idle", "Registry", "smss", "csrss", "wininit", "services", "lsass",
-        "dwm", "audiodg", "vgk", "vgc",
-        "nvcontainer", "nvdisplay.container", "nvcplui",
-        "amdfendrsr", "RadeonSoftware", "amdow", "AMDNoiseSuppression", "atiesrxx", "atidxx",
-        "igfxCUIService", "igfxEM",
-        "fontdrvhost", "winlogon", "sihost", "explorer", "svchost", "SearchHost", "ShellExperienceHost"
-    )
-
-    $processes = Get-Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.Id -gt 4 -and ($protectedProcNames -notcontains $_.ProcessName)
-    }
-
-    foreach ($proc in $processes) {
-        try {
-            if ($proc.Handle) {
-                $null = [Win32MemoryOptimizer]::EmptyWorkingSet($proc.Handle)
-                $trimmedProcesses++
+    # shortcut: flush kernel standby cache directly instead of EmptyWorkingSet to prevent pagefile thrashing on 8GB HDD systems
+    try {
+        if (([System.Management.Automation.PSTypeName]'Win32StandbyCleaner').Type) {
+            $standbyRes = [Win32StandbyCleaner]::FlushStandbyList()
+            if ($standbyRes -eq 0) {
+                Write-Host "  [+] Kernel standby cache list successfully flushed to free page list." -ForegroundColor Green
             }
         }
-        catch {
-            # Access denied on system-protected processes is expected and ignored
-        }
     }
-
-    # If Aggressive (e.g. LowRamProfile <= 8GB), flush standby list via NtSetSystemInformation and trigger multi-pass GC
-    if ($Aggressive) {
-        try {
-            if (([System.Management.Automation.PSTypeName]'Win32StandbyCleaner').Type) {
-                $standbyRes = [Win32StandbyCleaner]::FlushStandbyList()
-                if ($standbyRes -eq 0) {
-                    Write-Host "  [+] Kernel standby cache list successfully flushed to free page list." -ForegroundColor Green
-                }
-            }
-        }
-        catch {
-            Write-Verbose "FlushStandbyList execution notice: $($_.Exception.Message)"
-        }
+    catch {
+        Write-Verbose "FlushStandbyList execution notice: $($_.Exception.Message)"
     }
 
     [System.GC]::Collect()
@@ -356,9 +325,9 @@ function Optimize-SystemMemory {
     $reclaimedKb = [math]::Max(0, ($finalMem - $initialMem))
     $reclaimedMb = [math]::Round($reclaimedKb / 1024, 2)
 
-    Write-Host "  [+] Cleaned working sets across $trimmedProcesses non-critical processes." -ForegroundColor Green
+    Write-Host "  [+] Memory optimization complete via standby cache purge." -ForegroundColor Green
     if ($Aggressive) {
-        Write-Host "  [+] Low-RAM Budget Guard: Working set trim & standby cache reclaim complete." -ForegroundColor Green
+        Write-Host "  [+] Low-RAM Budget Guard: Standby cache reclaimed safely without HDD thrashing." -ForegroundColor Green
     }
     Write-Host "  [+] Free physical RAM increased by $reclaimedMb MB." -ForegroundColor Green
     return $reclaimedMb
@@ -437,23 +406,26 @@ function Get-ResilientBootTimestamp {
     return (Get-Date).ToString("o")
 }
 
-function Unroll-NestedCollection {
+function Test-IsLowRamSystem {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [int64]$TotalRamBytes
+    )
+    return ($TotalRamBytes -gt 0 -and $TotalRamBytes -le [int64](8.5 * 1024 * 1024 * 1024))
+}
+
+function Test-IsHighPerformanceScheme {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
-        $InputObject
-    )
+        [string]$SchemeGuid = "",
 
-    $result = @()
-    if ($null -eq $InputObject) { return $result }
-    foreach ($entry in @($InputObject)) {
-        if ($entry -is [array] -or ($entry -is [System.Collections.IEnumerable] -and -not ($entry -is [string] -or $entry -is [hashtable]))) {
-            foreach ($inner in $entry) { $result += $inner }
-        } else {
-            $result += $entry
-        }
-    }
-    return $result
+        [Parameter(Mandatory = $false)]
+        [string]$RawOutput = ""
+    )
+    return ($SchemeGuid -in @("e9a42b02-d5df-448d-aa00-03f14749eb61", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c")) -or
+           ($RawOutput -match "(?i)Bitsum|Ultimate|Revision|High [P|p]erformance|Max|Высокая производительность|Максимальная производительность")
 }
 
 function Select-PrimaryGamingGpu {
@@ -510,25 +482,24 @@ function Resolve-StorageDeviceMediaType {
     )
 
     $hddModelPattern = "(?i)HDD|WD[0-9]|WDC|ST[0-9]|Hitachi|Seagate|Barracuda|Spinpoint|MQ01|DT01|Deskstar|Caviar|Blue|Green|Red|Purple|Black|FireCuda|IronWolf"
-    $ssdModelPattern = "(?i)SSD|NVMe|NAND|EVO|PRO|Crucial|Kingston|KIOXIA|Lexar|Sandisk|Micron|SK hynix|Adata|Corsair|Intel SSD|Sabrent"
+    $ssdModelPattern = "(?i)SSD|NVMe|NAND|EVO|PRO|Crucial|Kingston|KIOXIA|Lexar|Sandisk|Micron|SK hynix|Adata|Corsair|Intel SSD|Sabrent|SN[0-9]|FireCuda\s+[0-9]{3}"
 
     $isHdd = $false
     $resolvedMedia = $MediaType
 
-    if ($MediaType -match "HDD" -or ($SpindleSpeed -gt 0)) {
-        $isHdd = $true
-        $resolvedMedia = "HDD"
-    } elseif ($MediaType -match "SSD" -or $BusType -match "NVMe") {
+    # Priority 1: Check SSD / NVMe indicators first to protect NVMe drives (e.g. WD Black SN770, FireCuda 530)
+    if ($MediaType -match "SSD" -or $BusType -match "NVMe" -or $Model -match "(?i)SN[0-9]|NVMe|SSD|FireCuda\s+[0-9]{3}|Optane") {
         $isHdd = $false
         $resolvedMedia = "SSD"
-    } else {
-        if ($Model -match $hddModelPattern) {
-            $isHdd = $true
-            $resolvedMedia = "HDD"
-        } elseif ($Model -match $ssdModelPattern -or $BusType -match "NVMe") {
-            $isHdd = $false
-            $resolvedMedia = "SSD"
-        }
+    } elseif ($MediaType -match "HDD" -or ($SpindleSpeed -gt 0)) {
+        $isHdd = $true
+        $resolvedMedia = "HDD"
+    } elseif ($Model -match $ssdModelPattern) {
+        $isHdd = $false
+        $resolvedMedia = "SSD"
+    } elseif ($Model -match $hddModelPattern) {
+        $isHdd = $true
+        $resolvedMedia = "HDD"
     }
 
     return @{
@@ -575,7 +546,7 @@ function Get-NetworkAdapterGamingProperties {
             PowerSavingMode     = if ($pwr) { ($pwr.RegistryValue | Select-Object -First 1) } else { $null }
         }
     }
-    return ,$results
+    return $results
 }
 
 function Set-NetworkGamingOptimizations {
@@ -664,8 +635,7 @@ function Restore-NetworkGamingOptimizations {
 
     # Restore advanced properties on physical adapters
     if ($NetworkAdapterProperties) {
-        $flatAdapters = @(Unroll-NestedCollection -InputObject $NetworkAdapterProperties)
-        foreach ($item in $flatAdapters) {
+        foreach ($item in @($NetworkAdapterProperties)) {
             $aName = if ($item -is [hashtable]) { $item["AdapterName"] } else { $item.AdapterName }
             if (-not $aName) { continue }
 
@@ -759,18 +729,12 @@ function Repair-CoreServices {
 
     # 1. camsvc (Capability Access Manager Service) - Required for Microphone and Camera privacy access
     Write-Host "[*] Configuring Capability Access Manager (Microphone & Audio Privacy)..." -ForegroundColor Cyan
-    $null = sc.exe config "camsvc" start= demand
+    Set-Service -Name "camsvc" -StartupType Manual -ErrorAction SilentlyContinue
     $camsvc = Get-Service -Name "camsvc" -ErrorAction SilentlyContinue
     if ($camsvc) {
         if ($camsvc.Status -ne "Running") {
-            try {
-                Start-Service -Name "camsvc" -ErrorAction Stop
-                Write-Host "  [+] Service 'camsvc' started successfully (Microphone access unblocked)." -ForegroundColor Green
-            }
-            catch {
-                $null = sc.exe start "camsvc"
-                Write-Host "  [+] Service 'camsvc' start signaled via sc.exe." -ForegroundColor Green
-            }
+            Start-Service -Name "camsvc" -ErrorAction SilentlyContinue
+            Write-Host "  [+] Service 'camsvc' started successfully (Microphone access unblocked)." -ForegroundColor Green
         }
         else {
             Write-Host "  [+] Service 'camsvc' is already running." -ForegroundColor Green
@@ -779,18 +743,12 @@ function Repair-CoreServices {
 
     # 2. LanmanServer (Server service) - Required for Windows RPC session checks and file sharing
     Write-Host "[*] Configuring Server service (LanmanServer)..." -ForegroundColor Cyan
-    $null = sc.exe config "LanmanServer" start= auto
+    Set-Service -Name "LanmanServer" -StartupType Automatic -ErrorAction SilentlyContinue
     $srv = Get-Service -Name "LanmanServer" -ErrorAction SilentlyContinue
     if ($srv) {
         if ($srv.Status -ne "Running") {
-            try {
-                Start-Service -Name "LanmanServer" -ErrorAction Stop
-                Write-Host "  [+] Service 'LanmanServer' started successfully (RPC session unblocked)." -ForegroundColor Green
-            }
-            catch {
-                $null = sc.exe start "LanmanServer"
-                Write-Host "  [+] Service 'LanmanServer' start signaled via sc.exe." -ForegroundColor Green
-            }
+            Start-Service -Name "LanmanServer" -ErrorAction SilentlyContinue
+            Write-Host "  [+] Service 'LanmanServer' started successfully (RPC session unblocked)." -ForegroundColor Green
         }
         else {
             Write-Host "  [+] Service 'LanmanServer' is already running." -ForegroundColor Green
@@ -801,23 +759,23 @@ function Repair-CoreServices {
     Write-Host "[*] Configuring Steam Client Service..." -ForegroundColor Cyan
     $steamSvc = Get-Service -Name "Steam Client Service" -ErrorAction SilentlyContinue
     if ($steamSvc) {
-        $null = sc.exe config "Steam Client Service" start= demand
-        Write-Host "  [+] Service 'Steam Client Service' set to Manual (demand) for clean first-launch." -ForegroundColor Green
+        Set-Service -Name "Steam Client Service" -StartupType Manual -ErrorAction SilentlyContinue
+        Write-Host "  [+] Service 'Steam Client Service' set to Manual for clean first-launch." -ForegroundColor Green
     }
 
     # 4. Bluetooth Support Service (bthserv) - Required for Bluetooth gamepads and wireless headsets
     Write-Host "[*] Checking Bluetooth Services..." -ForegroundColor Cyan
     $bth = Get-Service -Name "bthserv" -ErrorAction SilentlyContinue
     if ($bth) {
-        $null = sc.exe config "bthserv" start= demand
-        Write-Host "  [+] Service 'bthserv' set to Manual (demand) for Bluetooth gamepads/audio." -ForegroundColor Green
+        Set-Service -Name "bthserv" -StartupType Manual -ErrorAction SilentlyContinue
+        Write-Host "  [+] Service 'bthserv' set to Manual for Bluetooth gamepads/audio." -ForegroundColor Green
     }
 
     # 5. Rockstar Game Library Service
     $rockstar = Get-Service -Name "Rockstar Service" -ErrorAction SilentlyContinue
     if ($rockstar) {
-        $null = sc.exe config "Rockstar Service" start= demand
-        Write-Host "  [+] Service 'Rockstar Service' set to Manual (demand)." -ForegroundColor Green
+        Set-Service -Name "Rockstar Service" -StartupType Manual -ErrorAction SilentlyContinue
+        Write-Host "  [+] Service 'Rockstar Service' set to Manual." -ForegroundColor Green
     }
 
     Write-Host "`n[SUCCESS] Microphone, Steam, LanmanServer, and peripheral services are fully unblocked!" -ForegroundColor Green
@@ -1051,7 +1009,7 @@ function Get-HardwareProfile {
     }
     $totalRamGb = [math]::Round($totalRamBytes / 1GB, 2)
     # LowRamProfile: <= 8.5 GB (covers 8 GB systems with hardware reservations)
-    $lowRam = ($totalRamBytes -gt 0 -and $totalRamBytes -le [int64](8.5 * 1024 * 1024 * 1024))
+    $lowRam = Test-IsLowRamSystem -TotalRamBytes $totalRamBytes
 
     $pfManaged = if ($cs -and $null -ne $cs.AutomaticManagedPagefile) { [bool]$cs.AutomaticManagedPagefile } else { $false }
     $pfReg = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "PagingFiles", "ExistingPageFiles" -ErrorAction SilentlyContinue
@@ -1097,7 +1055,7 @@ function Get-HardwareProfile {
                     $d = $drives | Select-Object -First 1
                     $diskModel = $d.Model
                     $diskNum   = $d.Index
-                    $resolved  = Resolve-StorageDeviceMediaType -Model $d.Model
+                    $resolved  = Resolve-StorageDeviceMediaType -Model $d.Model -BusType $d.InterfaceType
                     $mediaType = $resolved.MediaType
                     $isHdd     = $resolved.IsHdd
                 }
@@ -1126,7 +1084,7 @@ function Get-HardwareProfile {
         try {
             $allDrives = @(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue)
             foreach ($d in $allDrives) {
-                $res = Resolve-StorageDeviceMediaType -Model $d.Model
+                $res = Resolve-StorageDeviceMediaType -Model $d.Model -BusType $d.InterfaceType
                 if ($res.IsHdd) {
                     $anyHdd = $true
                     break
@@ -1205,7 +1163,7 @@ function Get-AmdGpuDriverClassKeys {
     catch {
         Write-Warning "Could not enumerate GPU driver class keys: $($_.Exception.Message)"
     }
-    return ,$keys
+    return $keys
 }
 
 function Set-AmdUlpsState {
@@ -1250,8 +1208,7 @@ function Restore-AmdUlpsState {
 
     if ($UlpsConfig) {
         Write-Host "[*] Restoring AMD ULPS settings..." -ForegroundColor Cyan
-        $flatUlps = @(Unroll-NestedCollection -InputObject $UlpsConfig)
-        foreach ($item in $flatUlps) {
+        foreach ($item in @($UlpsConfig)) {
             $regPath = if ($item -is [hashtable]) { $item["Path"] } else { $item.Path }
             $origVal = if ($item -is [hashtable]) { $item["EnableUlps"] } else { $item.EnableUlps }
             if ($regPath) {
@@ -1397,16 +1354,21 @@ function Set-ProcessorIdleMinCores {
         [string]$CpuVendor = "",
 
         [Parameter(Mandatory = $false)]
-        [switch]$LowCore
+        [switch]$LowCore,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$SkipSetActive
     )
 
     Write-Host "[*] Configuring Processor Core Parking (CPMINCORES = $Percent%)..." -ForegroundColor Cyan
     try {
         $out1 = powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES $Percent 2>&1
-        $out2 = powercfg -setactive SCHEME_CURRENT 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "powercfg failed to apply CPMINCORES ($LASTEXITCODE): $out1 $out2"
-            return $false
+        if (-not $SkipSetActive) {
+            $out2 = powercfg -setactive SCHEME_CURRENT 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "powercfg failed to apply CPMINCORES ($LASTEXITCODE): $out1 $out2"
+                return $false
+            }
         }
         if ($Percent -eq 100) {
             if ($LowCore) {
@@ -1520,8 +1482,8 @@ function Apply-CpuGamingOptimizations {
 
     Write-Host "[*] Applying Adaptive CPU Gaming Optimizations ($($hw.CpuVendor), $($hw.LogicalCores) Threads)..." -ForegroundColor Cyan
 
-    # 1. Core unparking (CPMINCORES = 100%) for both Intel and AMD
-    Set-ProcessorIdleMinCores -Percent 100 -CpuVendor $hw.CpuVendor -LowCore:$hw.LowCoreProfile | Out-Null
+    # 1. Core unparking (CPMINCORES = 100%) for both Intel and AMD (skip immediate setactive to batch with frequency lock)
+    Set-ProcessorIdleMinCores -Percent 100 -CpuVendor $hw.CpuVendor -LowCore:$hw.LowCoreProfile -SkipSetActive | Out-Null
 
     # 2. Minimum & Maximum processor frequency to 100%
     try {
@@ -1867,28 +1829,18 @@ function Set-NTFSGamingOptimizations {
 
     Write-Host "[*] Applying NTFS File System I/O Optimizations (DisableLastAccess & Disable8dot3)..." -ForegroundColor Cyan
     try {
-        $out1 = fsutil behavior set disablelastaccess 1 2>&1
-        $code1 = $LASTEXITCODE
-        $out2 = fsutil behavior set disable8dot3 1 2>&1
-        $code2 = $LASTEXITCODE
+        $fsPath = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+        Set-ItemProperty -Path $fsPath -Name "NtfsDisableLastAccessUpdate" -Value 1 -Type DWord -Force -ErrorAction Stop
+        Write-Host "  [+] NTFS last access timestamp updates disabled (eliminates file read write amplification)." -ForegroundColor Green
 
-        if ($code1 -eq 0) {
-            Write-Host "  [+] NTFS last access timestamp updates disabled (eliminates file read write amplification)." -ForegroundColor Green
-        } else {
-            Write-Warning "Could not configure disablelastaccess ($code1): $out1"
-        }
-
-        if ($code2 -eq 0) {
-            Write-Host "  [+] NTFS 8.3 legacy short name generation disabled (speeds up directory lookups)." -ForegroundColor Green
-        } else {
-            Write-Warning "Could not configure disable8dot3 ($code2): $out2"
-        }
+        Set-ItemProperty -Path $fsPath -Name "NtfsDisable8dot3NameCreation" -Value 1 -Type DWord -Force -ErrorAction Stop
+        Write-Host "  [+] NTFS 8.3 legacy short name generation disabled (speeds up directory lookups)." -ForegroundColor Green
 
         if ($IsHdd) {
             Write-Host "  [+] Mechanical HDD Protection: Disk head thrashing minimized by eliminating metadata update writes." -ForegroundColor Green
         }
 
-        return ($code1 -eq 0 -and $code2 -eq 0)
+        return $true
     }
     catch {
         Write-Warning "Could not configure NTFS optimizations: $($_.Exception.Message)"

@@ -23,7 +23,17 @@ param (
     [switch]$Watchdog
 )
 
-# ── Admin Rights Check ────────────────────────────────────────────────────────
+# ── Admin Rights & Watchdog Delegation Check ──────────────────────────────────
+$isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem
+if ($Watchdog) {
+    # If the SYSTEM scheduled task is armed, delegate watchdog handling entirely to it (prevents user-session race/elevation prompts)
+    $hasScheduledWatchdog = [bool](Get-ScheduledTask -TaskName "UltraGamingMode_Watchdog" -ErrorAction SilentlyContinue)
+    if (-not $isSystem -and $hasScheduledWatchdog) {
+        Write-Verbose "Watchdog invoked in interactive user session. Session management is delegated to SYSTEM scheduled task."
+        exit 0
+    }
+}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
@@ -32,8 +42,7 @@ if (-not $isAdmin) {
         Write-Warning "Running in non-elevated mode. Operating with current user privileges."
     }
     elseif ($Watchdog) {
-        # When invoked under a filtered UAC token by RunOnce, request elevation
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$PSCommandPath`" -Action $Action -Watchdog" -Verb RunAs
+        Write-Warning "Watchdog invoked without administrator privileges. Session management delegated to scheduled task."
         exit 0
     }
     else {
@@ -59,25 +68,7 @@ $startupCfg = Get-Content $startupAppsPath -Raw | ConvertFrom-Json
 
 # ── Task Scheduler Names ──────────────────────────────────────────────────────
 $taskName = "UltraGamingMode_BootTrigger"
-
-function Get-ResilientBootTimestamp {
-    [CmdletBinding()]
-    param()
-
-    try {
-        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-        if ($os -and $os.LastBootUpTime) {
-            return $os.LastBootUpTime.ToString("o")
-        }
-    } catch {}
-
-    try {
-        $uptime = [System.TimeSpan]::FromMilliseconds([System.Environment]::TickCount64)
-        return ((Get-Date) - $uptime).ToString("o")
-    } catch {}
-
-    return (Get-Date).ToString("o")
-}
+$watchdogTaskName = "UltraGamingMode_Watchdog"
 
 # ── Helper: Register Boot-Time Tasks ─────────────────────────────────────────
 function Register-BootTasks {
@@ -111,17 +102,78 @@ function Register-BootTasks {
         -Settings $taskSettings `
         -Force | Out-Null
 
-    Write-Host "[+] Next-Boot Task Scheduler trigger successfully armed." -ForegroundColor Green
+    # Register logon watchdog scheduled task to handle session transitions with full privileges without UAC prompts
+    $watchdogAction = New-ScheduledTaskAction `
+        -Execute $psExe `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$actionScript`" -Action Restore -Watchdog"
+
+    $watchdogTrigger = New-ScheduledTaskTrigger -AtLogOn
+
+    Register-ScheduledTask `
+        -TaskName $watchdogTaskName `
+        -Action $watchdogAction `
+        -Trigger $watchdogTrigger `
+        -Principal $taskPrincipal `
+        -Settings $taskSettings `
+        -Force | Out-Null
+
+    Write-Host "[+] Next-Boot and Logon Task Scheduler triggers successfully armed." -ForegroundColor Green
 }
 
 # ── Helper: Clean Up All Scheduled Triggers ──────────────────────────────────
 function Unregister-BootTasks {
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $watchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-ItemProperty `
         -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
         -Name "*UltraGamingModeRestore" `
         -ErrorAction SilentlyContinue
     Write-Host "[+] Scheduled tasks and RunOnce watchdogs cleaned up." -ForegroundColor Gray
+}
+
+# ── Helper: Show Low-Latency Subsystem Status ────────────────────────────────
+function Show-LatencySubsystemStatus {
+    $kdpc = Get-KernelDpcConfig
+    $input = Get-InputBufferConfig
+    $bcd = Get-BcdeditTimerConfig
+    $tcp = Get-TcpStackConfig
+    $hags = Get-HagsGpuSchedulingConfig
+
+    Write-Host "`n[1] Kernel DPC & Memory Management:" -ForegroundColor Yellow
+    $dpcVal = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "1" }
+    $dpcTxt = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [OPTIMAL - Worker DPC delay bypassed]" } else { "Threaded ($dpcVal) [Default]" }
+    $pageTxt = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [OPTIMAL - Drivers locked in RAM]" } else { "Disabled ($($kdpc.DisablePagingExecutive)) [Pageable]" }
+    $prioTxt = if ($kdpc.Win32PrioritySeparation -eq 38) { "0x26 / 38 [OPTIMAL - 3:1 Foreground Boost]" } else { "$($kdpc.Win32PrioritySeparation)" }
+    $pwrTxt = if ($kdpc.PowerThrottlingOff -eq 1) { "Disabled (1) [OPTIMAL - No Thread Throttling]" } else { "Active ($($kdpc.PowerThrottlingOff))" }
+
+    Write-Host "  ThreadDpcEnable:         $dpcTxt" -ForegroundColor $(if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" })
+    Write-Host "  DisablePagingExecutive:  $pageTxt" -ForegroundColor $(if ($kdpc.DisablePagingExecutive -eq 1) { "Green" } else { "Yellow" })
+    Write-Host "  Win32PrioritySeparation: $prioTxt" -ForegroundColor $(if ($kdpc.Win32PrioritySeparation -eq 38) { "Green" } else { "Yellow" })
+    Write-Host "  PowerThrottlingOff:      $pwrTxt" -ForegroundColor $(if ($kdpc.PowerThrottlingOff -eq 1) { "Green" } else { "Yellow" })
+
+    Write-Host "`n[2] Direct Peripheral Input Queues:" -ForegroundColor Yellow
+    $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
+    $isMouOpt = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32)
+    $mouTxt = if ($isMouOpt) { "$($input.MouseDataQueueSize) packets [OPTIMAL - Minimal Latency with Anti-Drop Headroom]" } else { "$mouVal [Default: 100]" }
+    $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
+    $isKbdOpt = ($input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
+    $kbdTxt = if ($isKbdOpt) { "$($input.KeyboardDataQueueSize) packets [OPTIMAL - Direct Delivery]" } else { "$kbdVal [Default: 100]" }
+    Write-Host "  MouseDataQueueSize:      $mouTxt" -ForegroundColor $(if ($isMouOpt) { "Green" } else { "Yellow" })
+    Write-Host "  KeyboardDataQueueSize:   $kbdTxt" -ForegroundColor $(if ($isKbdOpt) { "Green" } else { "Yellow" })
+
+    Write-Host "`n[3] BCDedit Kernel System Timers:" -ForegroundColor Yellow
+    $tickVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "no" }
+    $tickTxt = if ($bcd.DynamicTick -eq "yes") { "Disabled (yes) [OPTIMAL - Dynamic Tick Off]" } else { "$tickVal (Tick Active) [Default]" }
+    $tscVal = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
+    $tscTxt = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Enhanced [OPTIMAL - Synced Core TSC]" } else { "$tscVal [Default]" }
+    Write-Host "  disabledynamictick:      $tickTxt" -ForegroundColor $(if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" })
+    Write-Host "  tscsyncpolicy:           $tscTxt" -ForegroundColor $(if ($bcd.TscSyncPolicy -eq "Enhanced") { "Green" } else { "Yellow" })
+
+    Write-Host "`n[4] TCP Gaming Stack & HAGS:" -ForegroundColor Yellow
+    $tsTxt = if ($tcp.Timestamps -eq "disabled") { "Disabled [OPTIMAL - 12B Header Overhead Eliminated]" } else { "$($tcp.Timestamps)" }
+    $hagsTxt = if ($hags.HwSchMode -eq 2) { "Enabled (2) [OPTIMAL - Hardware GPU Scheduling Active]" } else { "Disabled ($($hags.HwSchMode))" }
+    Write-Host "  TCP Timestamps:          $tsTxt" -ForegroundColor $(if ($tcp.Timestamps -eq "disabled") { "Green" } else { "Yellow" })
+    Write-Host "  GPU HAGS (HwSchMode):    $hagsTxt" -ForegroundColor $(if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" })
 }
 
 # ── Main Action Switch ────────────────────────────────────────────────────────
@@ -159,54 +211,55 @@ switch ($Action) {
         # This action is invoked AUTOMATICALLY by Task Scheduler under SYSTEM at startup.
         # It reads the armed state, disables blacklisted services, and arms the auto-restore.
 
-        $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
-        if (Test-Path $stateFile) {
-            $stateData = Get-Content -Path $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        try {
+            $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
+            if (Test-Path $stateFile) {
+                $stateData = Get-Content -Path $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
 
-            if ($stateData.State -eq "Armed") {
-                # 1. Disable all blacklisted services
-                $disabledCount = 0
-                foreach ($item in $blacklist) {
-                    $res = Set-ServiceStateSafe -ServiceName $item.Name -StartupType "Disabled" -StopNow -Whitelist $whitelist
-                    if ($res) { $disabledCount++ }
-                }
-
-                # 2. Activate safe network gaming tweaks, power scheme and adaptive hardware optimizations
-                $hw = Get-HardwareProfile
-                Enable-UltimatePerformance | Out-Null
-                Set-GamingMultimediaConfig | Out-Null
-                Apply-CpuGamingOptimizations -HardwareProfile $hw | Out-Null
-                Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
-                Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
-                Set-NetworkGamingOptimizations | Out-Null
-                Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
-                Set-InputBufferOptimizations | Out-Null
-                Set-BcdeditTimerOptimizations | Out-Null
-                Set-TcpGamingStackOptimizations | Out-Null
-                Set-HagsGpuScheduling | Out-Null
-
-                # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
-                if ($hw.HddProfile) {
-                    Disable-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
-                    Disable-ScheduledTask -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
-                    foreach ($sName in @("SysMain", "WSearch")) {
-                        Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                if ($stateData.State -eq "Armed") {
+                    # 1. Disable all blacklisted services
+                    $disabledCount = 0
+                    foreach ($item in $blacklist) {
+                        $res = Set-ServiceStateSafe -ServiceName $item.Name -StartupType "Disabled" -StopNow -Whitelist $whitelist
+                        if ($res) { $disabledCount++ }
                     }
-                }
 
-                # If Low-RAM detected, aggressively reclaim memory
-                if ($hw.LowRamProfile) {
-                    Optimize-SystemMemory -Aggressive | Out-Null
-                }
+                    # 2. Activate safe network gaming tweaks, power scheme and adaptive hardware optimizations
+                    $hw = if ($stateData.HardwareProfile) { $stateData.HardwareProfile } else { Get-HardwareProfile }
+                    Enable-UltimatePerformance | Out-Null
+                    Set-GamingMultimediaConfig | Out-Null
+                    Apply-CpuGamingOptimizations -HardwareProfile $hw | Out-Null
+                    Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
+                    Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
+                    Set-NetworkGamingOptimizations | Out-Null
+                    Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
+                    Set-InputBufferOptimizations | Out-Null
+                    Set-BcdeditTimerOptimizations | Out-Null
+                    Set-TcpGamingStackOptimizations | Out-Null
+                    Set-HagsGpuScheduling | Out-Null
 
-                # 3. Update state to active and capture boot timestamp
-                $bootTime = Get-ResilientBootTimestamp
-                $stateData.State = "GameMode_Active"
-                $stateData.BootRunCount = [int]$stateData.BootRunCount + 1
-                $stateData.GamingBootTime = $bootTime
-                $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $stateFile -Force -Encoding UTF8
+                    # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
+                    if ($hw.HddProfile) {
+                        Disable-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
+                        Disable-ScheduledTask -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
+                        foreach ($sName in @("SysMain", "WSearch")) {
+                            Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                        }
+                    }
 
-                try {
+                    # If Low-RAM detected, aggressively reclaim memory
+                    if ($hw.LowRamProfile) {
+                        Optimize-SystemMemory -Aggressive | Out-Null
+                    }
+
+                    # 3. Update state to active and capture boot timestamp
+                    $bootTime = Get-ResilientBootTimestamp
+                    $stateData.State = "GameMode_Active"
+                    $stateData.SessionLogonHandled = $false
+                    $stateData.BootRunCount = [int]$stateData.BootRunCount + 1
+                    $stateData.GamingBootTime = $bootTime
+                    $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $stateFile -Force -Encoding UTF8
+
                     # 4. Arm RunOnce fail-safe watchdog: fires on next reboot/logon after gaming mode
                     $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
                     $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -217,17 +270,17 @@ switch ($Action) {
                         -Value $restoreCmd `
                         -Force
                 }
-                finally {
-                    # 5. Remove the boot trigger so it does not fire on every boot even if watchdog arming encountered issues.
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+                elseif ($stateData.State -eq "GameMode_Active") {
+                    # If we reach here, the PC was rebooted while in gaming mode.
+                    Write-Host "[*] System rebooted after Gaming Mode. Restoring normal state..." -ForegroundColor Cyan
+                    Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg
+                    Unregister-BootTasks
                 }
             }
-            elseif ($stateData.State -eq "GameMode_Active") {
-                # If we reach here, the PC was rebooted while in gaming mode.
-                Write-Host "[*] System rebooted after Gaming Mode. Restoring normal state..." -ForegroundColor Cyan
-                Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg
-                Unregister-BootTasks
-            }
+        }
+        finally {
+            # 5. Remove the boot trigger so it does not fire on every boot even if boot step errors occurred.
+            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
         }
     }
 
@@ -235,29 +288,23 @@ switch ($Action) {
         $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
         if ($Watchdog -and (Test-Path $stateFile)) {
             $stateData = Get-Content -Path $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            $currentBootTime = Get-ResilientBootTimestamp
 
-            # Check if this invocation is the interactive logon of the CURRENT gaming session (same boot).
-            $isSameBoot = $false
-            if ($stateData.State -eq "GameMode_Active" -and $stateData.GamingBootTime) {
-                try {
-                    $diffSec = [Math]::Abs(([DateTime]$currentBootTime - [DateTime]$stateData.GamingBootTime).TotalSeconds)
-                    if ($diffSec -lt 30) { $isSameBoot = $true }
-                }
-                catch {
-                    $isSameBoot = ($currentBootTime -eq $stateData.GamingBootTime)
-                }
-            }
+            # Deterministic session check: first interactive logon after entering GameMode_Active
+            $isSameBoot = ($stateData.State -eq "GameMode_Active" -and (-not $stateData.SessionLogonHandled))
 
             if ($isSameBoot) {
                 Write-Host "[+] Gaming session logon detected. Maintaining Ultra Gaming Mode." -ForegroundColor Green
+                $stateData.SessionLogonHandled = $true
+                $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $stateFile -Force -Encoding UTF8
+
                 # Ensure any stray bloat processes that managed to start are stopped
                 if ($startupCfg.BlacklistProcesses) {
                     Stop-BlacklistedProcesses -ProcessNames $startupCfg.BlacklistProcesses
                 }
-                # Re-arm RunOnce for the NEXT reboot
+                # Re-arm RunOnce for the NEXT reboot with fully quoted path
                 $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
-                $restoreCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
+                $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
                 Set-ItemProperty `
                     -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
                     -Name "*UltraGamingModeRestore" `
@@ -649,21 +696,21 @@ switch ($Action) {
         Write-Host "  Protected Services: $($whitelist.Count) critical items" -ForegroundColor Green
         $antiCheats = @("vgk", "vgc", "EasyAntiCheat", "BEService", "FACEIT")
         foreach ($ac in $antiCheats) {
-            $isProt = Test-IsServiceProtected -ServiceName $ac -Whitelist $whitelist
+            $isProt = ($whitelist -contains $ac)
             $acSvc = Get-Service -Name $ac -ErrorAction SilentlyContinue
             $status = if ($acSvc) { "Installed ($($acSvc.Status))" } else { "Not installed" }
             Write-Host "  - Anti-Cheat '$ac': Protected = $isProt | Status: $status" -ForegroundColor Gray
         }
         $dispSvc = @("AMD External Events Utility", "amdfendrsr", "AMDNoiseSuppression", "ProcessGovernor", "Apple Mobile Device Service")
         foreach ($ds in $dispSvc) {
-            $isProt = Test-IsServiceProtected -ServiceName $ds -Whitelist $whitelist
+            $isProt = ($whitelist -contains $ds)
             $s = Get-Service -Name $ds -ErrorAction SilentlyContinue
             $status = if ($s) { "Installed ($($s.Status))" } else { "Not installed" }
             Write-Host "  - Hardware/Driver/Network '$ds': Protected = $isProt | Status: $status" -ForegroundColor Gray
         }
         $coreSvc = @("Audiosrv", "AudioEndpointBuilder", "camsvc", "Steam Client Service", "LanmanServer", "LanmanWorkstation")
         foreach ($cs in $coreSvc) {
-            $isProt = Test-IsServiceProtected -ServiceName $cs -Whitelist $whitelist
+            $isProt = ($whitelist -contains $cs)
             $s = Get-Service -Name $cs -ErrorAction SilentlyContinue
             $status = if ($s) { "$($s.Status) ($($s.StartType))" } else { "Not installed" }
             Write-Host "  - Core/Audio/Steam '$cs': Protected = $isProt | Status: $status" -ForegroundColor Gray
@@ -730,71 +777,8 @@ switch ($Action) {
         $afterMem = $currentProc.WorkingSet64
         Write-Host "  Process working set trim: $([math]::Round($beforeMem/1MB,1)) MB -> $([math]::Round($afterMem/1MB,1)) MB [PASS]" -ForegroundColor Green
 
-        # 12. Kernel DPC & Memory Management
-        Write-Host "`n[12] Kernel DPC & Memory Management Configuration:" -ForegroundColor Yellow
-        $kdpc = Get-KernelDpcConfig
-        $dpcVal = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "1" }
-        $dpcStatus = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [PASS - Immediate Execution]" } else { "Threaded ($dpcVal) [Default - Will be set to 0 in Gaming Mode]" }
-        $dpcColor  = if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" }
-        Write-Host "  ThreadDpcEnable:         $dpcStatus" -ForegroundColor $dpcColor
-
-        $pageVal = if ($null -ne $kdpc.DisablePagingExecutive) { $kdpc.DisablePagingExecutive } else { "0" }
-        $pagingStatus = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [PASS - Drivers Locked in RAM]" } else { "Disabled ($pageVal) [Pageable]" }
-        $pagingColor  = if ($kdpc.DisablePagingExecutive -eq 1) { "Green" } else { "Yellow" }
-        Write-Host "  DisablePagingExecutive:  $pagingStatus" -ForegroundColor $pagingColor
-
-        $prioStatus = if ($kdpc.Win32PrioritySeparation -eq 38) { "0x26 / 38 [PASS - 3:1 Foreground Boost]" } else { "$($kdpc.Win32PrioritySeparation)" }
-        $prioColor  = if ($kdpc.Win32PrioritySeparation -eq 38) { "Green" } else { "Yellow" }
-        Write-Host "  Win32PrioritySeparation: $prioStatus" -ForegroundColor $prioColor
-
-        $pwrStatus = if ($kdpc.PowerThrottlingOff -eq 1) { "Disabled (1) [PASS - Zero Thread Throttling]" } else { "Active ($($kdpc.PowerThrottlingOff))" }
-        $pwrColor  = if ($kdpc.PowerThrottlingOff -eq 1) { "Green" } else { "Yellow" }
-        Write-Host "  PowerThrottlingOff:      $pwrStatus" -ForegroundColor $pwrColor
-
-        # 13. Direct Peripheral Input Queues
-        Write-Host "`n[13] Direct Peripheral Input Queues (mouclass & kbdclass):" -ForegroundColor Yellow
-        $input = Get-InputBufferConfig
-        $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
-        $isMouOptimal = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32)
-        $mouStatus = if ($isMouOptimal) { "$($input.MouseDataQueueSize) packets [PASS - Minimal Buffer Queue Latency with Anti-Drop Headroom]" } else { "$mouVal [Default: 100 - Will be set to 32 in Gaming Mode]" }
-        $mouColor  = if ($isMouOptimal) { "Green" } else { "Yellow" }
-        Write-Host "  MouseDataQueueSize:      $mouStatus" -ForegroundColor $mouColor
-
-        $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
-        $isKbdOptimal = ($input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
-        $kbdStatus = if ($isKbdOptimal) { "$($input.KeyboardDataQueueSize) packets [PASS - Direct Delivery]" } else { "$kbdVal [Default: 100 - Will be set to 32 in Gaming Mode]" }
-        $kbdColor  = if ($isKbdOptimal) { "Green" } else { "Yellow" }
-        Write-Host "  KeyboardDataQueueSize:   $kbdStatus" -ForegroundColor $kbdColor
-
-        # 14. BCDedit System Timer & TSC Synchronization
-        Write-Host "`n[14] BCDedit High-Precision System Timers:" -ForegroundColor Yellow
-        $bcd = Get-BcdeditTimerConfig
-        $dynVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "no" }
-        $dynStatus = if ($bcd.DynamicTick -eq "yes") { "Disabled (yes) [PASS - Dynamic Tick Suppressed]" } else { "$dynVal [Default - Will be disabled in Gaming Mode]" }
-        $dynColor  = if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" }
-        Write-Host "  disabledynamictick:      $dynStatus" -ForegroundColor $dynColor
-
-        $tscVal = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
-        $tscStatus = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Enhanced [PASS - TSC Synced Across Cores]" } else { "$tscVal [Will be set to Enhanced in Gaming Mode]" }
-        $tscColor  = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Green" } else { "Yellow" }
-        Write-Host "  tscsyncpolicy:           $tscStatus" -ForegroundColor $tscColor
-
-        # 15. TCP Gaming Stack & Interface Isolation
-        Write-Host "`n[15] TCP/IP Gaming Stack & Interface Isolation:" -ForegroundColor Yellow
-        $tcp = Get-TcpStackConfig
-        $tsText = if ($tcp.Timestamps -eq "disabled") { "Disabled [PASS - 12B Header Overhead Eliminated]" } else { "$($tcp.Timestamps) [Will be disabled in Gaming Mode]" }
-        $tsColor = if ($tcp.Timestamps -eq "disabled") { "Green" } else { "Yellow" }
-        Write-Host "  RFC 1323 Timestamps:     $tsText" -ForegroundColor $tsColor
-        Write-Host "  ECN Capability:          $($tcp.ECN)" -ForegroundColor White
-        Write-Host "  Receive-Side Scaling:    $($tcp.RSS)" -ForegroundColor White
-        Write-Host "  Tethering Isolation:     Ethernet 2 (Apple Mobile Device) & wwan99 (Wintun) [STRICTLY PROTECTED]" -ForegroundColor Green
-
-        # 16. Hardware-Accelerated GPU Scheduling (HAGS)
-        Write-Host "`n[16] Hardware-Accelerated GPU Scheduling (HAGS):" -ForegroundColor Yellow
-        $hags = Get-HagsGpuSchedulingConfig
-        $hagsStatus = if ($hags.HwSchMode -eq 2) { "Enabled (2) [PASS - Hardware-Accelerated GPU Scheduling Active]" } else { "Disabled ($($hags.HwSchMode)) [Will be set to 2 in Gaming Mode]" }
-        $hagsColor  = if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" }
-        Write-Host "  HwSchMode:               $hagsStatus" -ForegroundColor $hagsColor
+        # 12-16. Low-Latency Subsystems (Kernel DPC, Input Queues, Timers, TCP Stack, HAGS)
+        Show-LatencySubsystemStatus
 
         Write-Host "`n[+] Diagnostic complete. System is 100% primed for high-impact Ultra Gaming Mode." -ForegroundColor Green
     }
@@ -811,47 +795,6 @@ switch ($Action) {
         Write-Host "=====================================================" -ForegroundColor Magenta
         Write-Host "   KERNEL DPC, INPUT BUFFER & SYSTEM TIMER STATUS   " -ForegroundColor Magenta
         Write-Host "=====================================================" -ForegroundColor Magenta
-
-        $kdpc = Get-KernelDpcConfig
-        $input = Get-InputBufferConfig
-        $bcd = Get-BcdeditTimerConfig
-        $tcp = Get-TcpStackConfig
-        $hags = Get-HagsGpuSchedulingConfig
-
-        Write-Host "`n[1] Kernel DPC & Memory Management:" -ForegroundColor Yellow
-        $dpcVal = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "1" }
-        $dpcTxt = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [OPTIMAL - Worker DPC delay bypassed]" } else { "Threaded ($dpcVal) [Default]" }
-        $pageTxt = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [OPTIMAL - Drivers locked in RAM]" } else { "Disabled ($($kdpc.DisablePagingExecutive)) [Pageable]" }
-        $prioTxt = if ($kdpc.Win32PrioritySeparation -eq 38) { "0x26 / 38 [OPTIMAL - 3:1 Foreground Boost]" } else { "$($kdpc.Win32PrioritySeparation)" }
-        $pwrTxt = if ($kdpc.PowerThrottlingOff -eq 1) { "Disabled (1) [OPTIMAL - No Thread Throttling]" } else { "Active ($($kdpc.PowerThrottlingOff))" }
-
-        Write-Host "  ThreadDpcEnable:         $dpcTxt" -ForegroundColor $(if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" })
-        Write-Host "  DisablePagingExecutive:  $pageTxt" -ForegroundColor $(if ($kdpc.DisablePagingExecutive -eq 1) { "Green" } else { "Yellow" })
-        Write-Host "  Win32PrioritySeparation: $prioTxt" -ForegroundColor $(if ($kdpc.Win32PrioritySeparation -eq 38) { "Green" } else { "Yellow" })
-        Write-Host "  PowerThrottlingOff:      $pwrTxt" -ForegroundColor $(if ($kdpc.PowerThrottlingOff -eq 1) { "Green" } else { "Yellow" })
-
-        Write-Host "`n[2] Direct Peripheral Input Queues:" -ForegroundColor Yellow
-        $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
-        $isMouOpt = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32)
-        $mouTxt = if ($isMouOpt) { "$($input.MouseDataQueueSize) packets [OPTIMAL - Minimal Latency with Anti-Drop Headroom]" } else { "$mouVal [Default: 100]" }
-        $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
-        $isKbdOpt = ($input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
-        $kbdTxt = if ($isKbdOpt) { "$($input.KeyboardDataQueueSize) packets [OPTIMAL - Direct Delivery]" } else { "$kbdVal [Default: 100]" }
-        Write-Host "  MouseDataQueueSize:      $mouTxt" -ForegroundColor $(if ($isMouOpt) { "Green" } else { "Yellow" })
-        Write-Host "  KeyboardDataQueueSize:   $kbdTxt" -ForegroundColor $(if ($isKbdOpt) { "Green" } else { "Yellow" })
-
-        Write-Host "`n[3] BCDedit Kernel System Timers:" -ForegroundColor Yellow
-        $tickVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "no" }
-        $tickTxt = if ($bcd.DynamicTick -eq "yes") { "Disabled (yes) [OPTIMAL - Dynamic Tick Off]" } else { "$tickVal (Tick Active) [Default]" }
-        $tscVal = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
-        $tscTxt = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Enhanced [OPTIMAL - Synced Core TSC]" } else { "$tscVal [Default]" }
-        Write-Host "  disabledynamictick:      $tickTxt" -ForegroundColor $(if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" })
-        Write-Host "  tscsyncpolicy:           $tscTxt" -ForegroundColor $(if ($bcd.TscSyncPolicy -eq "Enhanced") { "Green" } else { "Yellow" })
-
-        Write-Host "`n[4] TCP Gaming Stack & HAGS:" -ForegroundColor Yellow
-        $tsTxt = if ($tcp.Timestamps -eq "disabled") { "Disabled [OPTIMAL - 12B Header Overhead Eliminated]" } else { "$($tcp.Timestamps)" }
-        $hagsTxt = if ($hags.HwSchMode -eq 2) { "Enabled (2) [OPTIMAL - Hardware GPU Scheduling Active]" } else { "Disabled ($($hags.HwSchMode))" }
-        Write-Host "  TCP Timestamps:          $tsTxt" -ForegroundColor $(if ($tcp.Timestamps -eq "disabled") { "Green" } else { "Yellow" })
-        Write-Host "  GPU HAGS (HwSchMode):    $hagsTxt" -ForegroundColor $(if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" })
+        Show-LatencySubsystemStatus
     }
 }

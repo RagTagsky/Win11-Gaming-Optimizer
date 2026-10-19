@@ -78,18 +78,6 @@
                                "Reason":  "Downloaded Maps Manager"
                            },
                            {
-                               "Name":  "bthserv",
-                               "Reason":  "Bluetooth Support Service"
-                           },
-                           {
-                               "Name":  "BthAvctpSvc",
-                               "Reason":  "Audio Video Control Transport Protocol (Bluetooth)"
-                           },
-                           {
-                               "Name":  "BTAGService",
-                               "Reason":  "Bluetooth Audio Gateway Service"
-                           },
-                           {
                                "Name":  "CDPSvc",
                                "Reason":  "Connected Devices Platform Service"
                            },
@@ -304,10 +292,6 @@
                            {
                                "Name":  "XblGameSave",
                                "Reason":  "Xbox Live Game Save"
-                           },
-                           {
-                               "Name":  "XboxGipSvc",
-                               "Reason":  "Xbox Accessory Management Service"
                            },
                            {
                                "Name":  "XboxNetApiSvc",
@@ -548,10 +532,6 @@
                            {
                                "Name":  "CDPUserSvc",
                                "Reason":  "Connected Devices Platform User Service"
-                           },
-                           {
-                               "Name":  "BluetoothUserService",
-                               "Reason":  "Bluetooth User Support Service"
                            },
                            {
                                "Name":  "CaptureService",

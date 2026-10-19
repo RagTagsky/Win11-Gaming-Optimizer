@@ -14,8 +14,10 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 
-# Load optimizer module
-. (Join-Path $PSScriptRoot "SystemOptimizer.ps1")
+# Load optimizer module with include guard
+if (-not (Get-Command Get-HardwareProfile -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot "SystemOptimizer.ps1")
+}
 
 function Stop-BlacklistedProcesses {
     [CmdletBinding()]
@@ -37,46 +39,6 @@ function Stop-BlacklistedProcesses {
                 }
             }
         }
-    }
-}
-
-function Resolve-QuarantineDestinationPath {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$ShortcutName,
-
-        [Parameter(Mandatory = $false)]
-        [string]$ParentFolder = "",
-
-        [Parameter(Mandatory = $false)]
-        [array]$StartupShortcuts = @(),
-
-        [Parameter(Mandatory = $false)]
-        [string]$UserStartupDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
-
-        [Parameter(Mandatory = $false)]
-        [string]$CommonStartupDir = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
-    )
-
-    $destDir = $UserStartupDir
-    if ($ParentFolder -eq "ProgramData") {
-        $destDir = $CommonStartupDir
-    } elseif ($ParentFolder -eq "User") {
-        $destDir = $UserStartupDir
-    } elseif ($StartupShortcuts -and $StartupShortcuts.Count -gt 0) {
-        # Legacy flat quarantine fallback
-        $match = $StartupShortcuts | Where-Object { $_.Name -eq $ShortcutName } | Select-Object -First 1
-        if ($match -and $match.OriginalFolder -and (Test-Path -LiteralPath $match.OriginalFolder)) {
-            $destDir = $match.OriginalFolder
-        }
-    }
-
-    return [PSCustomObject]@{
-        Name       = $ShortcutName
-        Origin     = $ParentFolder
-        DestDir    = $destDir
-        TargetPath = Join-Path $destDir $ShortcutName
     }
 }
 
@@ -293,6 +255,10 @@ function New-SystemStateBackup {
         $props = Get-ItemProperty -Path $configStorePath -ErrorAction SilentlyContinue
         $snapshot.GameDVRConfig["GameDVR_Enabled"] = $props.GameDVR_Enabled
         $snapshot.GameDVRConfig["GameDVR_FSEBehaviorMode"] = $props.GameDVR_FSEBehaviorMode
+    }
+    $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
+    if (Test-Path $policyPath) {
+        $snapshot.GameDVRConfig["AllowGameDVR"] = (Get-ItemProperty -Path $policyPath -Name "AllowGameDVR" -ErrorAction SilentlyContinue).AllowGameDVR
     }
 
     # 9. Ryzen Core Parking Snapshot
@@ -549,7 +515,7 @@ function Restore-SystemState {
             if ($result) {
                 $restoredCount++
                 if ($svcEntry.OriginalStatus -eq "Running") {
-                    $null = sc.exe start "$sName" 2>&1
+                    Start-Service -Name $sName -ErrorAction SilentlyContinue
                 }
             }
             else {
@@ -576,23 +542,27 @@ function Restore-SystemState {
     # Restore Quarantined Startup folder shortcuts
     $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
     if (Test-Path -LiteralPath $quarantineDir) {
-        Get-ChildItem -LiteralPath $quarantineDir -Recurse -File -Force | ForEach-Object {
-            $shortcutFile = $_
-            $parentName = $shortcutFile.Directory.Name
-            $resolved = Resolve-QuarantineDestinationPath -ShortcutName $shortcutFile.Name -ParentFolder $parentName -StartupShortcuts ($stateData.StartupShortcuts)
-            $destDir = $resolved.DestDir
-            $targetPath = $resolved.TargetPath
+        $userDir = Join-Path $quarantineDir "User"
+        $commonDir = Join-Path $quarantineDir "ProgramData"
+        $userStartup = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+        $commonStartup = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
 
-            if (-not (Test-Path -LiteralPath $destDir)) {
-                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        if (Test-Path -LiteralPath $userDir) {
+            if (-not (Test-Path -LiteralPath $userStartup)) { New-Item -ItemType Directory -Path $userStartup -Force | Out-Null }
+            Get-ChildItem -LiteralPath $userDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                Move-Item -LiteralPath $_.FullName -Destination (Join-Path $userStartup $_.Name) -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored startup shortcut: $($_.Name)" -ForegroundColor Green
             }
-            Move-Item -LiteralPath $shortcutFile.FullName -Destination $targetPath -Force -ErrorAction SilentlyContinue
-            Write-Host "  [+] Restored startup shortcut: $($shortcutFile.Name)" -ForegroundColor Green
         }
-        # Clean up empty quarantine subdirectories
-        Get-ChildItem -LiteralPath $quarantineDir -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object {
-            (Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0
-        } | Remove-Item -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $commonDir) {
+            if (-not (Test-Path -LiteralPath $commonStartup)) { New-Item -ItemType Directory -Path $commonStartup -Force | Out-Null }
+            Get-ChildItem -LiteralPath $commonDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                Move-Item -LiteralPath $_.FullName -Destination (Join-Path $commonStartup $_.Name) -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored startup shortcut: $($_.Name)" -ForegroundColor Green
+            }
+        }
+        # Clean up empty quarantine directory
+        Remove-Item -LiteralPath $quarantineDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # Also clean up any legacy *.ugm_backup files that might still exist in Startup folders
@@ -691,7 +661,14 @@ function Restore-SystemState {
         if ($null -ne $gdvr.GameDVR_FSEBehaviorMode) {
             Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
         }
+        if ($null -ne $gdvr.AllowGameDVR) {
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Value $gdvr.AllowGameDVR -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -ErrorAction SilentlyContinue
+        }
         Write-Host "  [+] GameDVR original settings restored." -ForegroundColor Green
+    } else {
+        Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -ErrorAction SilentlyContinue
     }
 
     # Restore Processor Core Parking

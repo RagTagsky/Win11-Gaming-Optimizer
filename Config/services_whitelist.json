@@ -119,6 +119,8 @@
                               "NgcSvc",
                               "AssignedAccessManagerSvc",
                               "IsoEnvBroker",
-                              "DevQueryBroker"
+                              "DevQueryBroker",
+                              "bthserv",
+                              "XboxGipSvc"
                           ]
 }

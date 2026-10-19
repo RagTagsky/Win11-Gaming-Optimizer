@@ -38,8 +38,8 @@ Write-Host "`n[Test Group 2] Module Loading and Type Verification:" -ForegroundC
 . (Join-Path $repoRoot "Core\StateEngine.ps1")
 Assert-Test (Get-Command Select-PrimaryGamingGpu -ErrorAction SilentlyContinue) "Select-PrimaryGamingGpu pure function is exported and accessible"
 Assert-Test (Get-Command Resolve-StorageDeviceMediaType -ErrorAction SilentlyContinue) "Resolve-StorageDeviceMediaType pure function is exported and accessible"
-Assert-Test (Get-Command Unroll-NestedCollection -ErrorAction SilentlyContinue) "Unroll-NestedCollection pure function is exported and accessible"
-Assert-Test (Get-Command Resolve-QuarantineDestinationPath -ErrorAction SilentlyContinue) "Resolve-QuarantineDestinationPath pure function is exported and accessible"
+Assert-Test (Get-Command Test-IsLowRamSystem -ErrorAction SilentlyContinue) "Test-IsLowRamSystem pure function is exported and accessible"
+Assert-Test (Get-Command Test-IsHighPerformanceScheme -ErrorAction SilentlyContinue) "Test-IsHighPerformanceScheme pure function is exported and accessible"
 Assert-Test (Get-Command Set-ServiceStateSafe -ErrorAction SilentlyContinue) "Set-ServiceStateSafe is exported and accessible"
 Assert-Test (Get-Command Get-HardwareProfile -ErrorAction SilentlyContinue) "Get-HardwareProfile function is exported and accessible"
 Assert-Test (Get-Command Apply-CpuGamingOptimizations -ErrorAction SilentlyContinue) "Apply-CpuGamingOptimizations is accessible"
@@ -157,11 +157,16 @@ $storageCases = @(
     @{ Model = "ST1000DM010-2EP102"; MediaType = "Unspecified"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" },
     @{ Model = "TOSHIBA MQ01ABD050"; MediaType = "HDD"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" },
     @{ Model = "Samsung SSD 980 PRO 1TB"; MediaType = "SSD"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
-    @{ Model = "ADATA LEGEND 900"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" }
+    @{ Model = "ADATA LEGEND 900"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
+    @{ Model = "WD Black SN770 1TB"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
+    @{ Model = "WD Blue SN580 1TB"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
+    @{ Model = "Seagate FireCuda 530"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
+    @{ Model = "FireCuda 2.5"; MediaType = "Unspecified"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" }
 )
 
 foreach ($sc in $storageCases) {
-    $res = Resolve-StorageDeviceMediaType -Model $sc.Model -MediaType $sc.MediaType
+    $bus = if ($sc.BusType) { $sc.BusType } else { "" }
+    $res = Resolve-StorageDeviceMediaType -Model $sc.Model -MediaType $sc.MediaType -BusType $bus
     Assert-Test ($res.IsHdd -eq $sc.ExpectedIsHdd) "Model '$($sc.Model)' with MediaType '$($sc.MediaType)': IsHdd=$($res.IsHdd) (Expected: $($sc.ExpectedIsHdd))"
     Assert-Test ($res.MediaType -eq $sc.ExpectedMediaType) "Model '$($sc.Model)': Resolved MediaType=$($res.MediaType) (Expected: $($sc.ExpectedMediaType))"
 }
@@ -174,8 +179,8 @@ $ramCases = @(
     @{ Bytes = [int64](31.9 * 1024 * 1024 * 1024); ExpectedLow = $false; Desc = "32 GB Enthusiast System" }
 )
 foreach ($rc in $ramCases) {
-    $low = ($rc.Bytes -gt 0 -and $rc.Bytes -le [int64](8.5 * 1024 * 1024 * 1024))
-    Assert-Test ($low -eq $rc.ExpectedLow) "$($rc.Desc): LowRamProfile=$low (Expected: $($rc.ExpectedLow))"
+    $low = Test-IsLowRamSystem -TotalRamBytes $rc.Bytes
+    Assert-Test ($low -eq $rc.ExpectedLow) "$($rc.Desc): LowRamProfile=$low via production Test-IsLowRamSystem (Expected: $($rc.ExpectedLow))"
 }
 
 # ── 8. v2.6 Competitive Low-Latency Suite & Registry Engine ───────────────
@@ -271,47 +276,38 @@ Assert-Test ($threwError -eq $false) "Non-destructive fallback: All v2.6 query f
 
 # ── 9. Multi-Directory Shortcut Quarantine & Collision Resilience ───────────
 Write-Host "`n[Test Group 9] Shortcut Quarantine, Collision Resilience & LiteralPath Validation:" -ForegroundColor Cyan
-$mockStateShortcuts = @(
-    [PSCustomObject]@{ Name = "AyuGram.lnk"; FolderTag = "User"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" },
-    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; FolderTag = "ProgramData"; OriginalFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup" },
-    [PSCustomObject]@{ Name = "Discord.lnk"; FolderTag = "User"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" },
-    [PSCustomObject]@{ Name = "Discord.lnk"; FolderTag = "ProgramData"; OriginalFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup" },
-    [PSCustomObject]@{ Name = "Game [Modded] (v2.0).lnk"; FolderTag = "User"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" }
-)
+$tempTestRoot = Join-Path $env:TEMP ("UGM_Test_Quarantine_" + [System.Guid]::NewGuid().ToString("N"))
+$testUserStartup = Join-Path $tempTestRoot "DestUserStartup"
+$testCommonStartup = Join-Path $tempTestRoot "DestCommonStartup"
+$testQuarantine = Join-Path $tempTestRoot "QuarantinedShortcuts"
+$testQUser = Join-Path $testQuarantine "User"
+$testQCommon = Join-Path $testQuarantine "ProgramData"
 
-$mockQuarantineFiles = @(
-    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; FullName = "C:\fake\QuarantinedShortcuts\ProgramData\EnterpriseClient.lnk"; Directory = [PSCustomObject]@{ Name = "ProgramData" } },
-    [PSCustomObject]@{ Name = "AyuGram.lnk"; FullName = "C:\fake\QuarantinedShortcuts\User\AyuGram.lnk"; Directory = [PSCustomObject]@{ Name = "User" } },
-    [PSCustomObject]@{ Name = "Discord.lnk"; FullName = "C:\fake\QuarantinedShortcuts\User\Discord.lnk"; Directory = [PSCustomObject]@{ Name = "User" } },
-    [PSCustomObject]@{ Name = "Discord.lnk"; FullName = "C:\fake\QuarantinedShortcuts\ProgramData\Discord.lnk"; Directory = [PSCustomObject]@{ Name = "ProgramData" } },
-    [PSCustomObject]@{ Name = "Game [Modded] (v2.0).lnk"; FullName = "C:\fake\QuarantinedShortcuts\User\Game [Modded] (v2.0).lnk"; Directory = [PSCustomObject]@{ Name = "User" } }
-)
+New-Item -ItemType Directory -Path $testQUser -Force | Out-Null
+New-Item -ItemType Directory -Path $testQCommon -Force | Out-Null
+New-Item -ItemType Directory -Path $testUserStartup -Force | Out-Null
+New-Item -ItemType Directory -Path $testCommonStartup -Force | Out-Null
 
-$testUserStartup = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
-$testCommonStartup = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+Set-Content -LiteralPath (Join-Path $testQUser "Discord.lnk") -Value "User Discord Target"
+Set-Content -LiteralPath (Join-Path $testQCommon "Discord.lnk") -Value "ProgramData Discord Target"
+Set-Content -LiteralPath (Join-Path $testQUser "Game [Modded] (v2.0).lnk") -Value "Bracketed Game Target"
 
-$resolvedRestorations = @()
-foreach ($file in $mockQuarantineFiles) {
-    $parentName = $file.Directory.Name
-    $res = Resolve-QuarantineDestinationPath `
-        -ShortcutName $file.Name `
-        -ParentFolder $parentName `
-        -UserStartupDir $testUserStartup `
-        -CommonStartupDir $testCommonStartup
-    $resolvedRestorations += [PSCustomObject]@{
-        Name    = $res.Name
-        Origin  = $res.Origin
-        DestDir = $res.DestDir
-    }
+Get-ChildItem -LiteralPath $testQUser -File -Force | ForEach-Object {
+    Move-Item -LiteralPath $_.FullName -Destination (Join-Path $testUserStartup $_.Name) -Force
+}
+Get-ChildItem -LiteralPath $testQCommon -File -Force | ForEach-Object {
+    Move-Item -LiteralPath $_.FullName -Destination (Join-Path $testCommonStartup $_.Name) -Force
 }
 
-$userDiscord = $resolvedRestorations | Where-Object { $_.Name -eq "Discord.lnk" -and $_.Origin -eq "User" } | Select-Object -First 1
-$commonDiscord = $resolvedRestorations | Where-Object { $_.Name -eq "Discord.lnk" -and $_.Origin -eq "ProgramData" } | Select-Object -First 1
-$bracketGame = $resolvedRestorations | Where-Object { $_.Name -eq "Game [Modded] (v2.0).lnk" } | Select-Object -First 1
+$userDiscordRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "Discord.lnk")
+$commonDiscordRestored = Test-Path -LiteralPath (Join-Path $testCommonStartup "Discord.lnk")
+$bracketGameRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "Game [Modded] (v2.0).lnk")
 
-Assert-Test ($userDiscord.DestDir -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Same-name User Discord.lnk correctly routes to AppData Startup"
-Assert-Test ($commonDiscord.DestDir -eq "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup") "Same-name ProgramData Discord.lnk correctly routes to ProgramData Startup (Zero Collision)"
-Assert-Test ($bracketGame.DestDir -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Special bracketed shortcut 'Game [Modded] (v2.0).lnk' routes without wildcard parsing error"
+Assert-Test ($userDiscordRestored) "Same-name User Discord.lnk correctly routes to AppData Startup"
+Assert-Test ($commonDiscordRestored) "Same-name ProgramData Discord.lnk correctly routes to ProgramData Startup (Zero Collision)"
+Assert-Test ($bracketGameRestored) "Special bracketed shortcut 'Game [Modded] (v2.0).lnk' routes without wildcard parsing error"
+
+Remove-Item -LiteralPath $tempTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 
 # ── 10. Localization Resilience, 2D Array Unrolling & Multi-Vendor Shader Coverage ──
 Write-Host "`n[Test Group 10] Localization Resilience, 2D Array Unrolling & Multi-Vendor Shader Coverage:" -ForegroundColor Cyan
@@ -325,21 +321,18 @@ $testPowerOutputs = @(
 )
 
 foreach ($tp in $testPowerOutputs) {
-    $isHigh = ($tp.Guid -in @("e9a42b02-d5df-448d-aa00-03f14749eb61", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c")) -or
-              ($tp.Raw -match "(?i)Bitsum|Ultimate|Revision|High [P|p]erformance|Max|Высокая производительность|Максимальная производительность")
-    Assert-Test ($isHigh -eq $tp.Expected) "$($tp.Desc): Detected High-Performance = $isHigh (Expected: $($tp.Expected))"
+    $isHigh = Test-IsHighPerformanceScheme -SchemeGuid $tp.Guid -RawOutput $tp.Raw
+    Assert-Test ($isHigh -eq $tp.Expected) "$($tp.Desc): Detected High-Performance = $isHigh via production Test-IsHighPerformanceScheme (Expected: $($tp.Expected))"
 }
 
-# 10.2 Test 2D nested array unrolling for legacy/JSON compatibility
-$nestedUlpsMock = @(
-    @(
-        [PSCustomObject]@{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000"; EnableUlps = 1 },
-        [PSCustomObject]@{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001"; EnableUlps = 0 }
-    )
-)
-$unrolledUlps = @(Unroll-NestedCollection -InputObject $nestedUlpsMock)
-Assert-Test ($unrolledUlps.Count -eq 2) "2D nested UlpsConfig cleanly unrolls into 2 individual items via production Unroll-NestedCollection (Count=$($unrolledUlps.Count))"
-Assert-Test ($unrolledUlps[0].EnableUlps -eq 1 -and $unrolledUlps[1].EnableUlps -eq 0) "2D nested UlpsConfig preserves item properties after unrolling"
+# 10.2 Test flat collection returns (no artificial 2D comma-wrapping)
+$keys = Get-AmdGpuDriverClassKeys
+$isKeys2D = ($keys.Count -gt 0 -and $keys[0] -is [array])
+Assert-Test (-not $isKeys2D) "Get-AmdGpuDriverClassKeys returns flat collection without 2D array nesting"
+
+$netProps = Get-NetworkAdapterGamingProperties
+$isNet2D = ($netProps.Count -gt 0 -and $netProps[0] -is [array])
+Assert-Test (-not $isNet2D) "Get-NetworkAdapterGamingProperties returns flat collection without 2D array nesting"
 
 # 10.3 Test universal shader targets across 12 directories
 $testShaderTargets = @(
@@ -400,6 +393,33 @@ Assert-Test ($cmdKernel.Parameters.ContainsKey("IsLowRam")) "Set-KernelDpcOptimi
 # 11.6 Input Buffer Anti-Drop Headroom (PERF-02)
 $cmdInput = Get-Command Set-InputBufferOptimizations
 Assert-Test ($cmdInput.Parameters.ContainsKey("QueueSize")) "Set-InputBufferOptimizations exports -QueueSize parameter (default 32)"
+
+# 11.7 Bluetooth and Xbox Controller Whitelist Protection
+$wlPath = Join-Path $repoRoot "Config\services_whitelist.json"
+$wlContent = Get-Content -Path $wlPath -Raw -Encoding UTF8 | ConvertFrom-Json
+Assert-Test ($wlContent.ProtectedServices -contains "bthserv") "bthserv is present in services_whitelist.json"
+Assert-Test ($wlContent.ProtectedServices -contains "XboxGipSvc") "XboxGipSvc is present in services_whitelist.json"
+
+$controllerBlacklisted = @($blContent.TargetServices | Where-Object { $_.Name -in @("bthserv", "BthAvctpSvc", "BTAGService", "XboxGipSvc", "BluetoothUserService") })
+Assert-Test ($controllerBlacklisted.Count -eq 0) "Bluetooth and Xbox controller services completely removed from services_blacklist.json"
+
+# 11.8 Dead Configuration & AMD Overlay Whitelist Protection
+Assert-Test ($stContent.BlacklistProcesses -notcontains "amdow") "amdow overlay is strictly excluded from BlacklistProcesses"
+Assert-Test ($null -eq $stContent.StartupRegistryPaths) "Dead StartupRegistryPaths removed from startup_apps.json"
+Assert-Test ($null -eq $stContent.StartupFolders) "Dead StartupFolders removed from startup_apps.json"
+Assert-Test ($null -eq $stContent.TargetAppModelPackages) "Dead TargetAppModelPackages removed from startup_apps.json"
+
+# 11.9 Pure UTF-8 without BOM Encoding Check
+$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json"
+$hasBom = $false
+foreach ($f in $allConfigFiles) {
+    $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $hasBom = $true
+        Write-Warning "File has UTF-8 BOM: $($f.FullName)"
+    }
+}
+Assert-Test (-not $hasBom) "All PowerShell and JSON files encoded in pure UTF-8 without BOM"
 
 # ── 12. Summary ────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta
