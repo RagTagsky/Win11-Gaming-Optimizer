@@ -60,14 +60,34 @@ $startupCfg = Get-Content $startupAppsPath -Raw | ConvertFrom-Json
 # ── Task Scheduler Names ──────────────────────────────────────────────────────
 $taskName = "UltraGamingMode_BootTrigger"
 
+function Get-ResilientBootTimestamp {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+        if ($os -and $os.LastBootUpTime) {
+            return $os.LastBootUpTime.ToString("o")
+        }
+    } catch {}
+
+    try {
+        $uptime = [System.TimeSpan]::FromMilliseconds([System.Environment]::TickCount64)
+        return ((Get-Date) - $uptime).ToString("o")
+    } catch {}
+
+    return (Get-Date).ToString("o")
+}
+
 # ── Helper: Register Boot-Time Tasks ─────────────────────────────────────────
 function Register-BootTasks {
     Write-Host "[*] Registering Next-Boot Task in Task Scheduler (SYSTEM privileges)..." -ForegroundColor Cyan
 
     $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
+    $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 
     $taskAction = New-ScheduledTaskAction `
-        -Execute "powershell.exe" `
+        -Execute $psExe `
         -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$actionScript`" -Action ApplyBootMode"
 
     $taskTrigger = New-ScheduledTaskTrigger -AtStartup
@@ -159,7 +179,7 @@ switch ($Action) {
                 Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
                 Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
                 Set-NetworkGamingOptimizations | Out-Null
-                Set-KernelDpcOptimizations | Out-Null
+                Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
                 Set-InputBufferOptimizations | Out-Null
                 Set-BcdeditTimerOptimizations | Out-Null
                 Set-TcpGamingStackOptimizations | Out-Null
@@ -180,22 +200,27 @@ switch ($Action) {
                 }
 
                 # 3. Update state to active and capture boot timestamp
+                $bootTime = Get-ResilientBootTimestamp
                 $stateData.State = "GameMode_Active"
                 $stateData.BootRunCount = [int]$stateData.BootRunCount + 1
-                $stateData.GamingBootTime = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString("o")
+                $stateData.GamingBootTime = $bootTime
                 $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $stateFile -Force -Encoding UTF8
 
-                # 4. Arm RunOnce fail-safe watchdog: fires on next reboot/logon after gaming mode
-                $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
-                $restoreCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
-                Set-ItemProperty `
-                    -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
-                    -Name "*UltraGamingModeRestore" `
-                    -Value $restoreCmd `
-                    -Force
-
-                # 5. Remove the boot trigger so it does not fire on every boot.
-                Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+                try {
+                    # 4. Arm RunOnce fail-safe watchdog: fires on next reboot/logon after gaming mode
+                    $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
+                    $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                    $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
+                    Set-ItemProperty `
+                        -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+                        -Name "*UltraGamingModeRestore" `
+                        -Value $restoreCmd `
+                        -Force
+                }
+                finally {
+                    # 5. Remove the boot trigger so it does not fire on every boot even if watchdog arming encountered issues.
+                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+                }
             }
             elseif ($stateData.State -eq "GameMode_Active") {
                 # If we reach here, the PC was rebooted while in gaming mode.
@@ -210,7 +235,7 @@ switch ($Action) {
         $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
         if ($Watchdog -and (Test-Path $stateFile)) {
             $stateData = Get-Content -Path $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            $currentBootTime = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString("o")
+            $currentBootTime = Get-ResilientBootTimestamp
 
             # Check if this invocation is the interactive logon of the CURRENT gaming session (same boot).
             $isSameBoot = $false
@@ -360,13 +385,14 @@ switch ($Action) {
         # Low-Latency Subsystems Status
         $dpcDisplay = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "Default (1)" }
         $pageDisplay = if ($null -ne $kdpc.DisablePagingExecutive) { $kdpc.DisablePagingExecutive } else { "Default (0)" }
-        $dpcText = if ($kdpc.ThreadDpcEnable -eq 0 -and $kdpc.DisablePagingExecutive -eq 1) { "Direct (0), Paging Disabled [OPTIMAL]" } else { "Threaded: $dpcDisplay, Paging: $pageDisplay" }
+        $dpcText = if ($kdpc.ThreadDpcEnable -eq 0 -and ($kdpc.DisablePagingExecutive -eq 1 -or $hw.LowRamProfile)) { "Direct (0), Paging $(if ($hw.LowRamProfile) { 'Protected (8GB Guard)' } else { 'Disabled' }) [OPTIMAL]" } else { "Threaded: $dpcDisplay, Paging: $pageDisplay" }
         Write-Host " Kernel DPC:    $dpcText" -ForegroundColor $(if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" })
 
         $mouDisplay = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default (100)" }
         $kbdDisplay = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default (100)" }
-        $inputQueueText = if ($input.MouseDataQueueSize -eq 16 -and $input.KeyboardDataQueueSize -eq 16) { "16 Mouse / 16 Keyboard [OPTIMAL DIRECT DELIVERY]" } else { "$mouDisplay Mouse / $kbdDisplay Keyboard" }
-        Write-Host " Input Buffers: $inputQueueText" -ForegroundColor $(if ($input.MouseDataQueueSize -eq 16) { "Green" } else { "Yellow" })
+        $isOptimalQueue = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32 -and $input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
+        $inputQueueText = if ($isOptimalQueue) { "$($input.MouseDataQueueSize) Mouse / $($input.KeyboardDataQueueSize) Keyboard [OPTIMAL DIRECT DELIVERY]" } else { "$mouDisplay Mouse / $kbdDisplay Keyboard" }
+        Write-Host " Input Buffers: $inputQueueText" -ForegroundColor $(if ($isOptimalQueue) { "Green" } else { "Yellow" })
 
         $dynDisplay = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "Default" }
         $tscDisplay = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
@@ -388,7 +414,7 @@ switch ($Action) {
     }
 
     "FlushShaderCache" {
-        Clear-AmdShaderCache | Out-Null
+        Clear-GpuShaderCache | Out-Null
     }
 
     "ToggleVBS" {
@@ -558,6 +584,7 @@ switch ($Action) {
             (Join-Path $env:LOCALAPPDATA "NVIDIA\DXCache"),
             (Join-Path $env:LOCALAPPDATA "NVIDIA\GLCache"),
             (Join-Path $env:APPDATA "NVIDIA\ComputeCache"),
+            (Join-Path $env:LOCALAPPDATA "NVIDIA Corporation\NV_Cache"),
             (Join-Path $env:LOCALAPPDATA "Intel\ShaderCache"),
             (Join-Path $env:LOCALAPPDATA "Intel\D3DSCache"),
             (Join-Path $env:LOCALAPPDATA "D3DSCache")
@@ -570,7 +597,7 @@ switch ($Action) {
                 $mb = [math]::Round($bytes / 1MB, 2)
                 $leafName = Split-Path $sd -Leaf
                 if ($sd -match '(?i)AMD\\') { $leafName = "AMD\$leafName" }
-                elseif ($sd -match '(?i)NVIDIA\\') { $leafName = "NVIDIA\$leafName" }
+                elseif ($sd -match '(?i)NVIDIA') { $leafName = "NVIDIA\$leafName" }
                 elseif ($sd -match '(?i)Intel\\') { $leafName = "Intel\$leafName" }
                 Write-Host "  - Cache $leafName`: $cnt files ($mb MB)" -ForegroundColor White
             }
@@ -685,8 +712,8 @@ switch ($Action) {
             "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
         )
         foreach ($sDir in $startupDirs) {
-            if (Test-Path $sDir) {
-                Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") } | ForEach-Object {
+            if (Test-Path -LiteralPath $sDir) {
+                Get-ChildItem -LiteralPath $sDir -File -Force | Where-Object { $_.Extension -in @(".lnk", ".url") } | ForEach-Object {
                     $shortcutCount++
                     Write-Host "  - Startup Shortcut: $($_.Name)" -ForegroundColor Yellow
                 }
@@ -728,13 +755,15 @@ switch ($Action) {
         Write-Host "`n[13] Direct Peripheral Input Queues (mouclass & kbdclass):" -ForegroundColor Yellow
         $input = Get-InputBufferConfig
         $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
-        $mouStatus = if ($input.MouseDataQueueSize -eq 16) { "16 packets [PASS - Minimal Buffer Queue Latency]" } else { "$mouVal [Default: 100 - Will be set to 16 in Gaming Mode]" }
-        $mouColor  = if ($input.MouseDataQueueSize -eq 16) { "Green" } else { "Yellow" }
+        $isMouOptimal = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32)
+        $mouStatus = if ($isMouOptimal) { "$($input.MouseDataQueueSize) packets [PASS - Minimal Buffer Queue Latency with Anti-Drop Headroom]" } else { "$mouVal [Default: 100 - Will be set to 32 in Gaming Mode]" }
+        $mouColor  = if ($isMouOptimal) { "Green" } else { "Yellow" }
         Write-Host "  MouseDataQueueSize:      $mouStatus" -ForegroundColor $mouColor
 
         $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
-        $kbdStatus = if ($input.KeyboardDataQueueSize -eq 16) { "16 packets [PASS - Direct Delivery]" } else { "$kbdVal [Default: 100 - Will be set to 16 in Gaming Mode]" }
-        $kbdColor  = if ($input.KeyboardDataQueueSize -eq 16) { "Green" } else { "Yellow" }
+        $isKbdOptimal = ($input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
+        $kbdStatus = if ($isKbdOptimal) { "$($input.KeyboardDataQueueSize) packets [PASS - Direct Delivery]" } else { "$kbdVal [Default: 100 - Will be set to 32 in Gaming Mode]" }
+        $kbdColor  = if ($isKbdOptimal) { "Green" } else { "Yellow" }
         Write-Host "  KeyboardDataQueueSize:   $kbdStatus" -ForegroundColor $kbdColor
 
         # 14. BCDedit System Timer & TSC Synchronization
@@ -803,11 +832,13 @@ switch ($Action) {
 
         Write-Host "`n[2] Direct Peripheral Input Queues:" -ForegroundColor Yellow
         $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
-        $mouTxt = if ($input.MouseDataQueueSize -eq 16) { "16 packets [OPTIMAL - Minimal Latency]" } else { "$mouVal [Default: 100]" }
+        $isMouOpt = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32)
+        $mouTxt = if ($isMouOpt) { "$($input.MouseDataQueueSize) packets [OPTIMAL - Minimal Latency with Anti-Drop Headroom]" } else { "$mouVal [Default: 100]" }
         $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
-        $kbdTxt = if ($input.KeyboardDataQueueSize -eq 16) { "16 packets [OPTIMAL - Direct Delivery]" } else { "$kbdVal [Default: 100]" }
-        Write-Host "  MouseDataQueueSize:      $mouTxt" -ForegroundColor $(if ($input.MouseDataQueueSize -eq 16) { "Green" } else { "Yellow" })
-        Write-Host "  KeyboardDataQueueSize:   $kbdTxt" -ForegroundColor $(if ($input.KeyboardDataQueueSize -eq 16) { "Green" } else { "Yellow" })
+        $isKbdOpt = ($input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
+        $kbdTxt = if ($isKbdOpt) { "$($input.KeyboardDataQueueSize) packets [OPTIMAL - Direct Delivery]" } else { "$kbdVal [Default: 100]" }
+        Write-Host "  MouseDataQueueSize:      $mouTxt" -ForegroundColor $(if ($isMouOpt) { "Green" } else { "Yellow" })
+        Write-Host "  KeyboardDataQueueSize:   $kbdTxt" -ForegroundColor $(if ($isKbdOpt) { "Green" } else { "Yellow" })
 
         Write-Host "`n[3] BCDedit Kernel System Timers:" -ForegroundColor Yellow
         $tickVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "no" }

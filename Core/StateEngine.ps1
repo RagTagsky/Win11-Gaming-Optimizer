@@ -32,9 +32,51 @@ function Stop-BlacklistedProcesses {
                     Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
                     Write-Host "  [x] Terminated running bloat process: $name (PID: $($p.Id))" -ForegroundColor Yellow
                 }
-                catch {}
+                catch {
+                    Write-Verbose "Could not terminate process $($p.Id): $($_.Exception.Message)"
+                }
             }
         }
+    }
+}
+
+function Resolve-QuarantineDestinationPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ShortcutName,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ParentFolder = "",
+
+        [Parameter(Mandatory = $false)]
+        [array]$StartupShortcuts = @(),
+
+        [Parameter(Mandatory = $false)]
+        [string]$UserStartupDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+
+        [Parameter(Mandatory = $false)]
+        [string]$CommonStartupDir = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    )
+
+    $destDir = $UserStartupDir
+    if ($ParentFolder -eq "ProgramData") {
+        $destDir = $CommonStartupDir
+    } elseif ($ParentFolder -eq "User") {
+        $destDir = $UserStartupDir
+    } elseif ($StartupShortcuts -and $StartupShortcuts.Count -gt 0) {
+        # Legacy flat quarantine fallback
+        $match = $StartupShortcuts | Where-Object { $_.Name -eq $ShortcutName } | Select-Object -First 1
+        if ($match -and $match.OriginalFolder -and (Test-Path -LiteralPath $match.OriginalFolder)) {
+            $destDir = $match.OriginalFolder
+        }
+    }
+
+    return [PSCustomObject]@{
+        Name       = $ShortcutName
+        Origin     = $ParentFolder
+        DestDir    = $destDir
+        TargetPath = Join-Path $destDir $ShortcutName
     }
 }
 
@@ -145,23 +187,27 @@ function New-SystemStateBackup {
 
     # 3. Startup Folder Shortcuts (.lnk / .url) Snapshot
     $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
-    if (-not (Test-Path $quarantineDir)) {
-        New-Item -ItemType Directory -Path $quarantineDir -Force | Out-Null
-    }
+    $userQuarantineDir = Join-Path $quarantineDir "User"
+    $commonQuarantineDir = Join-Path $quarantineDir "ProgramData"
+    if (-not (Test-Path -LiteralPath $userQuarantineDir)) { New-Item -ItemType Directory -Path $userQuarantineDir -Force | Out-Null }
+    if (-not (Test-Path -LiteralPath $commonQuarantineDir)) { New-Item -ItemType Directory -Path $commonQuarantineDir -Force | Out-Null }
 
     $startupDirs = @(
-        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
-        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+        @{ Dir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; Target = $userQuarantineDir; Tag = "User" },
+        @{ Dir = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; Target = $commonQuarantineDir; Tag = "ProgramData" }
     )
-    foreach ($sDir in $startupDirs) {
-        if (Test-Path $sDir) {
-            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
+    foreach ($sd in $startupDirs) {
+        $sDir = $sd.Dir
+        $qTarget = $sd.Target
+        if (Test-Path -LiteralPath $sDir) {
+            Get-ChildItem -LiteralPath $sDir -File -Force | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
                 $cleanName = $_.Name -replace '\.ugm_backup$', ''
                 $snapshot.StartupShortcuts += @{
                     Name           = $cleanName
+                    FolderTag      = $sd.Tag
                     OriginalFolder = $sDir
                     OriginalPath   = Join-Path $sDir $cleanName
-                    QuarantinePath = Join-Path $quarantineDir $cleanName
+                    QuarantinePath = Join-Path $qTarget $cleanName
                 }
             }
         }
@@ -323,21 +369,24 @@ function Disable-UserStateAggressive {
 
     # 2. Quarantine Startup folder shortcuts (Move completely out of Startup folder to eliminate "Open With .ugm" dialogs)
     $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
-    if (-not (Test-Path $quarantineDir)) {
-        New-Item -ItemType Directory -Path $quarantineDir -Force | Out-Null
-    }
+    $userQuarantineDir = Join-Path $quarantineDir "User"
+    $commonQuarantineDir = Join-Path $quarantineDir "ProgramData"
+    if (-not (Test-Path -LiteralPath $userQuarantineDir)) { New-Item -ItemType Directory -Path $userQuarantineDir -Force | Out-Null }
+    if (-not (Test-Path -LiteralPath $commonQuarantineDir)) { New-Item -ItemType Directory -Path $commonQuarantineDir -Force | Out-Null }
 
     $startupDirs = @(
-        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
-        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+        @{ Dir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; Target = $userQuarantineDir },
+        @{ Dir = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; Target = $commonQuarantineDir }
     )
-    foreach ($sDir in $startupDirs) {
-        if (Test-Path $sDir) {
-            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
+    foreach ($sd in $startupDirs) {
+        $sDir = $sd.Dir
+        $qTarget = $sd.Target
+        if (Test-Path -LiteralPath $sDir) {
+            Get-ChildItem -LiteralPath $sDir -File -Force | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
                 $cleanName = $_.Name -replace '\.ugm_backup$', ''
-                $destPath = Join-Path $quarantineDir $cleanName
-                Move-Item -Path $_.FullName -Destination $destPath -Force -ErrorAction SilentlyContinue
-                Write-Host "  [x] Quarantined startup shortcut: $cleanName" -ForegroundColor Yellow
+                $destPath = Join-Path $qTarget $cleanName
+                Move-Item -LiteralPath $_.FullName -Destination $destPath -Force -ErrorAction SilentlyContinue
+                Write-Host "  [x] Quarantined startup shortcut: $cleanName ($($sd.Target | Split-Path -Leaf))" -ForegroundColor Yellow
             }
         }
     }
@@ -417,7 +466,9 @@ function Disable-UserStateAggressive {
                 try {
                     Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
                     Write-Host "  [x] Stopped disk-thrashing service: $sName (HDD Protection)." -ForegroundColor Yellow
-                } catch {}
+                } catch {
+                    Write-Verbose "Could not stop service $sName`: $($_.Exception.Message)"
+                }
             }
         }
     }
@@ -450,7 +501,7 @@ function Disable-UserStateAggressive {
     Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
 
     # 10. Apply Low-Latency Kernel DPC, Input Buffer Queues, Timers & HAGS (takes effect on reboot)
-    Set-KernelDpcOptimizations | Out-Null
+    Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
     Set-InputBufferOptimizations | Out-Null
     Set-BcdeditTimerOptimizations | Out-Null
     Set-HagsGpuScheduling | Out-Null
@@ -524,20 +575,24 @@ function Restore-SystemState {
 
     # Restore Quarantined Startup folder shortcuts
     $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
-    if (Test-Path $quarantineDir) {
-        Get-ChildItem -Path $quarantineDir -File | ForEach-Object {
+    if (Test-Path -LiteralPath $quarantineDir) {
+        Get-ChildItem -LiteralPath $quarantineDir -Recurse -File -Force | ForEach-Object {
             $shortcutFile = $_
-            $destDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
-            if ($stateData -and $stateData.StartupShortcuts) {
-                $match = $stateData.StartupShortcuts | Where-Object { $_.Name -eq $shortcutFile.Name } | Select-Object -First 1
-                if ($match -and $match.OriginalFolder -and (Test-Path $match.OriginalFolder)) {
-                    $destDir = $match.OriginalFolder
-                }
+            $parentName = $shortcutFile.Directory.Name
+            $resolved = Resolve-QuarantineDestinationPath -ShortcutName $shortcutFile.Name -ParentFolder $parentName -StartupShortcuts ($stateData.StartupShortcuts)
+            $destDir = $resolved.DestDir
+            $targetPath = $resolved.TargetPath
+
+            if (-not (Test-Path -LiteralPath $destDir)) {
+                New-Item -ItemType Directory -Path $destDir -Force | Out-Null
             }
-            $targetPath = Join-Path $destDir $shortcutFile.Name
-            Move-Item -Path $shortcutFile.FullName -Destination $targetPath -Force -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath $shortcutFile.FullName -Destination $targetPath -Force -ErrorAction SilentlyContinue
             Write-Host "  [+] Restored startup shortcut: $($shortcutFile.Name)" -ForegroundColor Green
         }
+        # Clean up empty quarantine subdirectories
+        Get-ChildItem -LiteralPath $quarantineDir -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object {
+            (Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0
+        } | Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
     # Also clean up any legacy *.ugm_backup files that might still exist in Startup folders
@@ -546,10 +601,10 @@ function Restore-SystemState {
         "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
     )
     foreach ($sDir in $startupDirs) {
-        if (Test-Path $sDir) {
-            Get-ChildItem -Path $sDir -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
+        if (Test-Path -LiteralPath $sDir) {
+            Get-ChildItem -LiteralPath $sDir -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
                 $origName = $_.Name -replace '\.ugm_backup$', ''
-                Rename-Item -Path $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
+                Rename-Item -LiteralPath $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
                 Write-Host "  [+] Restored legacy backup shortcut: $origName" -ForegroundColor Green
             }
         }
@@ -605,7 +660,9 @@ function Restore-SystemState {
                     try {
                         $res = Enable-ScheduledTask -TaskPath $tPath -TaskName $tName -ErrorAction SilentlyContinue
                         if ($res) { $enabled = $true }
-                    } catch {}
+                    } catch {
+                        Write-Verbose "Could not enable task $tName`: $($_.Exception.Message)"
+                    }
                 }
                 if (-not $enabled) {
                     Enable-ScheduledTask -TaskName $tName -ErrorAction SilentlyContinue | Out-Null

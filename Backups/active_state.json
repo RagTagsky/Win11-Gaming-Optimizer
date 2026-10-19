@@ -1091,17 +1091,15 @@
                      }
                  ],
     "NetworkAdapterProperties":  [
-                                     [
-                                         {
-                                             "FlowControl":  "3",
-                                             "EEE":  "1",
-                                             "PowerSavingMode":  "1",
-                                             "AdapterName":  "Ethernet",
-                                             "GreenEthernet":  "1",
-                                             "InterruptModeration":  "1",
-                                             "InterfaceDesc":  "Realtek PCIe GbE Family Controller"
-                                         }
-                                     ]
+                                     {
+                                         "FlowControl":  "3",
+                                         "EEE":  "1",
+                                         "PowerSavingMode":  "1",
+                                         "AdapterName":  "Ethernet",
+                                         "GreenEthernet":  "1",
+                                         "InterruptModeration":  "1",
+                                         "InterfaceDesc":  "Realtek PCIe GbE Family Controller"
+                                     }
                                  ],
     "NTFSConfig":  {
                        "NtfsDisable8dot3NameCreation":  1,
@@ -1159,14 +1157,12 @@
                   },
     "CoreParkingMinCores":  100,
     "UlpsConfig":  [
-                       [
-                           {
-                               "DriverDesc":  "AMD Radeon RX 6600",
-                               "Path":  "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000",
-                               "EnableUlps":  1,
-                               "SubKeyName":  "0000"
-                           }
-                       ]
+                       {
+                           "DriverDesc":  "AMD Radeon RX 6600",
+                           "Path":  "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000",
+                           "EnableUlps":  1,
+                           "SubKeyName":  "0000"
+                       }
                    ],
     "KernelDpcConfig":  {
                             "DisablePagingExecutive":  0,

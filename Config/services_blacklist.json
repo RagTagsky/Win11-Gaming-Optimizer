@@ -1,4 +1,4 @@
-﻿{
+{
     "Description":  "Services disabled during Ultra Gaming Mode to free up CPU cycles, reduce DPC latency and RAM usage without impacting display/GPU drivers, audio/mic stack, network, controllers, game launchers, or anti-cheats.",
     "TargetServices":  [
                            {
@@ -194,11 +194,11 @@
                                "Reason":  "Google Update Service Medium"
                            },
                            {
-                               "Name":  "GoogleUpdaterInternalService157.0.8089.0",
+                               "Name":  "GoogleUpdaterInternalService",
                                "Reason":  "Google Updater Internal Service"
                            },
                            {
-                               "Name":  "GoogleUpdaterService157.0.8089.0",
+                               "Name":  "GoogleUpdaterService",
                                "Reason":  "Google Updater Service"
                            },
                            {

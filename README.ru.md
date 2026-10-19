@@ -276,6 +276,7 @@ Ultra Gaming Mode v2.5 оснащен автономным движком обн
 ### 4. Жесткая выгрузка фонового софта
 - **Принудительно завершаются:** Браузеры (`firefox`, `chrome`, `msedge`), `Telegram`, `Discord`, `Spotify`, `EpicGamesLauncher`, `CrossDeviceResume` (Связь с телефоном), видеооверлей AMD (`amdow`, `AMDRSServ`), виджеты (`msedgewebview2`), облачные диски (`GoogleDriveFS`), фоновые апдейтеры.
 - **Строго защищены:** Запущенная игра, **Steam**, **FACEIT Client**, видеодрайвер AMD Radeon (`atieclxx`, `amdfendrsr`), **MSI Afterburner / RivaTuner**, **Process Lasso** (`ProcessGovernor`), **Apple Mobile Device Service** (USB-модем).
+- **Изолированный карантин ярлыков автозагрузки:** Ярлыки автозапуска (`.lnk`, `.url`) из пользовательской (`AppData\...\Startup`) и общей системной (`ProgramData\...\Startup`) папок перемещаются в изолированные подкаталоги (`Backups\QuarantinedShortcuts\User` и `Backups\QuarantinedShortcuts\ProgramData`). Использование `-LiteralPath` гарантирует защиту от ошибок синтаксиса подстановочных знаков для имен со скобками (например, `Game [Modded].lnk`), а при выходе ярлыки возвращаются в свои исходные директории без конфликтов имен.
 
 ### 5. Отключение виджетов Windows 11 и веб-поиска Bing
 - Отключаются виджеты панели задач (`TaskbarDa = 0`, `AllowNewsAndInterests = 0`), что выгружает до 6 скрытых фоновых процессов `msedgewebview2.exe`.
@@ -287,7 +288,7 @@ Ultra Gaming Mode v2.5 оснащен автономным движком обн
 
 ### 7. Универсальная настройка процессоров и кэш шейдеров
 - **Универсальная распарковка ядер и блокировка частот:** Автоматически настраивает активную схему электропитания, выставляя минимальное число активных ядер процессора на 100% (`powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100`), удерживая все физические и логические ядра процессоров AMD Ryzen и Intel Core в активном состоянии. Для малоядерных процессоров (<= 4 логических потоков) устанавливает минимальное состояние частоты на 100% (`PROCTHROTTLEMIN = 100`), предотвращая сброс частот при резких нагрузках.
-- **Очистка кэша шейдеров DirectX и Vulkan:** Пункт **`[3]`** в меню дополнительных инструментов безопасно удаляет поврежденный или раздутый кэш шейдеров AMD, NVIDIA и Intel DirectX/Vulkan (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\NVIDIA\DXCache`, `GLCache`, `%APPDATA%\NVIDIA\ComputeCache`, `%LOCALAPPDATA%\Intel\ShaderCache`, `Intel\D3DSCache`, `%LOCALAPPDATA%\D3DSCache`), полностью устраняя микрофризы от компиляции шейдеров и выпадение кадров в соревновательных играх, таких как *CS2*.
+- **Очистка кэша шейдеров DirectX и Vulkan:** Пункт **`[3]`** в меню дополнительных инструментов безопасно удаляет поврежденный или раздутый кэш шейдеров AMD, NVIDIA и Intel DirectX/Vulkan в 12 директориях (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\NVIDIA\DXCache`, `GLCache`, `%APPDATA%\NVIDIA\ComputeCache`, `%LOCALAPPDATA%\NVIDIA Corporation\NV_Cache`, `%LOCALAPPDATA%\Intel\ShaderCache`, `Intel\D3DSCache`, `%LOCALAPPDATA%\D3DSCache`), полностью устраняя микрофризы от компиляции шейдеров и выпадение кадров в соревновательных играх, таких как *CS2*.
 
 ### 8. Адаптивный движок видеокарт и режим MSI (Message Signaled Interrupts)
 - **Точное определение дискретной видеокарты:** Автоматически находит дискретный графический адаптер PCI (AMD Radeon, NVIDIA GeForce, Intel Arc) с активным выводом на дисплей, игнорируя встроенные видеочипы.
@@ -336,6 +337,7 @@ Ultra Gaming Mode v2.5 оснащен автономным движком обн
   - `ecncapability=disabled`: Отключает Explicit Congestion Notification (явное уведомление о перегрузке сети), предотвращая сброс или задержку пакетов на игровых маршрутизаторах, некорректно обрабатывающих флаги ECN.
   - `rss=enabled`: Включает Receive Side Scaling, распределяя сетевые прерывания по разным ядрам процессора.
 - **Тюнинг TCP для игровых адаптеров:** Устанавливает `TcpAckFrequency = 1` (мгновенное подтверждение приема пакетов без задержки) и `TCPNoDelay = 1` (отключение алгоритма Нагла) для всех физических игровых интерфейсов в `HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces`.
+- **Локализационная независимость через CIM:** Определение параметров TCP-стека выполняет прямой запрос через CIM-командлеты (`Get-NetTCPSetting` и `Get-NetOffloadGlobalSetting`) с резервным парсингом `netsh`, гарантируя корректное чтение конфигурации на любых языковых версиях Windows.
 - **Полная изоляция виртуальных и мобильных интерфейсов:** Жестко исключает сетевой адаптер Apple Mobile Device (`Ethernet 2` для USB-модема iPhone) и туннели Wintun (`wwan99`), предотвращая сбои раздачи интернета со смартфона и работу VPN.
 
 ### 18. Аппаратное планирование GPU (HAGS)

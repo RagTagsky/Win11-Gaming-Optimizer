@@ -17,13 +17,22 @@ function Set-ServiceStateSafe {
         [switch]$IsRestoring
     )
 
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if (-not $service) {
+        # Fallback: check for versioned/suffixed services (e.g. GoogleUpdaterService157.0.8089.0)
+        $matching = @(Get-Service -Name "$($ServiceName)*" -ErrorAction SilentlyContinue)
+        if ($matching.Count -gt 0) {
+            $service = $matching[0]
+            $ServiceName = $service.Name
+        } else {
+            return $false
+        }
+    }
+
     if (-not $IsRestoring -and $Whitelist -and (Test-IsServiceProtected -ServiceName $ServiceName -Whitelist $Whitelist)) {
         Write-Warning "Service '$ServiceName' is protected by the Whitelist. Skipping modification."
         return $false
     }
-
-    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if (-not $service) { return $false }
 
     $startVal = switch ($StartupType) {
         "Automatic" { 2 }

@@ -89,7 +89,7 @@ echo ============================================================
 echo.
 echo   [1] Reset DisplayPort ^& Monitor Topology Cache
 echo   [2] Repair Microphone, Steam ^& Audio Services
-echo   [3] Purge GPU Shader Cache (AMD / DirectX / Vulkan)
+echo   [3] Purge Universal GPU Shader Cache (AMD / NVIDIA / Intel / DirectX)
 echo   [4] Check ^& Toggle VBS / Core Isolation
 echo   [5] Check GPU MSI ^& IRQ Priority Status
 echo   [6] Check Kernel DPC, Input Buffer ^& Timer Status

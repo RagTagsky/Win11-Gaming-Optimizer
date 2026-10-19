@@ -276,6 +276,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 ### 4. Background Process & Bloatware Annihilator
 - **Terminated on Launch:** Web browsers (`firefox`, `chrome`, `msedge`), `Telegram`, `Discord`, `Spotify`, `EpicGamesLauncher`, `CrossDeviceResume` (Phone Link), AMD screen record overlays (`amdow`, `AMDRSServ`), taskbar widgets (`msedgewebview2`), cloud sync clients (`GoogleDriveFS`), background store updaters.
 - **Strictly Protected:** The active game, **Steam**, **FACEIT Client**, AMD Radeon display driver (`atieclxx`, `amdfendrsr`), **MSI Afterburner / RivaTuner Statistics Server**, **Process Lasso** (`ProcessGovernor`), **Apple Mobile Device Service** (USB Tethering).
+- **Origin-Segregated Startup Shortcut Quarantine:** Startup folder shortcuts (`.lnk`, `.url`) from both user (`AppData\...\Startup`) and system (`ProgramData\...\Startup`) are quarantined into dedicated origin folders (`Backups\QuarantinedShortcuts\User` and `Backups\QuarantinedShortcuts\ProgramData`). Uses PowerShell `-LiteralPath` to prevent wildcard syntax errors when filenames contain brackets (e.g. `Game [Modded].lnk`), and restores them to their exact origin folders with zero name collisions.
 
 ### 5. Windows 11 Widgets & Bing Search Elimination
 - Disables Windows 11 News & Interests taskbar widgets (`TaskbarDa = 0`, `AllowNewsAndInterests = 0`), which immediately kills up to 6 hidden background `msedgewebview2.exe` processes.
@@ -287,7 +288,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ### 7. Universal CPU Architecture Tuning & Shader Cache Maintenance
 - **Universal Core Unparking & Throttle Lock:** Automatically tunes the active power plan by setting processor idle minimum cores to 100% (`powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100`), keeping all physical and logical cores on both AMD Ryzen and Intel Core processors active. On budget or low-core chips (<= 4 logical cores), locks `PROCTHROTTLEMIN = 100` to prevent clock downthrottling during sudden thread spikes.
-- **DirectX & Vulkan Shader Cache Purge:** Option **`[3]`** in the Advanced Tools menu safely scrubs corrupt or bloated AMD, NVIDIA, and Intel DirectX/Vulkan shader cache directories (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\NVIDIA\DXCache`, `GLCache`, `%APPDATA%\NVIDIA\ComputeCache`, `%LOCALAPPDATA%\Intel\ShaderCache`, `Intel\D3DSCache`, `%LOCALAPPDATA%\D3DSCache`), eliminating shader compilation micro-stutters and dropped frames in titles like *CS2*.
+- **DirectX & Vulkan Shader Cache Purge:** Option **`[3]`** in the Advanced Tools menu safely scrubs corrupt or bloated AMD, NVIDIA, and Intel DirectX/Vulkan shader cache across 12 directories (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\NVIDIA\DXCache`, `GLCache`, `%APPDATA%\NVIDIA\ComputeCache`, `%LOCALAPPDATA%\NVIDIA Corporation\NV_Cache`, `%LOCALAPPDATA%\Intel\ShaderCache`, `Intel\D3DSCache`, `%LOCALAPPDATA%\D3DSCache`), eliminating shader compilation micro-stutters and dropped frames in titles like *CS2*.
 
 ### 8. Adaptive GPU Engine & Message Signaled Interrupts (MSI Mode)
 - **Primary Discrete GPU Auto-Detection:** Automatically discovers dedicated PCI graphics cards (AMD Radeon, NVIDIA GeForce, Intel Arc) with active displays, ignoring auxiliary integrated graphics.
@@ -336,6 +337,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
   - `ecncapability=disabled`: Disables Explicit Congestion Notification to prevent dropped or artificially delayed packets on gaming routers and hops that handle ECN incorrectly.
   - `rss=enabled`: Enforces Receive Side Scaling across CPU cores, offloading network packet interrupts across all available processor threads.
 - **Per-Adapter Gaming TCP Tuning:** Sets `TcpAckFrequency = 1` (immediate ACK without waiting) and `TCPNoDelay = 1` (disables Nagle's algorithm) across all active physical gaming adapters under `HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces`.
+- **Language-Independent CIM Detection:** State inspection queries typed CIM cmdlets (`Get-NetTCPSetting` and `Get-NetOffloadGlobalSetting`) with automatic `netsh` fallback, eliminating parsing fragility on non-English Windows locales.
 - **Ironclad Safety Exclusions:** Strictly isolates and excludes Apple Mobile Device USB tethering (`Ethernet 2`) and Wintun VPN tunnels (`wwan99`), guaranteeing phone tethering and VPN connections remain unaffected.
 
 ### 18. Hardware-Accelerated GPU Scheduling (HAGS)

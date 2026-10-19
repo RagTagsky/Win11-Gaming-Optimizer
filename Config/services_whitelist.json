@@ -1,4 +1,4 @@
-﻿{
+{
     "Description":  "Protected services that must NEVER be modified or stopped under any circumstances (Audio/Mic, Network, Anti-Cheat, Process Lasso, Steam/Rockstar, Low-Latency Direct Input, Core OS, and Display/Graphics Stack).",
     "ProtectedServices":  [
                               "Audiosrv",

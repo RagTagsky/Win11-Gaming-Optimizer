@@ -33,13 +33,8 @@
     "AMDRSServ",
     "EpicGamesLauncher",
     "AyuGram",
-    "TimeTracker",
-    "ege-tracker-sync",
-    "PulseSync",
     "GoogleDriveFS",
     "EALauncher",
-    "EADesktop",
-    "GeminiAppLauncher",
-    "updater"
+    "EADesktop"
   ]
 }

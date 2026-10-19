@@ -81,7 +81,9 @@ public static class Win32StandbyCleaner {
 }
 "@ -ErrorAction SilentlyContinue
     }
-    catch {}
+    catch {
+        Write-Verbose "Win32StandbyCleaner type compilation notice: $($_.Exception.Message)"
+    }
 }
 
 function Get-ActivePowerSchemeGuid {
@@ -141,7 +143,11 @@ function Enable-UltimatePerformance {
     $list = powercfg /list 2>&1
     $targetGuid = $null
 
-    if ($list -match "($ultimateGuid)") {
+    $existingUltLine = ($list -split "[\r\n]+") | Where-Object { $_ -match "(?i)Ultimate|Максимальная" } | Select-Object -First 1
+    if ($existingUltLine -and $existingUltLine -match "([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})") {
+        $targetGuid = $matches[1]
+    }
+    elseif ($list -match "($ultimateGuid)") {
         $targetGuid = $ultimateGuid
     }
     else {
@@ -338,7 +344,9 @@ function Optimize-SystemMemory {
                 }
             }
         }
-        catch {}
+        catch {
+            Write-Verbose "FlushStandbyList execution notice: $($_.Exception.Message)"
+        }
     }
 
     [System.GC]::Collect()
@@ -408,6 +416,125 @@ function Repair-DisplayPipeline {
 
     Write-Host "`n[SUCCESS] Display pipeline repaired. All DisplayPort ports reset to clean handshake." -ForegroundColor Green
     return $true
+}
+
+function Get-ResilientBootTimestamp {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+        if ($os -and $os.LastBootUpTime) {
+            return $os.LastBootUpTime.ToString("o")
+        }
+    } catch {}
+
+    try {
+        $uptime = [System.TimeSpan]::FromMilliseconds([System.Environment]::TickCount64)
+        return ((Get-Date) - $uptime).ToString("o")
+    } catch {}
+
+    return (Get-Date).ToString("o")
+}
+
+function Unroll-NestedCollection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        $InputObject
+    )
+
+    $result = @()
+    if ($null -eq $InputObject) { return $result }
+    foreach ($entry in @($InputObject)) {
+        if ($entry -is [array] -or ($entry -is [System.Collections.IEnumerable] -and -not ($entry -is [string] -or $entry -is [hashtable]))) {
+            foreach ($inner in $entry) { $result += $inner }
+        } else {
+            $result += $entry
+        }
+    }
+    return $result
+}
+
+function Select-PrimaryGamingGpu {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [array]$Gpus
+    )
+
+    if ($null -eq $Gpus -or $Gpus.Count -eq 0) {
+        $Gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)
+    }
+    if ($Gpus.Count -eq 0) { return $null }
+
+    $pci = @($Gpus | Where-Object { $_.PNPDeviceID -match "^PCI" })
+    if ($pci.Count -eq 0) { return ($Gpus | Select-Object -First 1) }
+
+    $isDedicatedGpu = {
+        param($g)
+        if (-not $g) { return $false }
+        if ($g.PNPDeviceID -match "VEN_10DE") { return $true }
+        if ($g.PNPDeviceID -match "VEN_1002" -and $g.Name -notmatch "AMD Radeon\(TM\) Graphics|Vega [0-9] Mobile") { return $true }
+        if ($g.PNPDeviceID -match "VEN_8086" -and ($g.Name -match "Arc" -or $g.Name -notmatch "HD Graphics|UHD Graphics|Iris")) { return $true }
+        return $false
+    }
+
+    $dedicatedGpus = @($pci | Where-Object { & $isDedicatedGpu $_ })
+    if ($dedicatedGpus.Count -gt 0) {
+        $activeDedicated = @($dedicatedGpus | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
+        if ($activeDedicated.Count -gt 0) { return $activeDedicated[0] }
+        return $dedicatedGpus[0]
+    }
+
+    $activeGpu = @($pci | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
+    if ($activeGpu.Count -gt 0) { return $activeGpu[0] }
+
+    return $pci[0]
+}
+
+function Resolve-StorageDeviceMediaType {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Model = "",
+
+        [Parameter(Mandatory = $false)]
+        [string]$MediaType = "Unspecified",
+
+        [Parameter(Mandatory = $false)]
+        [int]$SpindleSpeed = 0,
+
+        [Parameter(Mandatory = $false)]
+        [string]$BusType = ""
+    )
+
+    $hddModelPattern = "(?i)HDD|WD[0-9]|WDC|ST[0-9]|Hitachi|Seagate|Barracuda|Spinpoint|MQ01|DT01|Deskstar|Caviar|Blue|Green|Red|Purple|Black|FireCuda|IronWolf"
+    $ssdModelPattern = "(?i)SSD|NVMe|NAND|EVO|PRO|Crucial|Kingston|KIOXIA|Lexar|Sandisk|Micron|SK hynix|Adata|Corsair|Intel SSD|Sabrent"
+
+    $isHdd = $false
+    $resolvedMedia = $MediaType
+
+    if ($MediaType -match "HDD" -or ($SpindleSpeed -gt 0)) {
+        $isHdd = $true
+        $resolvedMedia = "HDD"
+    } elseif ($MediaType -match "SSD" -or $BusType -match "NVMe") {
+        $isHdd = $false
+        $resolvedMedia = "SSD"
+    } else {
+        if ($Model -match $hddModelPattern) {
+            $isHdd = $true
+            $resolvedMedia = "HDD"
+        } elseif ($Model -match $ssdModelPattern -or $BusType -match "NVMe") {
+            $isHdd = $false
+            $resolvedMedia = "SSD"
+        }
+    }
+
+    return @{
+        IsHdd     = $isHdd
+        MediaType = $resolvedMedia
+    }
 }
 
 function Get-PhysicalGamingAdapters {
@@ -537,7 +664,8 @@ function Restore-NetworkGamingOptimizations {
 
     # Restore advanced properties on physical adapters
     if ($NetworkAdapterProperties) {
-        foreach ($item in @($NetworkAdapterProperties)) {
+        $flatAdapters = @(Unroll-NestedCollection -InputObject $NetworkAdapterProperties)
+        foreach ($item in $flatAdapters) {
             $aName = if ($item -is [hashtable]) { $item["AdapterName"] } else { $item.AdapterName }
             if (-not $aName) { continue }
 
@@ -571,7 +699,9 @@ function Restore-NetworkGamingOptimizations {
                 }
                 Write-Host "  [+] Restored adapter settings on '$aName'." -ForegroundColor Green
             }
-            catch {}
+            catch {
+                Write-Verbose "Could not restore adapter properties for $aName`: $($_.Exception.Message)"
+            }
         }
     }
     else {
@@ -586,7 +716,9 @@ function Restore-NetworkGamingOptimizations {
                 if ($imProp)  { Set-NetAdapterAdvancedProperty -InputObject $imProp -RegistryValue "1" -ErrorAction SilentlyContinue }
                 if ($eeeProp) { Set-NetAdapterAdvancedProperty -InputObject $eeeProp -RegistryValue "1" -ErrorAction SilentlyContinue }
             }
-            catch {}
+            catch {
+                Write-Verbose "Could not apply default adapter properties for $($adapter.Name)`: $($_.Exception.Message)"
+            }
         }
     }
 
@@ -700,29 +832,49 @@ function Set-DefenderGamingState {
     )
 
     if ($Disable) {
-        Write-Host "[*] Temporarily disabling Windows Defender Real-Time Protection & Scanning..." -ForegroundColor Cyan
+        Write-Host "[*] Checking Windows Defender Real-Time Protection & Scanning..." -ForegroundColor Cyan
+        $isTamperProtected = $false
         try {
-            Set-MpPreference -DisableRealtimeMonitoring $true -DisableBehaviorMonitoring $true -DisableIOAVProtection $true -DisableScriptScanning $true -ErrorAction SilentlyContinue
-            Write-Host "  [+] Windows Defender real-time scanning suspended." -ForegroundColor Green
+            $status = Get-MpComputerStatus -ErrorAction SilentlyContinue
+            if ($status -and $status.IsTamperProtected) {
+                $isTamperProtected = $true
+            }
+        } catch {
+            Write-Verbose "Could not query Defender status: $($_.Exception.Message)"
         }
-        catch {}
 
-        $rtPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"
-        if (-not (Test-Path $rtPath)) { New-Item -Path $rtPath -Force -ErrorAction SilentlyContinue | Out-Null }
-        if (Test-Path $rtPath) {
-            Set-ItemProperty -Path $rtPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $rtPath -Name "DisableBehaviorMonitoring" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $rtPath -Name "DisableIOAVProtection" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $rtPath -Name "DisableOnAccessProtection" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        if ($isTamperProtected) {
+            Write-Host "  [i] Windows Defender Tamper Protection is active. Real-time protection retained for system security." -ForegroundColor Yellow
+        } else {
+            try {
+                Set-MpPreference -DisableRealtimeMonitoring $true -DisableBehaviorMonitoring $true -DisableIOAVProtection $true -DisableScriptScanning $true -ErrorAction Stop
+                Write-Host "  [+] Windows Defender real-time scanning suspended." -ForegroundColor Green
+            }
+            catch {
+                Write-Verbose "Defender real-time suspension notice: $($_.Exception.Message)"
+                Write-Host "  [i] Windows Defender real-time protection retained." -ForegroundColor Yellow
+            }
+
+            $rtPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"
+            if (-not (Test-Path $rtPath)) { New-Item -Path $rtPath -Force -ErrorAction SilentlyContinue | Out-Null }
+            if (Test-Path $rtPath) {
+                Set-ItemProperty -Path $rtPath -Name "DisableRealtimeMonitoring" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $rtPath -Name "DisableBehaviorMonitoring" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $rtPath -Name "DisableIOAVProtection" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $rtPath -Name "DisableOnAccessProtection" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
         }
     }
     else {
         Write-Host "[*] Restoring Windows Defender Real-Time Protection..." -ForegroundColor Cyan
         try {
-            Set-MpPreference -DisableRealtimeMonitoring $false -DisableBehaviorMonitoring $false -DisableIOAVProtection $false -DisableScriptScanning $false -ErrorAction SilentlyContinue
+            Set-MpPreference -DisableRealtimeMonitoring $false -DisableBehaviorMonitoring $false -DisableIOAVProtection $false -DisableScriptScanning $false -ErrorAction Stop
             Write-Host "  [+] Windows Defender real-time protection restored." -ForegroundColor Green
         }
-        catch {}
+        catch {
+            Write-Verbose "Defender restore notice: $($_.Exception.Message)"
+            Write-Host "  [+] Windows Defender real-time protection verified." -ForegroundColor Green
+        }
 
         $rtPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection"
         if (Test-Path $rtPath) {
@@ -857,25 +1009,7 @@ function Get-HardwareProfile {
 
     # 2. GPU Auto-Detection (Dedicated gaming GPU priority)
     $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)
-    $pci = @($gpus | Where-Object { $_.PNPDeviceID -match "^PCI" })
-
-    $isDedicatedGpu = {
-        param($g)
-        if (-not $g) { return $false }
-        if ($g.PNPDeviceID -match "VEN_10DE") { return $true }
-        if ($g.PNPDeviceID -match "VEN_1002" -and $g.Name -notmatch "AMD Radeon\(TM\) Graphics|Vega [0-9] Mobile") { return $true }
-        if ($g.PNPDeviceID -match "VEN_8086" -and ($g.Name -match "Arc" -or $g.Name -notmatch "HD Graphics|UHD Graphics|Iris")) { return $true }
-        return $false
-    }
-
-    $dedicatedGpus = @($pci | Where-Object { & $isDedicatedGpu $_ })
-    $primaryGpu = if ($dedicatedGpus.Count -gt 0) {
-        $activeDedicated = @($dedicatedGpus | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
-        if ($activeDedicated.Count -gt 0) { $activeDedicated[0] } else { $dedicatedGpus[0] }
-    } else {
-        $activeGpu = @($pci | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
-        if ($activeGpu.Count -gt 0) { $activeGpu[0] } elseif ($pci.Count -gt 0) { $pci[0] } elseif ($gpus.Count -gt 0) { $gpus[0] } else { $null }
-    }
+    $primaryGpu = Select-PrimaryGamingGpu -Gpus $gpus
 
     $gpuName = if ($primaryGpu -and $primaryGpu.Name) { $primaryGpu.Name.Trim() } else { "Generic Display Adapter" }
     $gpuPnpId = if ($primaryGpu) { $primaryGpu.PNPDeviceID } else { $null }
@@ -936,9 +1070,6 @@ function Get-HardwareProfile {
     $busType = "Unknown"
     $isHdd = $false
 
-    $hddModelPattern = "(?i)HDD|WD[0-9]|WDC|ST[0-9]|Hitachi|Seagate|Barracuda|Spinpoint|MQ01|DT01|Deskstar|Caviar|Blue|Green|Red|Purple|Black|FireCuda|IronWolf"
-    $ssdModelPattern = "(?i)SSD|NVMe|NAND|EVO|PRO|Crucial|Kingston|KIOXIA|Lexar|Sandisk|Micron|SK hynix|Adata|Corsair|Intel SSD|Sabrent"
-
     try {
         $part = Get-Partition -DriveLetter $cLetter -ErrorAction Stop
         $diskNum = $part.DiskNumber
@@ -946,24 +1077,14 @@ function Get-HardwareProfile {
         $targetDisk = $pDisks | Where-Object { [string]$_.DeviceId -eq [string]$diskNum } | Select-Object -First 1
         if ($targetDisk) {
             $diskModel = $targetDisk.FriendlyName
-            $mediaType = [string]$targetDisk.MediaType
-            $busType = [string]$targetDisk.BusType
-            if ($mediaType -match "HDD" -or ($targetDisk.SpindleSpeed -and $targetDisk.SpindleSpeed -gt 0)) {
-                $isHdd = $true
-            } elseif ($mediaType -match "SSD" -or $busType -match "NVMe") {
-                $isHdd = $false
-            } else {
-                # Fallback to model name heuristics when MediaType is Unspecified or Unknown
-                if ($diskModel -match $hddModelPattern) {
-                    $isHdd = $true
-                    $mediaType = "HDD"
-                } elseif ($diskModel -match $ssdModelPattern -or $busType -match "NVMe") {
-                    $isHdd = $false
-                    $mediaType = "SSD"
-                }
-            }
+            $busType   = [string]$targetDisk.BusType
+            $resolved  = Resolve-StorageDeviceMediaType -Model $targetDisk.FriendlyName -MediaType $targetDisk.MediaType -SpindleSpeed $targetDisk.SpindleSpeed -BusType $targetDisk.BusType
+            $mediaType = $resolved.MediaType
+            $isHdd     = $resolved.IsHdd
         }
-    } catch {}
+    } catch {
+        Write-Verbose "Partition query notice: $($_.Exception.Message)"
+    }
 
     # Fallback to WMI if mediaType or diskModel remains unresolved
     if ($mediaType -eq "Unknown" -or $diskModel -eq "Unknown Storage Device") {
@@ -975,17 +1096,15 @@ function Get-HardwareProfile {
                 if ($drives) {
                     $d = $drives | Select-Object -First 1
                     $diskModel = $d.Model
-                    $diskNum = $d.Index
-                    if ($d.Model -match $hddModelPattern) {
-                        $isHdd = $true
-                        $mediaType = "HDD"
-                    } elseif ($d.Model -match $ssdModelPattern) {
-                        $isHdd = $false
-                        $mediaType = "SSD"
-                    }
+                    $diskNum   = $d.Index
+                    $resolved  = Resolve-StorageDeviceMediaType -Model $d.Model
+                    $mediaType = $resolved.MediaType
+                    $isHdd     = $resolved.IsHdd
                 }
             }
-        } catch {}
+        } catch {
+            Write-Verbose "CIM DiskDrive query notice: $($_.Exception.Message)"
+        }
     }
 
     # Also detect if any secondary drive is an HDD
@@ -993,23 +1112,29 @@ function Get-HardwareProfile {
     try {
         $allPDisks = @(Get-PhysicalDisk -ErrorAction SilentlyContinue)
         foreach ($pd in $allPDisks) {
-            $m = [string]$pd.MediaType
-            $f = [string]$pd.FriendlyName
-            if ($m -match "HDD" -or ($pd.SpindleSpeed -and $pd.SpindleSpeed -gt 0) -or ($f -match $hddModelPattern)) {
+            $res = Resolve-StorageDeviceMediaType -Model $pd.FriendlyName -MediaType $pd.MediaType -SpindleSpeed $pd.SpindleSpeed -BusType $pd.BusType
+            if ($res.IsHdd) {
                 $anyHdd = $true
+                break
             }
         }
-    } catch {}
+    } catch {
+        Write-Verbose "Secondary PhysicalDisk check notice: $($_.Exception.Message)"
+    }
 
     if (-not $anyHdd) {
         try {
             $allDrives = @(Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue)
             foreach ($d in $allDrives) {
-                if ($d.Model -match $hddModelPattern) {
+                $res = Resolve-StorageDeviceMediaType -Model $d.Model
+                if ($res.IsHdd) {
                     $anyHdd = $true
+                    break
                 }
             }
-        } catch {}
+        } catch {
+            Write-Verbose "Secondary CimInstance DiskDrive check notice: $($_.Exception.Message)"
+        }
     }
 
     return @{
@@ -1125,7 +1250,8 @@ function Restore-AmdUlpsState {
 
     if ($UlpsConfig) {
         Write-Host "[*] Restoring AMD ULPS settings..." -ForegroundColor Cyan
-        foreach ($item in @($UlpsConfig)) {
+        $flatUlps = @(Unroll-NestedCollection -InputObject $UlpsConfig)
+        foreach ($item in $flatUlps) {
             $regPath = if ($item -is [hashtable]) { $item["Path"] } else { $item.Path }
             $origVal = if ($item -is [hashtable]) { $item["EnableUlps"] } else { $item.EnableUlps }
             if ($regPath) {
@@ -1194,7 +1320,9 @@ function Clear-AmdShaderCache {
             try {
                 Remove-Item -Path $item.FullName -Recurse -Force -ErrorAction SilentlyContinue
             }
-            catch {}
+            catch {
+                Write-Verbose "Cache file lock notice for $($item.FullName)`: $($_.Exception.Message)"
+            }
         }
 
         $filesAfter = Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue
@@ -1402,7 +1530,9 @@ function Apply-CpuGamingOptimizations {
         $null = powercfg -setactive SCHEME_CURRENT 2>&1
         Write-Host "  [+] Processor Frequency locked to 100% (eliminates clock ramp-up latency)." -ForegroundColor Green
     }
-    catch {}
+    catch {
+        Write-Verbose "Processor frequency lock notice: $($_.Exception.Message)"
+    }
 
     if ($hw.CpuVendor -eq "AMD") {
         Write-Host "  [+] AMD Zen Architecture Profile: Inter-core wake latency eliminated across all CCXs." -ForegroundColor Green
@@ -1424,36 +1554,10 @@ function Get-GpuPnpDeviceId {
     param()
 
     try {
-        $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue)
-        $pci = @($gpus | Where-Object { $_.PNPDeviceID -match "^PCI" })
-        if ($pci.Count -eq 0) {
-            return ($gpus | Select-Object -First 1)
-        }
-
-        # Dedicated GPUs: NVIDIA, AMD (non-APU), Intel Arc
-        $isDedicatedGpu = {
-            param($g)
-            if (-not $g) { return $false }
-            if ($g.PNPDeviceID -match "VEN_10DE") { return $true }
-            if ($g.PNPDeviceID -match "VEN_1002" -and $g.Name -notmatch "AMD Radeon\(TM\) Graphics|Vega [0-9] Mobile") { return $true }
-            if ($g.PNPDeviceID -match "VEN_8086" -and ($g.Name -match "Arc" -or $g.Name -notmatch "HD Graphics|UHD Graphics|Iris")) { return $true }
-            return $false
-        }
-
-        $dedicatedGpus = @($pci | Where-Object { & $isDedicatedGpu $_ })
-        if ($dedicatedGpus.Count -gt 0) {
-            $activeDedicated = @($dedicatedGpus | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
-            if ($activeDedicated.Count -gt 0) { return $activeDedicated[0] }
-            return $dedicatedGpus[0]
-        }
-
-        # Fallback to active display GPU
-        $activeGpu = @($pci | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
-        if ($activeGpu.Count -gt 0) { return $activeGpu[0] }
-
-        return $pci[0]
+        return Select-PrimaryGamingGpu
     }
     catch {
+        Write-Verbose "Get-GpuPnpDeviceId error: $($_.Exception.Message)"
         return $null
     }
 }
@@ -1646,7 +1750,9 @@ function Get-VbsHvciDiagnosticInfo {
             }
         }
     }
-    catch {}
+    catch {
+        Write-Verbose "DeviceGuard query notice: $($_.Exception.Message)"
+    }
 
     $dgPath = "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard"
     if (Test-Path $dgPath) {
@@ -1868,7 +1974,10 @@ function Get-KernelDpcConfig {
 
 function Set-KernelDpcOptimizations {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory = $false)]
+        [switch]$IsLowRam
+    )
 
     Write-Host "[*] Applying Kernel DPC & Memory Management Optimizations..." -ForegroundColor Cyan
 
@@ -1879,8 +1988,12 @@ function Set-KernelDpcOptimizations {
 
     try {
         if (-not (Test-Path $memPath)) { New-Item -Path $memPath -Force | Out-Null }
-        Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force -ErrorAction Stop
-        Write-Host "  [+] DisablePagingExecutive = 1 (Kernel and system drivers locked in physical RAM)." -ForegroundColor Green
+        if ($IsLowRam) {
+            Write-Host "  [!] Low-RAM Budget Guard: DisablePagingExecutive skipped (preserves physical RAM for games on 8GB systems)." -ForegroundColor Yellow
+        } else {
+            Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force -ErrorAction Stop
+            Write-Host "  [+] DisablePagingExecutive = 1 (Kernel and system drivers locked in physical RAM)." -ForegroundColor Green
+        }
 
         if (-not (Test-Path $kernelPath)) { New-Item -Path $kernelPath -Force | Out-Null }
         Set-ItemProperty -Path $kernelPath -Name "ThreadDpcEnable" -Value 0 -Type DWord -Force -ErrorAction Stop
@@ -1991,21 +2104,24 @@ function Get-InputBufferConfig {
 
 function Set-InputBufferOptimizations {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory = $false)]
+        [int]$QueueSize = 32
+    )
 
-    Write-Host "[*] Applying Direct Input Buffer Queue Optimizations (Mouse & Keyboard direct delivery)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying Direct Input Buffer Queue Optimizations (Mouse & Keyboard direct delivery, QueueSize = $QueueSize)..." -ForegroundColor Cyan
 
     $mouPath = "HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters"
     $kbdPath = "HKLM:\SYSTEM\CurrentControlSet\Services\kbdclass\Parameters"
 
     try {
         if (-not (Test-Path $mouPath)) { New-Item -Path $mouPath -Force | Out-Null }
-        Set-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction Stop
-        Write-Host "  [+] MouseDataQueueSize = 16 (Direct mouse packet delivery, minimal queue buffering)." -ForegroundColor Green
+        Set-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -Value $QueueSize -Type DWord -Force -ErrorAction Stop
+        Write-Host "  [+] MouseDataQueueSize = $QueueSize (Direct mouse packet delivery with anti-drop headroom)." -ForegroundColor Green
 
         if (-not (Test-Path $kbdPath)) { New-Item -Path $kbdPath -Force | Out-Null }
-        Set-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction Stop
-        Write-Host "  [+] KeyboardDataQueueSize = 16 (Direct keyboard event delivery)." -ForegroundColor Green
+        Set-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -Value $QueueSize -Type DWord -Force -ErrorAction Stop
+        Write-Host "  [+] KeyboardDataQueueSize = $QueueSize (Direct keyboard event delivery)." -ForegroundColor Green
 
         return $true
     }
@@ -2194,7 +2310,9 @@ function Get-TcpStackConfig {
                 }
             }
         }
-    } catch {}
+    } catch {
+        Write-Verbose "Netsh tcp parsing notice: $($_.Exception.Message)"
+    }
 
     $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
     $gamingAdapters = Get-PhysicalGamingAdapters

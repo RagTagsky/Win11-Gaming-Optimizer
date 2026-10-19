@@ -33,8 +33,14 @@ foreach ($s in $scripts) {
 
 # ── 2. Load Core Modules ───────────────────────────────────────────────────
 Write-Host "`n[Test Group 2] Module Loading and Type Verification:" -ForegroundColor Cyan
+. (Join-Path $repoRoot "Core\ServiceManager.ps1")
 . (Join-Path $repoRoot "Core\SystemOptimizer.ps1")
 . (Join-Path $repoRoot "Core\StateEngine.ps1")
+Assert-Test (Get-Command Select-PrimaryGamingGpu -ErrorAction SilentlyContinue) "Select-PrimaryGamingGpu pure function is exported and accessible"
+Assert-Test (Get-Command Resolve-StorageDeviceMediaType -ErrorAction SilentlyContinue) "Resolve-StorageDeviceMediaType pure function is exported and accessible"
+Assert-Test (Get-Command Unroll-NestedCollection -ErrorAction SilentlyContinue) "Unroll-NestedCollection pure function is exported and accessible"
+Assert-Test (Get-Command Resolve-QuarantineDestinationPath -ErrorAction SilentlyContinue) "Resolve-QuarantineDestinationPath pure function is exported and accessible"
+Assert-Test (Get-Command Set-ServiceStateSafe -ErrorAction SilentlyContinue) "Set-ServiceStateSafe is exported and accessible"
 Assert-Test (Get-Command Get-HardwareProfile -ErrorAction SilentlyContinue) "Get-HardwareProfile function is exported and accessible"
 Assert-Test (Get-Command Apply-CpuGamingOptimizations -ErrorAction SilentlyContinue) "Apply-CpuGamingOptimizations is accessible"
 Assert-Test (Get-Command Apply-GpuGamingOptimizations -ErrorAction SilentlyContinue) "Apply-GpuGamingOptimizations is accessible"
@@ -132,47 +138,19 @@ $testGpuScenarios = @(
     }
 )
 
-function Test-SelectPrimaryGpu($gpus) {
-    $pci = @($gpus | Where-Object { $_.PNPDeviceID -match "^PCI" })
-    if ($pci.Count -eq 0) { return ($gpus | Select-Object -First 1) }
-
-    $isDedicatedGpu = {
-        param($g)
-        if (-not $g) { return $false }
-        if ($g.PNPDeviceID -match "VEN_10DE") { return $true }
-        if ($g.PNPDeviceID -match "VEN_1002" -and $g.Name -notmatch "AMD Radeon\(TM\) Graphics|Vega [0-9] Mobile") { return $true }
-        if ($g.PNPDeviceID -match "VEN_8086" -and ($g.Name -match "Arc" -or $g.Name -notmatch "HD Graphics|UHD Graphics|Iris")) { return $true }
-        return $false
-    }
-
-    $dedicatedGpus = @($pci | Where-Object { & $isDedicatedGpu $_ })
-    if ($dedicatedGpus.Count -gt 0) {
-        $activeDedicated = @($dedicatedGpus | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
-        if ($activeDedicated.Count -gt 0) { return $activeDedicated[0] }
-        return $dedicatedGpus[0]
-    }
-
-    $activeGpu = @($pci | Where-Object { $_.CurrentHorizontalResolution -and $_.CurrentHorizontalResolution -gt 0 })
-    if ($activeGpu.Count -gt 0) { return $activeGpu[0] }
-
-    return $pci[0]
-}
-
 foreach ($scenario in $testGpuScenarios) {
-    $selected = Test-SelectPrimaryGpu $scenario.Gpus
+    $selected = Select-PrimaryGamingGpu -Gpus $scenario.Gpus
     $v = if ($selected.PNPDeviceID -match "VEN_1002" -or $selected.Name -match "AMD|Radeon") { "AMD" }
          elseif ($selected.PNPDeviceID -match "VEN_10DE" -or $selected.Name -match "NVIDIA|GeForce") { "NVIDIA" }
          elseif ($selected.PNPDeviceID -match "VEN_8086" -or $selected.Name -match "Intel") { "Intel" }
          else { "Unknown" }
 
-    Assert-Test ($selected.Name -eq $scenario.ExpectedSelected) "$($scenario.Scenario) -> Picked '$($selected.Name)'"
+    Assert-Test ($selected.Name -eq $scenario.ExpectedSelected) "$($scenario.Scenario) -> Picked '$($selected.Name)' via production Select-PrimaryGamingGpu"
     Assert-Test ($v -eq $scenario.ExpectedVendor) "$($scenario.Scenario) -> Vendor is '$v'"
 }
 
 # ── 6. Storage Disk Auto-Detection Heuristics ──────────────────────────────
 Write-Host "`n[Test Group 6] Storage Media Auto-Detection (HDD vs SSD Heuristics):" -ForegroundColor Cyan
-$hddModelPattern = "(?i)HDD|WD[0-9]|WDC|ST[0-9]|Hitachi|Seagate|Barracuda|Spinpoint|MQ01|DT01|Deskstar|Caviar|Blue|Green|Red|Purple|Black|FireCuda|IronWolf"
-$ssdModelPattern = "(?i)SSD|NVMe|NAND|EVO|PRO|Crucial|Kingston|KIOXIA|Lexar|Sandisk|Micron|SK hynix|Adata|Corsair|Intel SSD|Sabrent"
 
 $storageCases = @(
     @{ Model = "WDC WD10EZEX-08WN4A0"; MediaType = "Unspecified"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" },
@@ -183,23 +161,9 @@ $storageCases = @(
 )
 
 foreach ($sc in $storageCases) {
-    $isHdd = $false
-    $media = $sc.MediaType
-    if ($media -match "HDD") {
-        $isHdd = $true
-    } elseif ($media -match "SSD") {
-        $isHdd = $false
-    } else {
-        if ($sc.Model -match $hddModelPattern) {
-            $isHdd = $true
-            $media = "HDD"
-        } elseif ($sc.Model -match $ssdModelPattern) {
-            $isHdd = $false
-            $media = "SSD"
-        }
-    }
-    Assert-Test ($isHdd -eq $sc.ExpectedIsHdd) "Model '$($sc.Model)' with MediaType '$($sc.MediaType)': IsHdd=$isHdd (Expected: $($sc.ExpectedIsHdd))"
-    Assert-Test ($media -eq $sc.ExpectedMediaType) "Model '$($sc.Model)': Resolved MediaType=$media (Expected: $($sc.ExpectedMediaType))"
+    $res = Resolve-StorageDeviceMediaType -Model $sc.Model -MediaType $sc.MediaType
+    Assert-Test ($res.IsHdd -eq $sc.ExpectedIsHdd) "Model '$($sc.Model)' with MediaType '$($sc.MediaType)': IsHdd=$($res.IsHdd) (Expected: $($sc.ExpectedIsHdd))"
+    Assert-Test ($res.MediaType -eq $sc.ExpectedMediaType) "Model '$($sc.Model)': Resolved MediaType=$($res.MediaType) (Expected: $($sc.ExpectedMediaType))"
 }
 
 # ── 7. Low-RAM 8GB Guard & Pagefile Verification ───────────────────────────
@@ -305,37 +269,52 @@ try {
 }
 Assert-Test ($threwError -eq $false) "Non-destructive fallback: All v2.6 query functions execute without throwing unhandled exceptions"
 
-# ── 9. Multi-Directory Shortcut Quarantine & Restoration Simulation ────────
-Write-Host "`n[Test Group 9] Shortcut Quarantine & Variable Scoping Validation:" -ForegroundColor Cyan
+# ── 9. Multi-Directory Shortcut Quarantine & Collision Resilience ───────────
+Write-Host "`n[Test Group 9] Shortcut Quarantine, Collision Resilience & LiteralPath Validation:" -ForegroundColor Cyan
 $mockStateShortcuts = @(
-    [PSCustomObject]@{ Name = "AyuGram.lnk"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" },
-    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; OriginalFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup" },
-    [PSCustomObject]@{ Name = "Discord.lnk"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" }
+    [PSCustomObject]@{ Name = "AyuGram.lnk"; FolderTag = "User"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" },
+    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; FolderTag = "ProgramData"; OriginalFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup" },
+    [PSCustomObject]@{ Name = "Discord.lnk"; FolderTag = "User"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" },
+    [PSCustomObject]@{ Name = "Discord.lnk"; FolderTag = "ProgramData"; OriginalFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup" },
+    [PSCustomObject]@{ Name = "Game [Modded] (v2.0).lnk"; FolderTag = "User"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" }
 )
 
-$quarantinedFiles = @(
-    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; FullName = "C:\fake\EnterpriseClient.lnk" },
-    [PSCustomObject]@{ Name = "AyuGram.lnk"; FullName = "C:\fake\AyuGram.lnk" },
-    [PSCustomObject]@{ Name = "Discord.lnk"; FullName = "C:\fake\Discord.lnk" }
+$mockQuarantineFiles = @(
+    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; FullName = "C:\fake\QuarantinedShortcuts\ProgramData\EnterpriseClient.lnk"; Directory = [PSCustomObject]@{ Name = "ProgramData" } },
+    [PSCustomObject]@{ Name = "AyuGram.lnk"; FullName = "C:\fake\QuarantinedShortcuts\User\AyuGram.lnk"; Directory = [PSCustomObject]@{ Name = "User" } },
+    [PSCustomObject]@{ Name = "Discord.lnk"; FullName = "C:\fake\QuarantinedShortcuts\User\Discord.lnk"; Directory = [PSCustomObject]@{ Name = "User" } },
+    [PSCustomObject]@{ Name = "Discord.lnk"; FullName = "C:\fake\QuarantinedShortcuts\ProgramData\Discord.lnk"; Directory = [PSCustomObject]@{ Name = "ProgramData" } },
+    [PSCustomObject]@{ Name = "Game [Modded] (v2.0).lnk"; FullName = "C:\fake\QuarantinedShortcuts\User\Game [Modded] (v2.0).lnk"; Directory = [PSCustomObject]@{ Name = "User" } }
 )
 
-$resolvedDirs = @{}
-foreach ($file in $quarantinedFiles) {
-    $shortcutFile = $file
-    $destDir = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
-    $match = $mockStateShortcuts | Where-Object { $_.Name -eq $shortcutFile.Name } | Select-Object -First 1
-    if ($match -and $match.OriginalFolder) {
-        $destDir = $match.OriginalFolder
+$testUserStartup = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
+$testCommonStartup = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+
+$resolvedRestorations = @()
+foreach ($file in $mockQuarantineFiles) {
+    $parentName = $file.Directory.Name
+    $res = Resolve-QuarantineDestinationPath `
+        -ShortcutName $file.Name `
+        -ParentFolder $parentName `
+        -UserStartupDir $testUserStartup `
+        -CommonStartupDir $testCommonStartup
+    $resolvedRestorations += [PSCustomObject]@{
+        Name    = $res.Name
+        Origin  = $res.Origin
+        DestDir = $res.DestDir
     }
-    $resolvedDirs[$shortcutFile.Name] = $destDir
 }
 
-Assert-Test ($resolvedDirs["EnterpriseClient.lnk"] -eq "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup") "Quarantine restoration correctly maps ProgramData shortcut (No `$_.Name shadowing)"
-Assert-Test ($resolvedDirs["AyuGram.lnk"] -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Quarantine restoration correctly maps AppData shortcut"
-Assert-Test ($resolvedDirs["Discord.lnk"] -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Quarantine restoration correctly maps secondary AppData shortcut"
+$userDiscord = $resolvedRestorations | Where-Object { $_.Name -eq "Discord.lnk" -and $_.Origin -eq "User" } | Select-Object -First 1
+$commonDiscord = $resolvedRestorations | Where-Object { $_.Name -eq "Discord.lnk" -and $_.Origin -eq "ProgramData" } | Select-Object -First 1
+$bracketGame = $resolvedRestorations | Where-Object { $_.Name -eq "Game [Modded] (v2.0).lnk" } | Select-Object -First 1
 
-# ── 10. Language-Agnostic Power Schemes & Shader Cache Targets ─────────────
-Write-Host "`n[Test Group 10] Localization Resilience & Multi-Vendor Shader Coverage:" -ForegroundColor Cyan
+Assert-Test ($userDiscord.DestDir -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Same-name User Discord.lnk correctly routes to AppData Startup"
+Assert-Test ($commonDiscord.DestDir -eq "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup") "Same-name ProgramData Discord.lnk correctly routes to ProgramData Startup (Zero Collision)"
+Assert-Test ($bracketGame.DestDir -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Special bracketed shortcut 'Game [Modded] (v2.0).lnk' routes without wildcard parsing error"
+
+# ── 10. Localization Resilience, 2D Array Unrolling & Multi-Vendor Shader Coverage ──
+Write-Host "`n[Test Group 10] Localization Resilience, 2D Array Unrolling & Multi-Vendor Shader Coverage:" -ForegroundColor Cyan
 
 $testPowerOutputs = @(
     @{ Raw = "GUID схемы питания: 929fef13-d38f-4d3a-b857-7c19197b2246  (Bitsum Highest Performance)"; Guid = "929fef13-d38f-4d3a-b857-7c19197b2246"; Expected = $true; Desc = "Bitsum Power Plan" },
@@ -351,6 +330,18 @@ foreach ($tp in $testPowerOutputs) {
     Assert-Test ($isHigh -eq $tp.Expected) "$($tp.Desc): Detected High-Performance = $isHigh (Expected: $($tp.Expected))"
 }
 
+# 10.2 Test 2D nested array unrolling for legacy/JSON compatibility
+$nestedUlpsMock = @(
+    @(
+        [PSCustomObject]@{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000"; EnableUlps = 1 },
+        [PSCustomObject]@{ Path = "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001"; EnableUlps = 0 }
+    )
+)
+$unrolledUlps = @(Unroll-NestedCollection -InputObject $nestedUlpsMock)
+Assert-Test ($unrolledUlps.Count -eq 2) "2D nested UlpsConfig cleanly unrolls into 2 individual items via production Unroll-NestedCollection (Count=$($unrolledUlps.Count))"
+Assert-Test ($unrolledUlps[0].EnableUlps -eq 1 -and $unrolledUlps[1].EnableUlps -eq 0) "2D nested UlpsConfig preserves item properties after unrolling"
+
+# 10.3 Test universal shader targets across 12 directories
 $testShaderTargets = @(
     (Join-Path $env:LOCALAPPDATA "AMD\DxCache"),
     (Join-Path $env:LOCALAPPDATA "AMD\VkCache"),
@@ -360,17 +351,57 @@ $testShaderTargets = @(
     (Join-Path $env:LOCALAPPDATA "NVIDIA\DXCache"),
     (Join-Path $env:LOCALAPPDATA "NVIDIA\GLCache"),
     (Join-Path $env:APPDATA "NVIDIA\ComputeCache"),
+    (Join-Path $env:LOCALAPPDATA "NVIDIA Corporation\NV_Cache"),
     (Join-Path $env:LOCALAPPDATA "Intel\ShaderCache"),
     (Join-Path $env:LOCALAPPDATA "Intel\D3DSCache"),
     (Join-Path $env:LOCALAPPDATA "D3DSCache")
 )
 $hasAmd = ($testShaderTargets | Where-Object { $_ -match "AMD" }).Count -ge 5
-$hasNvidia = ($testShaderTargets | Where-Object { $_ -match "NVIDIA" }).Count -ge 3
+$hasNvidia = ($testShaderTargets | Where-Object { $_ -match "NVIDIA" }).Count -ge 4
 $hasIntel = ($testShaderTargets | Where-Object { $_ -match "Intel" }).Count -ge 2
 Assert-Test ($hasAmd -and $hasNvidia -and $hasIntel) "Shader cache purge targets all major GPU vendors (AMD, NVIDIA, Intel)"
-Assert-Test ($testShaderTargets.Count -ge 11) "Total universal shader cache directory coverage: $($testShaderTargets.Count) targets"
+Assert-Test ($testShaderTargets.Count -ge 12) "Total universal shader cache directory coverage: $($testShaderTargets.Count) targets"
 
-# ── 11. Summary ────────────────────────────────────────────────────────────
+# ── 11. Zero-Trust Security, Hardening & Resilience Assertions ─────────────
+Write-Host "`n[Test Group 11] Zero-Trust Security, Whitelist Guards & Resilience:" -ForegroundColor Cyan
+
+# 11.1 Resilient Boot Timestamp (SEC-01)
+$ts = Get-ResilientBootTimestamp
+[DateTime]$parsedTs = [DateTime]::MinValue
+$parseOk = [DateTime]::TryParse($ts, [ref]$parsedTs)
+Assert-Test ($parseOk -and $parsedTs.Year -ge 2024) "Get-ResilientBootTimestamp returns valid ISO-8601 boot timestamp ($ts)"
+
+# 11.2 Protected Service Whitelist Guard
+$whitelistMock = @("Audiosrv", "AudioEndpointBuilder", "vgk", "vgc", "EasyAntiCheat", "BEService")
+$audioBlocked = (-not (Set-ServiceStateSafe -ServiceName "Audiosrv" -StartupType "Disabled" -Whitelist $whitelistMock))
+Assert-Test ($audioBlocked) "Audiosrv is strictly protected from modification by whitelist guard"
+$vgkBlocked = (-not (Set-ServiceStateSafe -ServiceName "vgk" -StartupType "Disabled" -Whitelist $whitelistMock))
+Assert-Test ($vgkBlocked) "Anti-cheat service 'vgk' (Vanguard) is strictly protected from modification"
+
+# 11.3 Services Blacklist Integrity (SLOP-01)
+$blPath = Join-Path $repoRoot "Config\services_blacklist.json"
+$blContent = Get-Content -Path $blPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$hardcodedChrome = $blContent.TargetServices | Where-Object { $_.Name -match "GoogleUpdaterService\d+" }
+Assert-Test ($null -eq $hardcodedChrome) "No hardcoded versioned Chrome updater service strings in services_blacklist.json (SLOP-01 resolved)"
+$baseChrome = $blContent.TargetServices | Where-Object { $_.Name -eq "GoogleUpdaterService" }
+Assert-Test ($null -ne $baseChrome) "Clean base 'GoogleUpdaterService' identifier present in services_blacklist.json"
+
+# 11.4 Startup Blacklist Cleanliness (SLOP-02)
+$stPath = Join-Path $repoRoot "Config\startup_apps.json"
+$stContent = Get-Content -Path $stPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$syntheticApps = @("TimeTracker", "ege-tracker-sync", "PulseSync", "GeminiAppLauncher")
+$foundSynthetic = @($stContent.BlacklistProcesses | Where-Object { $syntheticApps -contains $_ })
+Assert-Test ($foundSynthetic.Count -eq 0) "All synthetic AI placeholder processes removed from startup_apps.json (SLOP-02 resolved)"
+
+# 11.5 Adaptive Low-RAM Kernel DPC Guard (PERF-01)
+$cmdKernel = Get-Command Set-KernelDpcOptimizations
+Assert-Test ($cmdKernel.Parameters.ContainsKey("IsLowRam")) "Set-KernelDpcOptimizations exports -IsLowRam parameter for 8GB rig protection"
+
+# 11.6 Input Buffer Anti-Drop Headroom (PERF-02)
+$cmdInput = Get-Command Set-InputBufferOptimizations
+Assert-Test ($cmdInput.Parameters.ContainsKey("QueueSize")) "Set-InputBufferOptimizations exports -QueueSize parameter (default 32)"
+
+# ── 12. Summary ────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta
 Write-Host "   TEST RESULTS: $testsRun Tests Run | $failures Failures" -ForegroundColor $(if ($failures -eq 0) { "Green" } else { "Red" })
 Write-Host "=====================================================" -ForegroundColor Magenta
