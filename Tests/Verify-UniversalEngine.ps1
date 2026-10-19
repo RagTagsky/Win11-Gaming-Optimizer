@@ -256,14 +256,9 @@ $mockBcdTuned = @(
     "disabledynamictick      yes",
     "tscsyncpolicy           Enhanced"
 )
-$parsedTunedTick = $null
-$parsedTunedTsc = $null
-foreach ($line in $mockBcdTuned) {
-    if ($line -match '^\s*disabledynamictick\s+(\S+)') { $parsedTunedTick = $matches[1].Trim() }
-    elseif ($line -match '^\s*tscsyncpolicy\s+(\S+)') { $parsedTunedTsc = $matches[1].Trim() }
-}
-Assert-Test ($parsedTunedTick -eq "yes") "BCDedit parser extracts disabledynamictick='yes' from simulated output"
-Assert-Test ($parsedTunedTsc -eq "Enhanced") "BCDedit parser extracts tscsyncpolicy='Enhanced' from simulated output"
+$parsedTuned = Get-BcdeditTimerConfig -BcdOutput $mockBcdTuned
+Assert-Test ($parsedTuned.DynamicTick -eq "yes") "Get-BcdeditTimerConfig extracts DynamicTick='yes' from simulated output"
+Assert-Test ($parsedTuned.TscSyncPolicy -eq "Enhanced") "Get-BcdeditTimerConfig extracts TscSyncPolicy='Enhanced' from simulated output"
 
 $mockBcdDefault = @(
     "Windows Boot Loader",
@@ -273,18 +268,17 @@ $mockBcdDefault = @(
     "path                    \WINDOWS\system32\winload.efi",
     "description             Windows 11"
 )
-$parsedDefTick = $null
-$parsedDefTsc = $null
-foreach ($line in $mockBcdDefault) {
-    if ($line -match '^\s*disabledynamictick\s+(\S+)') { $parsedDefTick = $matches[1].Trim() }
-    elseif ($line -match '^\s*tscsyncpolicy\s+(\S+)') { $parsedDefTsc = $matches[1].Trim() }
-}
-Assert-Test ($null -eq $parsedDefTick -and $null -eq $parsedDefTsc) "BCDedit parser handles stock Windows output without timer keys safely ($null)"
+$parsedDef = Get-BcdeditTimerConfig -BcdOutput $mockBcdDefault
+Assert-Test ($null -eq $parsedDef.DynamicTick -and $null -eq $parsedDef.TscSyncPolicy) "Get-BcdeditTimerConfig handles stock Windows output without timer keys safely ($null)"
 
 # 8.4 TCP gaming stack & interface isolation verification
 $tcpCfg = Get-TcpStackConfig
 Assert-Test ($tcpCfg -is [hashtable] -and $tcpCfg.ContainsKey("Timestamps")) "Get-TcpStackConfig returns Timestamps key"
 Assert-Test ($tcpCfg -is [hashtable] -and $tcpCfg.ContainsKey("Interfaces")) "Get-TcpStackConfig returns Interfaces collection"
+
+$tcpInterfaceGuids = @($tcpCfg.Interfaces | ForEach-Object { if ($_ -is [hashtable]) { $_["Guid"] } else { $_.Guid } })
+Assert-Test ($tcpInterfaceGuids -notcontains "{8eb6cecf-6919-4cf4-8c70-e55823aa4b53}") "Get-TcpStackConfig strictly excludes Apple Mobile Device GUID {8eb6cecf-6919-4cf4-8c70-e55823aa4b53}"
+Assert-Test ($tcpInterfaceGuids -notcontains "{2e219888-9139-4199-ea45-cb771d7dad1d}") "Get-TcpStackConfig strictly excludes Wintun tunnel GUID {2e219888-9139-4199-ea45-cb771d7dad1d}"
 
 $gamingAdapters = Get-PhysicalGamingAdapters
 $gamingAdapterNames = @($gamingAdapters | ForEach-Object { $_.Name })

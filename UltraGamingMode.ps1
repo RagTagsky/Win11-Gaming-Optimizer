@@ -699,11 +699,13 @@ switch ($Action) {
         # 12. Kernel DPC & Memory Management
         Write-Host "`n[12] Kernel DPC & Memory Management Configuration:" -ForegroundColor Yellow
         $kdpc = Get-KernelDpcConfig
-        $dpcStatus = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [PASS - Immediate Execution]" } else { "Threaded ($($kdpc.ThreadDpcEnable)) [Default - Will be set to 0 in Gaming Mode]" }
+        $dpcVal = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "1" }
+        $dpcStatus = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [PASS - Immediate Execution]" } else { "Threaded ($dpcVal) [Default - Will be set to 0 in Gaming Mode]" }
         $dpcColor  = if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" }
         Write-Host "  ThreadDpcEnable:         $dpcStatus" -ForegroundColor $dpcColor
 
-        $pagingStatus = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [PASS - Drivers Locked in RAM]" } else { "Disabled ($($kdpc.DisablePagingExecutive)) [Pageable]" }
+        $pageVal = if ($null -ne $kdpc.DisablePagingExecutive) { $kdpc.DisablePagingExecutive } else { "0" }
+        $pagingStatus = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [PASS - Drivers Locked in RAM]" } else { "Disabled ($pageVal) [Pageable]" }
         $pagingColor  = if ($kdpc.DisablePagingExecutive -eq 1) { "Green" } else { "Yellow" }
         Write-Host "  DisablePagingExecutive:  $pagingStatus" -ForegroundColor $pagingColor
 

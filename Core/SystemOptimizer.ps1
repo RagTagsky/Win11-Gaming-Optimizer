@@ -498,16 +498,33 @@ function Restore-NetworkGamingOptimizations {
 
     $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
     if ($NetworkLatencyConfig -and (Test-Path $interfacesPath)) {
+        $protectedAdapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object {
+            $name = $_.Name
+            $desc = $_.InterfaceDescription
+            ($name -eq "Ethernet 2") -or ($name -eq "wwan99") -or
+            ($name -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V|vEthernet') -or
+            ($desc -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V')
+        })
+        $protectedGuids = @($protectedAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
+
         foreach ($item in $NetworkLatencyConfig) {
-            $guidPath = Join-Path $interfacesPath $item.Guid
+            $guid = if ($item -is [hashtable]) { $item["Guid"] } else { $item.Guid }
+            if ($protectedGuids -contains $guid) {
+                Write-Verbose "Skipping protected interface GUID in legacy latency restore: $guid"
+                continue
+            }
+            $guidPath = Join-Path $interfacesPath $guid
             if (Test-Path $guidPath) {
-                if ($null -ne $item.TCPNoDelay) {
-                    Set-ItemProperty -Path $guidPath -Name "TCPNoDelay" -Value $item.TCPNoDelay -Type DWord -Force -ErrorAction SilentlyContinue
+                $noDelay = if ($item -is [hashtable]) { $item["TCPNoDelay"] } else { $item.TCPNoDelay }
+                $ackFreq = if ($item -is [hashtable]) { $item["TcpAckFrequency"] } else { $item.TcpAckFrequency }
+
+                if ($null -ne $noDelay) {
+                    Set-ItemProperty -Path $guidPath -Name "TCPNoDelay" -Value $noDelay -Type DWord -Force -ErrorAction SilentlyContinue
                 } else {
                     Remove-ItemProperty -Path $guidPath -Name "TCPNoDelay" -ErrorAction SilentlyContinue
                 }
-                if ($null -ne $item.TcpAckFrequency) {
-                    Set-ItemProperty -Path $guidPath -Name "TcpAckFrequency" -Value $item.TcpAckFrequency -Type DWord -Force -ErrorAction SilentlyContinue
+                if ($null -ne $ackFreq) {
+                    Set-ItemProperty -Path $guidPath -Name "TcpAckFrequency" -Value $ackFreq -Type DWord -Force -ErrorAction SilentlyContinue
                 } else {
                     Remove-ItemProperty -Path $guidPath -Name "TcpAckFrequency" -ErrorAction SilentlyContinue
                 }
@@ -1850,19 +1867,19 @@ function Set-KernelDpcOptimizations {
 
     try {
         if (-not (Test-Path $memPath)) { New-Item -Path $memPath -Force | Out-Null }
-        Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force -ErrorAction Stop
         Write-Host "  [+] DisablePagingExecutive = 1 (Kernel and system drivers locked in physical RAM)." -ForegroundColor Green
 
         if (-not (Test-Path $kernelPath)) { New-Item -Path $kernelPath -Force | Out-Null }
-        Set-ItemProperty -Path $kernelPath -Name "ThreadDpcEnable" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $kernelPath -Name "ThreadDpcEnable" -Value 0 -Type DWord -Force -ErrorAction Stop
         Write-Host "  [+] ThreadDpcEnable = 0 (Immediate kernel DPC execution, worker thread delay eliminated)." -ForegroundColor Green
 
         if (-not (Test-Path $prioPath)) { New-Item -Path $prioPath -Force | Out-Null }
-        Set-ItemProperty -Path $prioPath -Name "Win32PrioritySeparation" -Value 38 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $prioPath -Name "Win32PrioritySeparation" -Value 38 -Type DWord -Force -ErrorAction Stop
         Write-Host "  [+] Win32PrioritySeparation = 0x26 (38) (Short, variable 3:1 foreground gaming boost)." -ForegroundColor Green
 
         if (-not (Test-Path $powerPath)) { New-Item -Path $powerPath -Force | Out-Null }
-        Set-ItemProperty -Path $powerPath -Name "PowerThrottlingOff" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $powerPath -Name "PowerThrottlingOff" -Value 1 -Type DWord -Force -ErrorAction Stop
         Write-Host "  [+] PowerThrottlingOff = 1 (Global CPU power throttling disabled for game threads)." -ForegroundColor Green
 
         return $true
@@ -1971,11 +1988,11 @@ function Set-InputBufferOptimizations {
 
     try {
         if (-not (Test-Path $mouPath)) { New-Item -Path $mouPath -Force | Out-Null }
-        Set-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction Stop
         Write-Host "  [+] MouseDataQueueSize = 16 (Direct mouse packet delivery, minimal queue buffering)." -ForegroundColor Green
 
         if (-not (Test-Path $kbdPath)) { New-Item -Path $kbdPath -Force | Out-Null }
-        Set-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction Stop
         Write-Host "  [+] KeyboardDataQueueSize = 16 (Direct keyboard event delivery)." -ForegroundColor Green
 
         return $true
@@ -2032,7 +2049,10 @@ function Restore-InputBufferOptimizations {
 
 function Get-BcdeditTimerConfig {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory = $false)]
+        [string[]]$BcdOutput
+    )
 
     $result = @{
         DynamicTick   = $null
@@ -2040,7 +2060,13 @@ function Get-BcdeditTimerConfig {
     }
 
     try {
-        $raw = bcdedit /enum "{current}" 2>&1
+        $raw = if ($BcdOutput) { $BcdOutput } else {
+            $lines = bcdedit /enum osloader 2>&1
+            if ($LASTEXITCODE -ne 0 -or -not $lines) {
+                $lines = bcdedit /enum 2>&1
+            }
+            $lines
+        }
         if ($raw) {
             foreach ($line in $raw) {
                 if ($line -match '^\s*disabledynamictick\s+(\S+)') {
@@ -2162,10 +2188,22 @@ function Get-TcpStackConfig {
     $gamingAdapters = Get-PhysicalGamingAdapters
     $allowedGuids = @($gamingAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
 
-    if (Test-Path $interfacesPath) {
+    $protectedAdapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object {
+        $name = $_.Name
+        $desc = $_.InterfaceDescription
+        ($name -eq "Ethernet 2") -or ($name -eq "wwan99") -or
+        ($name -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V|vEthernet') -or
+        ($desc -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V')
+    })
+    $protectedGuids = @($protectedAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
+
+    if ((Test-Path $interfacesPath) -and $allowedGuids.Count -gt 0) {
         Get-ChildItem -Path $interfacesPath | ForEach-Object {
             $guid = $_.PSChildName
-            if ($allowedGuids.Count -eq 0 -or ($allowedGuids -contains $guid)) {
+            if ($protectedGuids -contains $guid) {
+                return
+            }
+            if ($allowedGuids -contains $guid) {
                 $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
                 $result.Interfaces += @{
                     Guid            = $guid
@@ -2198,7 +2236,7 @@ function Set-TcpGamingStackOptimizations {
     })
     $protectedGuids = @($protectedAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
 
-    if (Test-Path $interfacesPath) {
+    if ((Test-Path $interfacesPath) -and $allowedGuids.Count -gt 0) {
         $configuredCount = 0
         Get-ChildItem -Path $interfacesPath | ForEach-Object {
             $guid = $_.PSChildName
@@ -2207,16 +2245,17 @@ function Set-TcpGamingStackOptimizations {
                 return
             }
 
-            if ($allowedGuids.Count -eq 0 -or ($allowedGuids -contains $guid)) {
-                $props = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
-                if ($allowedGuids -contains $guid -or ($props.DhcpIPAddress -or $props.IPAddress)) {
-                    Set-ItemProperty -Path $_.PSPath -Name "TCPNoDelay" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-                    Set-ItemProperty -Path $_.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-                    $configuredCount++
-                }
+            if ($allowedGuids -contains $guid) {
+                Set-ItemProperty -Path $_.PSPath -Name "TCPNoDelay" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $_.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                $configuredCount++
             }
         }
         Write-Host "  [+] TCPNoDelay & TcpAckFrequency set to 1 across $configuredCount gaming interface(s)." -ForegroundColor Green
+        Write-Host "  [+] Protected Apple Mobile Device (Ethernet 2) & Wintun (wwan99) from TCP stack modifications." -ForegroundColor Green
+    }
+    elseif ($allowedGuids.Count -eq 0) {
+        Write-Host "  [i] No physical gaming network adapters found to configure TCPNoDelay/TcpAckFrequency." -ForegroundColor Gray
         Write-Host "  [+] Protected Apple Mobile Device (Ethernet 2) & Wintun (wwan99) from TCP stack modifications." -ForegroundColor Green
     }
 
@@ -2246,12 +2285,26 @@ function Restore-TcpGamingStackOptimizations {
         $rss    = if ($TcpStackConfig -is [hashtable]) { $TcpStackConfig["RSS"] } else { $TcpStackConfig.RSS }
         $ifaces = if ($TcpStackConfig -is [hashtable]) { $TcpStackConfig["Interfaces"] } else { $TcpStackConfig.Interfaces }
 
+        $protectedAdapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object {
+            $name = $_.Name
+            $desc = $_.InterfaceDescription
+            ($name -eq "Ethernet 2") -or ($name -eq "wwan99") -or
+            ($name -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V|vEthernet') -or
+            ($desc -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V')
+        })
+        $protectedGuids = @($protectedAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
+
         $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
         if ($ifaces -and (Test-Path $interfacesPath)) {
             foreach ($item in @($ifaces)) {
                 $guid    = if ($item -is [hashtable]) { $item["Guid"] } else { $item.Guid }
                 $noDelay = if ($item -is [hashtable]) { $item["TCPNoDelay"] } else { $item.TCPNoDelay }
                 $ackFreq = if ($item -is [hashtable]) { $item["TcpAckFrequency"] } else { $item.TcpAckFrequency }
+
+                if ($protectedGuids -contains $guid) {
+                    Write-Verbose "Skipping protected interface GUID in TCP stack restore: $guid"
+                    continue
+                }
 
                 $targetPath = Join-Path $interfacesPath $guid
                 if (Test-Path $targetPath) {

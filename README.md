@@ -287,7 +287,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ### 7. Universal CPU Architecture Tuning & Shader Cache Maintenance
 - **Universal Core Unparking & Throttle Lock:** Automatically tunes the active power plan by setting processor idle minimum cores to 100% (`powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100`), keeping all physical and logical cores on both AMD Ryzen and Intel Core processors active. On budget or low-core chips (<= 4 logical cores), locks `PROCTHROTTLEMIN = 100` to prevent clock downthrottling during sudden thread spikes.
-- **DirectX & Vulkan Shader Cache Purge:** Option **`[7]`** safely scrubs corrupt or bloated AMD, NVIDIA, and DirectX shader cache directories (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\D3DSCache`), eliminating shader compilation micro-stutters and dropped frames in titles like *CS2*.
+- **DirectX & Vulkan Shader Cache Purge:** Option **`[3]`** in the Advanced Tools menu safely scrubs corrupt or bloated AMD, NVIDIA, and DirectX shader cache directories (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\D3DSCache`), eliminating shader compilation micro-stutters and dropped frames in titles like *CS2*.
 
 ### 8. Adaptive GPU Engine & Message Signaled Interrupts (MSI Mode)
 - **Primary Discrete GPU Auto-Detection:** Automatically discovers dedicated PCI graphics cards (AMD Radeon, NVIDIA GeForce, Intel Arc) with active displays, ignoring auxiliary integrated graphics.
@@ -296,7 +296,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ### 9. VBS / HVCI (Core Isolation / Memory Integrity) Diagnostics & Toggle
 - Diagnoses Virtualization-Based Security (VBS) and Hypervisor-Enforced Code Integrity (HVCI) via WMI/CIM namespace `root\Microsoft\Windows\DeviceGuard` (`Win32_DeviceGuard`).
-- Option **`[8]`** provides a safe toggle to enable or disable VBS/HVCI in the registry (`EnableVirtualizationBasedSecurity` and `HypervisorEnforcedCodeIntegrity\Enabled`), removing hypervisor nested-ring CPU overhead and providing clear warnings that a reboot is required.
+- Option **`[4]`** in the Advanced Tools menu provides a safe toggle to enable or disable VBS/HVCI in the registry (`EnableVirtualizationBasedSecurity` and `HypervisorEnforcedCodeIntegrity\Enabled`), removing hypervisor nested-ring CPU overhead and providing clear warnings that a reboot is required.
 
 ### 10. NTFS File System I/O Optimizations
 - Applies `fsutil behavior set disablelastaccess 1` to stop Windows from updating the last-access timestamp on disk whenever a file is read, eliminating write amplification during game asset streaming.

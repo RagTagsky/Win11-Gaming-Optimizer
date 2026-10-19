@@ -1,4 +1,4 @@
-﻿{
+{
     "StartupShortcuts":  [
                              {
                                  "QuarantinePath":  "C:\\Users\\ragtagsky\\Documents\\Workstation\\E.Mode\\Core\\..\\Backups\\QuarantinedShortcuts\\AyuGram.lnk",
@@ -1139,7 +1139,7 @@
                             "SystemDiskNumber":  1,
                             "PagefileWarning":  null
                         },
-    "Version":  "2.5",
+    "Version":  "2.6",
     "ProcessorThrottleMin":  100,
     "AppModelStartupTasks":  [
                                  {
@@ -1167,5 +1167,34 @@
                                "SubKeyName":  "0000"
                            }
                        ]
-                   ]
+                   ],
+    "KernelDpcConfig":  {
+                            "DisablePagingExecutive":  0,
+                            "ThreadDpcEnable":  null,
+                            "Win32PrioritySeparation":  38,
+                            "PowerThrottlingOff":  1
+                        },
+    "InputBufferConfig":  {
+                              "MouseDataQueueSize":  null,
+                              "KeyboardDataQueueSize":  100
+                          },
+    "BcdeditConfig":  {
+                          "DynamicTick":  null,
+                          "TscSyncPolicy":  null
+                      },
+    "TcpStackConfig":  {
+                           "Timestamps":  "enabled",
+                           "ECN":  "disabled",
+                           "RSS":  "enabled",
+                           "Interfaces":  [
+                                              {
+                                                  "Guid":  "{6a5c1d19-3d79-4f75-a2cb-4fd972e51726}",
+                                                  "TcpAckFrequency":  null,
+                                                  "TCPNoDelay":  null
+                                              }
+                                          ]
+                       },
+    "HagsConfig":  {
+                       "HwSchMode":  2
+                   }
 }
