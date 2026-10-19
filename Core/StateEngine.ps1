@@ -449,6 +449,12 @@ function Disable-UserStateAggressive {
     Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
     Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
 
+    # 10. Apply Low-Latency Kernel DPC, Input Buffer Queues, Timers & HAGS (takes effect on reboot)
+    Set-KernelDpcOptimizations | Out-Null
+    Set-InputBufferOptimizations | Out-Null
+    Set-BcdeditTimerOptimizations | Out-Null
+    Set-HagsGpuScheduling | Out-Null
+
     Write-Host "[+] User startup environment completely stripped and optimized for gaming." -ForegroundColor Green
 }
 
@@ -520,16 +526,17 @@ function Restore-SystemState {
     $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
     if (Test-Path $quarantineDir) {
         Get-ChildItem -Path $quarantineDir -File | ForEach-Object {
+            $shortcutFile = $_
             $destDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
             if ($stateData -and $stateData.StartupShortcuts) {
-                $match = $stateData.StartupShortcuts | Where-Object { $_.Name -eq $_.Name } | Select-Object -First 1
+                $match = $stateData.StartupShortcuts | Where-Object { $_.Name -eq $shortcutFile.Name } | Select-Object -First 1
                 if ($match -and $match.OriginalFolder -and (Test-Path $match.OriginalFolder)) {
                     $destDir = $match.OriginalFolder
                 }
             }
-            $targetPath = Join-Path $destDir $_.Name
-            Move-Item -Path $_.FullName -Destination $targetPath -Force -ErrorAction SilentlyContinue
-            Write-Host "  [+] Restored startup shortcut: $($_.Name)" -ForegroundColor Green
+            $targetPath = Join-Path $destDir $shortcutFile.Name
+            Move-Item -Path $shortcutFile.FullName -Destination $targetPath -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Restored startup shortcut: $($shortcutFile.Name)" -ForegroundColor Green
         }
     }
 

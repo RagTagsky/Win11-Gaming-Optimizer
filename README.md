@@ -287,7 +287,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ### 7. Universal CPU Architecture Tuning & Shader Cache Maintenance
 - **Universal Core Unparking & Throttle Lock:** Automatically tunes the active power plan by setting processor idle minimum cores to 100% (`powercfg -setacvalueindex SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 100`), keeping all physical and logical cores on both AMD Ryzen and Intel Core processors active. On budget or low-core chips (<= 4 logical cores), locks `PROCTHROTTLEMIN = 100` to prevent clock downthrottling during sudden thread spikes.
-- **DirectX & Vulkan Shader Cache Purge:** Option **`[3]`** in the Advanced Tools menu safely scrubs corrupt or bloated AMD, NVIDIA, and DirectX shader cache directories (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\D3DSCache`), eliminating shader compilation micro-stutters and dropped frames in titles like *CS2*.
+- **DirectX & Vulkan Shader Cache Purge:** Option **`[3]`** in the Advanced Tools menu safely scrubs corrupt or bloated AMD, NVIDIA, and Intel DirectX/Vulkan shader cache directories (`%LOCALAPPDATA%\AMD\DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `%LOCALAPPDATA%\NVIDIA\DXCache`, `GLCache`, `%APPDATA%\NVIDIA\ComputeCache`, `%LOCALAPPDATA%\Intel\ShaderCache`, `Intel\D3DSCache`, `%LOCALAPPDATA%\D3DSCache`), eliminating shader compilation micro-stutters and dropped frames in titles like *CS2*.
 
 ### 8. Adaptive GPU Engine & Message Signaled Interrupts (MSI Mode)
 - **Primary Discrete GPU Auto-Detection:** Automatically discovers dedicated PCI graphics cards (AMD Radeon, NVIDIA GeForce, Intel Arc) with active displays, ignoring auxiliary integrated graphics.
@@ -453,7 +453,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 |:---:|:---|:---|
 | **`[1]`** | `-Action RepairDisplay` | Emergency fix: wipes corrupt registry display topology caches and resets MMCSS game scheduling to default safe parameters. |
 | **`[2]`** | `-Action RepairServices`| Emergency fix: repairs and starts `camsvc` (Microphone privacy), `LanmanServer` (RPC session), and unblocks Steam/Bluetooth. |
-| **`[3]`** | `-Action FlushShaderCache`| Purges AMD DirectX, Vulkan, and D3D shader caches (`DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `D3DSCache`) to eliminate shader pipeline micro-stutters. |
+| **`[3]`** | `-Action FlushShaderCache`| Purges AMD, NVIDIA, and DirectX/Vulkan shader caches (`DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `NVIDIA\DXCache`, `GLCache`, `ComputeCache`, `D3DSCache`) to eliminate shader pipeline micro-stutters. |
 | **`[4]`** | `-Action ToggleVBS` | Checks and toggles Virtualization-Based Security (VBS) and Memory Integrity (HVCI) in registry to eliminate virtualization overhead. |
 | **`[5]`** | `-Action GpuMsiStatus` | Displays GPU Vendor, Message Signaled Interrupts (MSI) status, and IRQ priority (`DevicePriority = 3`). |
 | **`[6]`** | `-Action KernelLatencyStatus` | Displays Kernel DPC (`DisablePagingExecutive`, `ThreadDpcEnable`, `Win32PrioritySeparation`), peripheral input queues (`mouclass`/`kbdclass` buffer sizes), BCDedit timer sync (`disabledynamictick`, `tscsyncpolicy`), TCP stack global parameters, and HAGS scheduling status. |

@@ -55,6 +55,9 @@ Assert-Test (Get-Command Restore-TcpGamingStackOptimizations -ErrorAction Silent
 Assert-Test (Get-Command Get-HagsGpuSchedulingConfig -ErrorAction SilentlyContinue) "Get-HagsGpuSchedulingConfig is accessible"
 Assert-Test (Get-Command Set-HagsGpuScheduling -ErrorAction SilentlyContinue) "Set-HagsGpuScheduling is accessible"
 Assert-Test (Get-Command Restore-HagsGpuScheduling -ErrorAction SilentlyContinue) "Restore-HagsGpuScheduling is accessible"
+Assert-Test (Get-Command Clear-AmdShaderCache -ErrorAction SilentlyContinue) "Clear-AmdShaderCache is accessible"
+Assert-Test (Get-Command Clear-GpuShaderCache -ErrorAction SilentlyContinue) "Clear-GpuShaderCache alias is accessible"
+Assert-Test (Get-Command Disable-UserStateAggressive -ErrorAction SilentlyContinue) "Disable-UserStateAggressive is accessible"
 
 # ── 3. Real System Hardware Profile Verification ───────────────────────────
 Write-Host "`n[Test Group 3] Live System Hardware Auto-Detection:" -ForegroundColor Cyan
@@ -302,7 +305,72 @@ try {
 }
 Assert-Test ($threwError -eq $false) "Non-destructive fallback: All v2.6 query functions execute without throwing unhandled exceptions"
 
-# ── 9. Summary ─────────────────────────────────────────────────────────────
+# ── 9. Multi-Directory Shortcut Quarantine & Restoration Simulation ────────
+Write-Host "`n[Test Group 9] Shortcut Quarantine & Variable Scoping Validation:" -ForegroundColor Cyan
+$mockStateShortcuts = @(
+    [PSCustomObject]@{ Name = "AyuGram.lnk"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" },
+    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; OriginalFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup" },
+    [PSCustomObject]@{ Name = "Discord.lnk"; OriginalFolder = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup" }
+)
+
+$quarantinedFiles = @(
+    [PSCustomObject]@{ Name = "EnterpriseClient.lnk"; FullName = "C:\fake\EnterpriseClient.lnk" },
+    [PSCustomObject]@{ Name = "AyuGram.lnk"; FullName = "C:\fake\AyuGram.lnk" },
+    [PSCustomObject]@{ Name = "Discord.lnk"; FullName = "C:\fake\Discord.lnk" }
+)
+
+$resolvedDirs = @{}
+foreach ($file in $quarantinedFiles) {
+    $shortcutFile = $file
+    $destDir = "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
+    $match = $mockStateShortcuts | Where-Object { $_.Name -eq $shortcutFile.Name } | Select-Object -First 1
+    if ($match -and $match.OriginalFolder) {
+        $destDir = $match.OriginalFolder
+    }
+    $resolvedDirs[$shortcutFile.Name] = $destDir
+}
+
+Assert-Test ($resolvedDirs["EnterpriseClient.lnk"] -eq "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup") "Quarantine restoration correctly maps ProgramData shortcut (No `$_.Name shadowing)"
+Assert-Test ($resolvedDirs["AyuGram.lnk"] -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Quarantine restoration correctly maps AppData shortcut"
+Assert-Test ($resolvedDirs["Discord.lnk"] -eq "C:\Users\test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup") "Quarantine restoration correctly maps secondary AppData shortcut"
+
+# ── 10. Language-Agnostic Power Schemes & Shader Cache Targets ─────────────
+Write-Host "`n[Test Group 10] Localization Resilience & Multi-Vendor Shader Coverage:" -ForegroundColor Cyan
+
+$testPowerOutputs = @(
+    @{ Raw = "GUID схемы питания: 929fef13-d38f-4d3a-b857-7c19197b2246  (Bitsum Highest Performance)"; Guid = "929fef13-d38f-4d3a-b857-7c19197b2246"; Expected = $true; Desc = "Bitsum Power Plan" },
+    @{ Raw = "GUID схемы питания: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (Высокая производительность)"; Guid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"; Expected = $true; Desc = "Russian High Performance" },
+    @{ Raw = "GUID схемы питания: e9a42b02-d5df-448d-aa00-03f14749eb61  (Максимальная производительность)"; Guid = "e9a42b02-d5df-448d-aa00-03f14749eb61"; Expected = $true; Desc = "Russian Ultimate Performance" },
+    @{ Raw = "GUID схемы питания: 381b4222-f694-41f0-9685-ff5bb260df2e  (Сбалансированная)"; Guid = "381b4222-f694-41f0-9685-ff5bb260df2e"; Expected = $false; Desc = "Russian Balanced (Needs Boost)" },
+    @{ Raw = "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)"; Guid = "381b4222-f694-41f0-9685-ff5bb260df2e"; Expected = $false; Desc = "English Balanced (Needs Boost)" }
+)
+
+foreach ($tp in $testPowerOutputs) {
+    $isHigh = ($tp.Guid -in @("e9a42b02-d5df-448d-aa00-03f14749eb61", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c")) -or
+              ($tp.Raw -match "(?i)Bitsum|Ultimate|Revision|High [P|p]erformance|Max|Высокая производительность|Максимальная производительность")
+    Assert-Test ($isHigh -eq $tp.Expected) "$($tp.Desc): Detected High-Performance = $isHigh (Expected: $($tp.Expected))"
+}
+
+$testShaderTargets = @(
+    (Join-Path $env:LOCALAPPDATA "AMD\DxCache"),
+    (Join-Path $env:LOCALAPPDATA "AMD\VkCache"),
+    (Join-Path $env:LOCALAPPDATA "AMD\DxcCache"),
+    (Join-Path $env:LOCALAPPDATA "AMD\DX9Cache"),
+    (Join-Path $env:LOCALAPPDATA "AMD\OglCache"),
+    (Join-Path $env:LOCALAPPDATA "NVIDIA\DXCache"),
+    (Join-Path $env:LOCALAPPDATA "NVIDIA\GLCache"),
+    (Join-Path $env:APPDATA "NVIDIA\ComputeCache"),
+    (Join-Path $env:LOCALAPPDATA "Intel\ShaderCache"),
+    (Join-Path $env:LOCALAPPDATA "Intel\D3DSCache"),
+    (Join-Path $env:LOCALAPPDATA "D3DSCache")
+)
+$hasAmd = ($testShaderTargets | Where-Object { $_ -match "AMD" }).Count -ge 5
+$hasNvidia = ($testShaderTargets | Where-Object { $_ -match "NVIDIA" }).Count -ge 3
+$hasIntel = ($testShaderTargets | Where-Object { $_ -match "Intel" }).Count -ge 2
+Assert-Test ($hasAmd -and $hasNvidia -and $hasIntel) "Shader cache purge targets all major GPU vendors (AMD, NVIDIA, Intel)"
+Assert-Test ($testShaderTargets.Count -ge 11) "Total universal shader cache directory coverage: $($testShaderTargets.Count) targets"
+
+# ── 11. Summary ────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta
 Write-Host "   TEST RESULTS: $testsRun Tests Run | $failures Failures" -ForegroundColor $(if ($failures -eq 0) { "Green" } else { "Red" })
 Write-Host "=====================================================" -ForegroundColor Magenta

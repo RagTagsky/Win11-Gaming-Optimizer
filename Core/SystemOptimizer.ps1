@@ -127,8 +127,11 @@ function Enable-UltimatePerformance {
     Write-Host "[*] Checking Power Scheme..." -ForegroundColor Cyan
 
     # If the user already has a tuned high-performance scheme (like Bitsum, Revision, Ultimate), keep it!
+    $activeGuid = Get-ActivePowerSchemeGuid
     $activeRaw = powercfg /getactivescheme 2>&1
-    if ($activeRaw -match "(Bitsum|Ultimate|Revision|High [P|p]erformance|Max)") {
+    $isAlreadyHighPerf = ($activeGuid -in @("e9a42b02-d5df-448d-aa00-03f14749eb61", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c")) -or
+                         ($activeRaw -match "(?i)Bitsum|Ultimate|Revision|High [P|p]erformance|Max|Высокая производительность|Максимальная производительность")
+    if ($isAlreadyHighPerf) {
         Write-Host "  [+] Current active power scheme is already optimized: $activeRaw" -ForegroundColor Green
         Write-Host "  [+] Retaining active plan to avoid PCIe Link State / DisplayPort timing disruptions." -ForegroundColor Green
         return $true
@@ -1149,7 +1152,7 @@ function Clear-AmdShaderCache {
     param()
 
     Write-Host "`n=====================================================" -ForegroundColor Magenta
-    Write-Host "        AMD & DIRECTX / VULKAN SHADER CACHE PURGE    " -ForegroundColor Magenta
+    Write-Host "     UNIVERSAL GPU & DIRECTX / VULKAN SHADER CACHE PURGE " -ForegroundColor Magenta
     Write-Host "=====================================================" -ForegroundColor Magenta
 
     $targetDirs = @(
@@ -1158,6 +1161,11 @@ function Clear-AmdShaderCache {
         (Join-Path $env:LOCALAPPDATA "AMD\DxcCache"),
         (Join-Path $env:LOCALAPPDATA "AMD\DX9Cache"),
         (Join-Path $env:LOCALAPPDATA "AMD\OglCache"),
+        (Join-Path $env:LOCALAPPDATA "NVIDIA\DXCache"),
+        (Join-Path $env:LOCALAPPDATA "NVIDIA\GLCache"),
+        (Join-Path $env:APPDATA "NVIDIA\ComputeCache"),
+        (Join-Path $env:LOCALAPPDATA "Intel\ShaderCache"),
+        (Join-Path $env:LOCALAPPDATA "Intel\D3DSCache"),
         (Join-Path $env:LOCALAPPDATA "D3DSCache")
     )
 
@@ -1205,6 +1213,8 @@ function Clear-AmdShaderCache {
 
         $leafName = Split-Path $dir -Leaf
         if ($dir -match '(?i)AMD\\') { $leafName = "AMD\$leafName" }
+        elseif ($dir -match '(?i)NVIDIA\\') { $leafName = "NVIDIA\$leafName" }
+        elseif ($dir -match '(?i)Intel\\') { $leafName = "Intel\$leafName" }
         Write-Host "  [+] Purged $actuallyPurgedFiles files in $leafName." -ForegroundColor Green
     }
 
@@ -1213,6 +1223,8 @@ function Clear-AmdShaderCache {
     Write-Host "  [i] Shaders will cleanly recompile in-game without stutter or corruption." -ForegroundColor Gray
     return $totalFreedMb
 }
+
+Set-Alias -Name Clear-GpuShaderCache -Value Clear-AmdShaderCache -ErrorAction SilentlyContinue
 
 function Get-ProcessorIdleMinCores {
     [CmdletBinding()]

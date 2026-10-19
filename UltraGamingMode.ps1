@@ -555,6 +555,11 @@ switch ($Action) {
             (Join-Path $env:LOCALAPPDATA "AMD\DxcCache"),
             (Join-Path $env:LOCALAPPDATA "AMD\DX9Cache"),
             (Join-Path $env:LOCALAPPDATA "AMD\OglCache"),
+            (Join-Path $env:LOCALAPPDATA "NVIDIA\DXCache"),
+            (Join-Path $env:LOCALAPPDATA "NVIDIA\GLCache"),
+            (Join-Path $env:APPDATA "NVIDIA\ComputeCache"),
+            (Join-Path $env:LOCALAPPDATA "Intel\ShaderCache"),
+            (Join-Path $env:LOCALAPPDATA "Intel\D3DSCache"),
             (Join-Path $env:LOCALAPPDATA "D3DSCache")
         )
         foreach ($sd in $shaderDirs) {
@@ -565,6 +570,8 @@ switch ($Action) {
                 $mb = [math]::Round($bytes / 1MB, 2)
                 $leafName = Split-Path $sd -Leaf
                 if ($sd -match '(?i)AMD\\') { $leafName = "AMD\$leafName" }
+                elseif ($sd -match '(?i)NVIDIA\\') { $leafName = "NVIDIA\$leafName" }
+                elseif ($sd -match '(?i)Intel\\') { $leafName = "Intel\$leafName" }
                 Write-Host "  - Cache $leafName`: $cnt files ($mb MB)" -ForegroundColor White
             }
         }
@@ -594,7 +601,7 @@ switch ($Action) {
         Write-Host "  VBS Running Status:     $($vbsInfo.VbsStatus)" -ForegroundColor $vbsCol
         Write-Host "  HVCI (Core Isolation):  Running=$($vbsInfo.HvciRunning) | Registry Enabled=$($vbsInfo.HvciRegistryEnabled)" -ForegroundColor $vbsCol
         if ($vbsInfo.VbsRunning -or $vbsInfo.HvciRunning) {
-            Write-Host "  [i] Note: VBS/HVCI incurs virtualization overhead. Use Option [8] to toggle if needed." -ForegroundColor Yellow
+            Write-Host "  [i] Note: VBS/HVCI incurs virtualization overhead. Use Advanced Tools -> Option [4] to toggle if needed." -ForegroundColor Yellow
         } else {
             Write-Host "  [OK] VBS and Memory Integrity are inactive. Zero virtualization latency." -ForegroundColor Green
         }
