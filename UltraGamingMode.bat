@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 REM ============================================================
-REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.5
+REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.6
 REM  Universal Hardware Adaptive Tuning & Failsafe Suite
 REM ============================================================
 
@@ -24,12 +24,12 @@ exit /b
 
 :start
 cd /d "%~dp0"
-title Ultra Gaming Mode Controller v2.5
+title Ultra Gaming Mode Controller v2.6
 
 :menu
 cls
 echo ============================================================
-echo            ULTRA GAMING MODE CONTROLLER  v2.5
+echo            ULTRA GAMING MODE CONTROLLER  v2.6
 echo             Universal Hardware Adaptive Suite
 echo ============================================================
 echo.
@@ -91,12 +91,13 @@ echo   [1] Reset DisplayPort ^& Monitor Topology Cache
 echo   [2] Repair Microphone, Steam ^& Audio Services
 echo   [3] Purge GPU Shader Cache (AMD / DirectX / Vulkan)
 echo   [4] Check ^& Toggle VBS / Core Isolation
-echo   [5] Check GPU MSI Mode ^& IRQ Priority Status
-echo   [6] View Full Mode Status
+echo   [5] Check GPU MSI ^& IRQ Priority Status
+echo   [6] Check Kernel DPC, Input Buffer ^& Timer Status
+echo   [7] View Full Mode Status
 echo   [0] ^<-- Back to Main Menu
 echo.
 echo ============================================================
-set /p tool_choice="Select a tool [0-6]: "
+set /p tool_choice="Select a tool [0-7]: "
 
 if "%tool_choice%"=="1" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairDisplay
@@ -129,6 +130,12 @@ if "%tool_choice%"=="5" (
     goto tools_menu
 )
 if "%tool_choice%"=="6" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action KernelLatencyStatus
+    echo.
+    pause
+    goto tools_menu
+)
+if "%tool_choice%"=="7" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Status
     echo.
     pause

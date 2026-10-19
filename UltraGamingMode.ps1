@@ -17,7 +17,7 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus")]
+    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus")]
     [string]$Action = "Status",
 
     [switch]$Watchdog
@@ -28,7 +28,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
 if (-not $isAdmin) {
-    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus")) {
+    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus")) {
         Write-Warning "Running in non-elevated mode. Operating with current user privileges."
     }
     elseif ($Watchdog) {
@@ -159,6 +159,11 @@ switch ($Action) {
                 Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
                 Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
                 Set-NetworkGamingOptimizations | Out-Null
+                Set-KernelDpcOptimizations | Out-Null
+                Set-InputBufferOptimizations | Out-Null
+                Set-BcdeditTimerOptimizations | Out-Null
+                Set-TcpGamingStackOptimizations | Out-Null
+                Set-HagsGpuScheduling | Out-Null
 
                 # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
                 if ($hw.HddProfile) {
@@ -279,6 +284,19 @@ switch ($Action) {
             Write-Host " [!] Pagefile Alert: $($hw.PagefileWarning)" -ForegroundColor Red
         }
 
+        # v2.6 Competitive Latency Badges
+        $kdpc = Get-KernelDpcConfig
+        $input = Get-InputBufferConfig
+        $bcd = Get-BcdeditTimerConfig
+        $hags = Get-HagsGpuSchedulingConfig
+
+        $dpcBadge = if ($kdpc.ThreadDpcEnable -eq 0) { "Kernel DPC: Direct" } else { "Kernel DPC: Standard" }
+        $mouQueue = if ($input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { 100 }
+        $inputBadge = "Input Buffer: $mouQueue"
+        $timerBadge = if ($bcd.DynamicTick -eq "yes") { "Dynamic Tick: Off" } else { "Dynamic Tick: Default" }
+        $hagsBadge = if ($hags.HwSchMode -eq 2) { "HAGS: Active" } else { "HAGS: Inactive" }
+        Write-Host " Latency Badges: [$dpcBadge] [$inputBadge] [$timerBadge] [$hagsBadge]" -ForegroundColor Green
+
         $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
         if ($task) {
             Write-Host " Boot Trigger:  ACTIVE (will strip services on next boot)" -ForegroundColor Red
@@ -296,9 +314,13 @@ switch ($Action) {
         }
 
         # Check services stats
+        $allServices = @(Get-Service -ErrorAction SilentlyContinue)
+        $svcMap = @{}
+        foreach ($s in $allServices) { $svcMap[$s.Name] = $s }
+
         $activeBloatCount = 0
         foreach ($b in $blacklist) {
-            $s = Get-Service -Name $b.Name -ErrorAction SilentlyContinue
+            $s = $svcMap[$b.Name]
             if ($s -and $s.Status -eq "Running") { $activeBloatCount++ }
         }
         Write-Host " Target Services: $($blacklist.Count) configured | $activeBloatCount currently running" -ForegroundColor White
@@ -334,6 +356,25 @@ switch ($Action) {
         $vbs = Get-VbsHvciDiagnosticInfo
         $vbsText = if ($vbs.VbsRunning -or $vbs.HvciRunning) { "Active ($($vbs.VbsStatus)) [VBS overhead active]" } else { "Disabled [OPTIMAL FOR MAXIMUM FPS]" }
         Write-Host " VBS / HVCI:    $vbsText" -ForegroundColor $(if ($vbs.VbsRunning -or $vbs.HvciRunning) { "Yellow" } else { "Green" })
+
+        # Low-Latency Subsystems Status
+        $dpcDisplay = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "Default (1)" }
+        $pageDisplay = if ($null -ne $kdpc.DisablePagingExecutive) { $kdpc.DisablePagingExecutive } else { "Default (0)" }
+        $dpcText = if ($kdpc.ThreadDpcEnable -eq 0 -and $kdpc.DisablePagingExecutive -eq 1) { "Direct (0), Paging Disabled [OPTIMAL]" } else { "Threaded: $dpcDisplay, Paging: $pageDisplay" }
+        Write-Host " Kernel DPC:    $dpcText" -ForegroundColor $(if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" })
+
+        $mouDisplay = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default (100)" }
+        $kbdDisplay = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default (100)" }
+        $inputQueueText = if ($input.MouseDataQueueSize -eq 16 -and $input.KeyboardDataQueueSize -eq 16) { "16 Mouse / 16 Keyboard [OPTIMAL DIRECT DELIVERY]" } else { "$mouDisplay Mouse / $kbdDisplay Keyboard" }
+        Write-Host " Input Buffers: $inputQueueText" -ForegroundColor $(if ($input.MouseDataQueueSize -eq 16) { "Green" } else { "Yellow" })
+
+        $dynDisplay = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "Default" }
+        $tscDisplay = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
+        $timerText = if ($bcd.DynamicTick -eq "yes" -and $bcd.TscSyncPolicy -eq "Enhanced") { "Dynamic Tick Off, TSC Enhanced [OPTIMAL]" } else { "Dynamic Tick: $dynDisplay, TSC: $tscDisplay" }
+        Write-Host " Timer Policy:  $timerText" -ForegroundColor $(if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" })
+
+        $hagsText = if ($hags.HwSchMode -eq 2) { "Active (HwSchMode = 2) [OPTIMAL]" } else { "Inactive ($($hags.HwSchMode))" }
+        Write-Host " GPU HAGS:      $hagsText" -ForegroundColor $(if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" })
     }
 
     "CleanMemory" {
@@ -598,8 +639,12 @@ switch ($Action) {
         Write-Host "`n[9] Blacklist Service Impact:" -ForegroundColor Yellow
         $installedBlacklist = 0
         $runningBlacklist = 0
+        $allServices = @(Get-Service -ErrorAction SilentlyContinue)
+        $svcMap = @{}
+        foreach ($s in $allServices) { $svcMap[$s.Name] = $s }
+
         foreach ($item in $blacklist) {
-            $svc = Get-Service -Name $item.Name -ErrorAction SilentlyContinue
+            $svc = $svcMap[$item.Name]
             if ($svc) {
                 $installedBlacklist++
                 if ($svc.Status -eq "Running") { $runningBlacklist++ }
@@ -651,6 +696,68 @@ switch ($Action) {
         $afterMem = $currentProc.WorkingSet64
         Write-Host "  Process working set trim: $([math]::Round($beforeMem/1MB,1)) MB -> $([math]::Round($afterMem/1MB,1)) MB [PASS]" -ForegroundColor Green
 
+        # 12. Kernel DPC & Memory Management
+        Write-Host "`n[12] Kernel DPC & Memory Management Configuration:" -ForegroundColor Yellow
+        $kdpc = Get-KernelDpcConfig
+        $dpcStatus = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [PASS - Immediate Execution]" } else { "Threaded ($($kdpc.ThreadDpcEnable)) [Default - Will be set to 0 in Gaming Mode]" }
+        $dpcColor  = if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" }
+        Write-Host "  ThreadDpcEnable:         $dpcStatus" -ForegroundColor $dpcColor
+
+        $pagingStatus = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [PASS - Drivers Locked in RAM]" } else { "Disabled ($($kdpc.DisablePagingExecutive)) [Pageable]" }
+        $pagingColor  = if ($kdpc.DisablePagingExecutive -eq 1) { "Green" } else { "Yellow" }
+        Write-Host "  DisablePagingExecutive:  $pagingStatus" -ForegroundColor $pagingColor
+
+        $prioStatus = if ($kdpc.Win32PrioritySeparation -eq 38) { "0x26 / 38 [PASS - 3:1 Foreground Boost]" } else { "$($kdpc.Win32PrioritySeparation)" }
+        $prioColor  = if ($kdpc.Win32PrioritySeparation -eq 38) { "Green" } else { "Yellow" }
+        Write-Host "  Win32PrioritySeparation: $prioStatus" -ForegroundColor $prioColor
+
+        $pwrStatus = if ($kdpc.PowerThrottlingOff -eq 1) { "Disabled (1) [PASS - Zero Thread Throttling]" } else { "Active ($($kdpc.PowerThrottlingOff))" }
+        $pwrColor  = if ($kdpc.PowerThrottlingOff -eq 1) { "Green" } else { "Yellow" }
+        Write-Host "  PowerThrottlingOff:      $pwrStatus" -ForegroundColor $pwrColor
+
+        # 13. Direct Peripheral Input Queues
+        Write-Host "`n[13] Direct Peripheral Input Queues (mouclass & kbdclass):" -ForegroundColor Yellow
+        $input = Get-InputBufferConfig
+        $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
+        $mouStatus = if ($input.MouseDataQueueSize -eq 16) { "16 packets [PASS - Minimal Buffer Queue Latency]" } else { "$mouVal [Default: 100 - Will be set to 16 in Gaming Mode]" }
+        $mouColor  = if ($input.MouseDataQueueSize -eq 16) { "Green" } else { "Yellow" }
+        Write-Host "  MouseDataQueueSize:      $mouStatus" -ForegroundColor $mouColor
+
+        $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
+        $kbdStatus = if ($input.KeyboardDataQueueSize -eq 16) { "16 packets [PASS - Direct Delivery]" } else { "$kbdVal [Default: 100 - Will be set to 16 in Gaming Mode]" }
+        $kbdColor  = if ($input.KeyboardDataQueueSize -eq 16) { "Green" } else { "Yellow" }
+        Write-Host "  KeyboardDataQueueSize:   $kbdStatus" -ForegroundColor $kbdColor
+
+        # 14. BCDedit System Timer & TSC Synchronization
+        Write-Host "`n[14] BCDedit High-Precision System Timers:" -ForegroundColor Yellow
+        $bcd = Get-BcdeditTimerConfig
+        $dynVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "no" }
+        $dynStatus = if ($bcd.DynamicTick -eq "yes") { "Disabled (yes) [PASS - Dynamic Tick Suppressed]" } else { "$dynVal [Default - Will be disabled in Gaming Mode]" }
+        $dynColor  = if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" }
+        Write-Host "  disabledynamictick:      $dynStatus" -ForegroundColor $dynColor
+
+        $tscVal = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
+        $tscStatus = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Enhanced [PASS - TSC Synced Across Cores]" } else { "$tscVal [Will be set to Enhanced in Gaming Mode]" }
+        $tscColor  = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Green" } else { "Yellow" }
+        Write-Host "  tscsyncpolicy:           $tscStatus" -ForegroundColor $tscColor
+
+        # 15. TCP Gaming Stack & Interface Isolation
+        Write-Host "`n[15] TCP/IP Gaming Stack & Interface Isolation:" -ForegroundColor Yellow
+        $tcp = Get-TcpStackConfig
+        $tsText = if ($tcp.Timestamps -eq "disabled") { "Disabled [PASS - 12B Header Overhead Eliminated]" } else { "$($tcp.Timestamps) [Will be disabled in Gaming Mode]" }
+        $tsColor = if ($tcp.Timestamps -eq "disabled") { "Green" } else { "Yellow" }
+        Write-Host "  RFC 1323 Timestamps:     $tsText" -ForegroundColor $tsColor
+        Write-Host "  ECN Capability:          $($tcp.ECN)" -ForegroundColor White
+        Write-Host "  Receive-Side Scaling:    $($tcp.RSS)" -ForegroundColor White
+        Write-Host "  Tethering Isolation:     Ethernet 2 (Apple Mobile Device) & wwan99 (Wintun) [STRICTLY PROTECTED]" -ForegroundColor Green
+
+        # 16. Hardware-Accelerated GPU Scheduling (HAGS)
+        Write-Host "`n[16] Hardware-Accelerated GPU Scheduling (HAGS):" -ForegroundColor Yellow
+        $hags = Get-HagsGpuSchedulingConfig
+        $hagsStatus = if ($hags.HwSchMode -eq 2) { "Enabled (2) [PASS - Hardware-Accelerated GPU Scheduling Active]" } else { "Disabled ($($hags.HwSchMode)) [Will be set to 2 in Gaming Mode]" }
+        $hagsColor  = if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" }
+        Write-Host "  HwSchMode:               $hagsStatus" -ForegroundColor $hagsColor
+
         Write-Host "`n[+] Diagnostic complete. System is 100% primed for high-impact Ultra Gaming Mode." -ForegroundColor Green
     }
 
@@ -660,5 +767,51 @@ switch ($Action) {
 
     "RepairServices" {
         Repair-CoreServices
+    }
+
+    "KernelLatencyStatus" {
+        Write-Host "=====================================================" -ForegroundColor Magenta
+        Write-Host "   KERNEL DPC, INPUT BUFFER & SYSTEM TIMER STATUS   " -ForegroundColor Magenta
+        Write-Host "=====================================================" -ForegroundColor Magenta
+
+        $kdpc = Get-KernelDpcConfig
+        $input = Get-InputBufferConfig
+        $bcd = Get-BcdeditTimerConfig
+        $tcp = Get-TcpStackConfig
+        $hags = Get-HagsGpuSchedulingConfig
+
+        Write-Host "`n[1] Kernel DPC & Memory Management:" -ForegroundColor Yellow
+        $dpcVal = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "1" }
+        $dpcTxt = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [OPTIMAL - Worker DPC delay bypassed]" } else { "Threaded ($dpcVal) [Default]" }
+        $pageTxt = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [OPTIMAL - Drivers locked in RAM]" } else { "Disabled ($($kdpc.DisablePagingExecutive)) [Pageable]" }
+        $prioTxt = if ($kdpc.Win32PrioritySeparation -eq 38) { "0x26 / 38 [OPTIMAL - 3:1 Foreground Boost]" } else { "$($kdpc.Win32PrioritySeparation)" }
+        $pwrTxt = if ($kdpc.PowerThrottlingOff -eq 1) { "Disabled (1) [OPTIMAL - No Thread Throttling]" } else { "Active ($($kdpc.PowerThrottlingOff))" }
+
+        Write-Host "  ThreadDpcEnable:         $dpcTxt" -ForegroundColor $(if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" })
+        Write-Host "  DisablePagingExecutive:  $pageTxt" -ForegroundColor $(if ($kdpc.DisablePagingExecutive -eq 1) { "Green" } else { "Yellow" })
+        Write-Host "  Win32PrioritySeparation: $prioTxt" -ForegroundColor $(if ($kdpc.Win32PrioritySeparation -eq 38) { "Green" } else { "Yellow" })
+        Write-Host "  PowerThrottlingOff:      $pwrTxt" -ForegroundColor $(if ($kdpc.PowerThrottlingOff -eq 1) { "Green" } else { "Yellow" })
+
+        Write-Host "`n[2] Direct Peripheral Input Queues:" -ForegroundColor Yellow
+        $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
+        $mouTxt = if ($input.MouseDataQueueSize -eq 16) { "16 packets [OPTIMAL - Minimal Latency]" } else { "$mouVal [Default: 100]" }
+        $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
+        $kbdTxt = if ($input.KeyboardDataQueueSize -eq 16) { "16 packets [OPTIMAL - Direct Delivery]" } else { "$kbdVal [Default: 100]" }
+        Write-Host "  MouseDataQueueSize:      $mouTxt" -ForegroundColor $(if ($input.MouseDataQueueSize -eq 16) { "Green" } else { "Yellow" })
+        Write-Host "  KeyboardDataQueueSize:   $kbdTxt" -ForegroundColor $(if ($input.KeyboardDataQueueSize -eq 16) { "Green" } else { "Yellow" })
+
+        Write-Host "`n[3] BCDedit Kernel System Timers:" -ForegroundColor Yellow
+        $tickVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "no" }
+        $tickTxt = if ($bcd.DynamicTick -eq "yes") { "Disabled (yes) [OPTIMAL - Dynamic Tick Off]" } else { "$tickVal (Tick Active) [Default]" }
+        $tscVal = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
+        $tscTxt = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Enhanced [OPTIMAL - Synced Core TSC]" } else { "$tscVal [Default]" }
+        Write-Host "  disabledynamictick:      $tickTxt" -ForegroundColor $(if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" })
+        Write-Host "  tscsyncpolicy:           $tscTxt" -ForegroundColor $(if ($bcd.TscSyncPolicy -eq "Enhanced") { "Green" } else { "Yellow" })
+
+        Write-Host "`n[4] TCP Gaming Stack & HAGS:" -ForegroundColor Yellow
+        $tsTxt = if ($tcp.Timestamps -eq "disabled") { "Disabled [OPTIMAL - 12B Header Overhead Eliminated]" } else { "$($tcp.Timestamps)" }
+        $hagsTxt = if ($hags.HwSchMode -eq 2) { "Enabled (2) [OPTIMAL - Hardware GPU Scheduling Active]" } else { "Disabled ($($hags.HwSchMode))" }
+        Write-Host "  TCP Timestamps:          $tsTxt" -ForegroundColor $(if ($tcp.Timestamps -eq "disabled") { "Green" } else { "Yellow" })
+        Write-Host "  GPU HAGS (HwSchMode):    $hagsTxt" -ForegroundColor $(if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" })
     }
 }

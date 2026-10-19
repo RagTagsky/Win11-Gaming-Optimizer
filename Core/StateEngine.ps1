@@ -72,7 +72,7 @@ function New-SystemStateBackup {
     $hwProfile = Get-HardwareProfile
 
     $snapshot = @{
-        Version                  = "2.5"
+        Version                  = "2.6"
         Timestamp                = (Get-Date).ToString("o")
         State                    = "Armed"
         BootRunCount             = 0
@@ -96,6 +96,11 @@ function New-SystemStateBackup {
         UlpsConfig               = @()
         MSIConfig                = $null
         NTFSConfig               = $null
+        KernelDpcConfig          = $null
+        InputBufferConfig        = $null
+        BcdeditConfig            = $null
+        TcpStackConfig           = $null
+        HagsConfig               = $null
     }
 
     # 1. Services Snapshot
@@ -255,6 +260,21 @@ function New-SystemStateBackup {
 
     # 12. NTFS File System I/O Snapshot
     $snapshot.NTFSConfig = Get-NTFSFileSystemConfig
+
+    # 13. Kernel DPC & Memory Management Snapshot
+    $snapshot.KernelDpcConfig = Get-KernelDpcConfig
+
+    # 14. Input Buffer Queues Snapshot
+    $snapshot.InputBufferConfig = Get-InputBufferConfig
+
+    # 15. BCDedit System Timer Snapshot
+    $snapshot.BcdeditConfig = Get-BcdeditTimerConfig
+
+    # 16. TCP/IP Gaming Stack Snapshot
+    $snapshot.TcpStackConfig = Get-TcpStackConfig
+
+    # 17. HAGS GPU Scheduling Snapshot
+    $snapshot.HagsConfig = Get-HagsGpuSchedulingConfig
 
     # Write snapshot to disk
     $snapshot | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
@@ -633,6 +653,31 @@ function Restore-SystemState {
     # Restore NTFS File System I/O Tweaks
     if ($stateData -and ($null -ne $stateData.NTFSConfig)) {
         Restore-NTFSGamingOptimizations -NTFSConfig $stateData.NTFSConfig | Out-Null
+    }
+
+    # Restore Kernel DPC & Memory Management Settings
+    if ($stateData -and ($null -ne $stateData.KernelDpcConfig)) {
+        Restore-KernelDpcOptimizations -KernelDpcConfig $stateData.KernelDpcConfig | Out-Null
+    }
+
+    # Restore Input Buffer Queues
+    if ($stateData -and ($null -ne $stateData.InputBufferConfig)) {
+        Restore-InputBufferOptimizations -InputBufferConfig $stateData.InputBufferConfig | Out-Null
+    }
+
+    # Restore BCDedit System Timer Settings
+    if ($stateData -and ($null -ne $stateData.BcdeditConfig)) {
+        Restore-BcdeditTimerOptimizations -BcdeditConfig $stateData.BcdeditConfig | Out-Null
+    }
+
+    # Restore TCP Gaming Stack Settings
+    if ($stateData -and ($null -ne $stateData.TcpStackConfig)) {
+        Restore-TcpGamingStackOptimizations -TcpStackConfig $stateData.TcpStackConfig | Out-Null
+    }
+
+    # Restore HAGS GPU Scheduling
+    if ($stateData -and ($null -ne $stateData.HagsConfig)) {
+        Restore-HagsGpuScheduling -HagsConfig $stateData.HagsConfig | Out-Null
     }
 
     # Guarantee Microphone, Steam, LanmanServer, and peripheral services are unblocked

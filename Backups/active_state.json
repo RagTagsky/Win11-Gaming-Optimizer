@@ -1,19 +1,22 @@
 ﻿{
     "StartupShortcuts":  [
                              {
+                                 "QuarantinePath":  "C:\\Users\\ragtagsky\\Documents\\Workstation\\E.Mode\\Core\\..\\Backups\\QuarantinedShortcuts\\AyuGram.lnk",
                                  "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk",
                                  "Name":  "AyuGram.lnk",
-                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk.ugm_backup"
+                                 "OriginalFolder":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
                              },
                              {
+                                 "QuarantinePath":  "C:\\Users\\ragtagsky\\Documents\\Workstation\\E.Mode\\Core\\..\\Backups\\QuarantinedShortcuts\\ege-tracker-sync.lnk",
                                  "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk",
                                  "Name":  "ege-tracker-sync.lnk",
-                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk.ugm_backup"
+                                 "OriginalFolder":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
                              },
                              {
+                                 "QuarantinePath":  "C:\\Users\\ragtagsky\\Documents\\Workstation\\E.Mode\\Core\\..\\Backups\\QuarantinedShortcuts\\TimeTracker.lnk",
                                  "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk",
                                  "Name":  "TimeTracker.lnk",
-                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk.ugm_backup"
+                                 "OriginalFolder":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
                              }
                          ],
     "StartupItems":  [
@@ -29,6 +32,11 @@
                          },
                          {
                              "Scope":  "HKCU",
+                             "Name":  "GoogleDriveFS",
+                             "Value":  "\"C:\\Program Files\\Google\\Drive File Stream\\132.0.0.0\\GoogleDriveFS.exe\" --startup_mode"
+                         },
+                         {
+                             "Scope":  "HKCU",
                              "Name":  "Steam",
                              "Value":  "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent"
                          },
@@ -36,11 +44,6 @@
                              "Scope":  "HKCU",
                              "Name":  "Discord",
                              "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Discord\\Update.exe\" --processStart Discord.exe --process-start-args \"--start-inactive\""
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "GoogleDriveFS",
-                             "Value":  "\"C:\\Program Files\\Google\\Drive File Stream\\132.0.0.0\\GoogleDriveFS.exe\" --startup_mode"
                          },
                          {
                              "Scope":  "HKCU",
@@ -112,7 +115,7 @@
                        ],
     "BootRunCount":  1,
     "State":  "Restored",
-    "Timestamp":  "2026-10-18T20:16:26.9704611+04:00",
+    "Timestamp":  "2026-10-19T12:11:04.8606859+04:00",
     "Services":  [
                      {
                          "OriginalStatus":  "Stopped",
@@ -565,7 +568,7 @@
                          "DisplayName":  "Служба удаленного управления Windows (WS-Management)"
                      },
                      {
-                         "OriginalStatus":  "Stopped",
+                         "OriginalStatus":  "Running",
                          "OriginalStartupType":  "Manual",
                          "Name":  "HvHost",
                          "DisplayName":  "Служба узла HV"
@@ -847,7 +850,7 @@
                          "DisplayName":  "Проверка подлинности на основе физических параметров"
                      },
                      {
-                         "OriginalStatus":  "Stopped",
+                         "OriginalStatus":  "Running",
                          "OriginalStartupType":  "Manual",
                          "Name":  "InstallService",
                          "DisplayName":  "Служба установки Microsoft Store"
@@ -1039,7 +1042,7 @@
                          "DisplayName":  "Служба помощника по локальному профилю"
                      },
                      {
-                         "OriginalStatus":  "Stopped",
+                         "OriginalStatus":  "Running",
                          "OriginalStartupType":  "Manual",
                          "Name":  "DsSvc",
                          "DisplayName":  "Служба совместного доступа к данным"

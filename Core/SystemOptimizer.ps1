@@ -454,18 +454,8 @@ function Set-NetworkGamingOptimizations {
 
     Write-Host "[*] Applying Ultra Low Latency Network (TCPNoDelay, FlowControl=0, InterruptModeration=0)..." -ForegroundColor Cyan
 
-    # 1. Disable Nagle's algorithm (TCPNoDelay = 1, TcpAckFrequency = 1) across all active IP interfaces
-    $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
-    if (Test-Path $interfacesPath) {
-        Get-ChildItem -Path $interfacesPath | ForEach-Object {
-            $props = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
-            if ($props.DhcpIPAddress -or $props.IPAddress) {
-                Set-ItemProperty -Path $_.PSPath -Name "TCPNoDelay" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-                Set-ItemProperty -Path $_.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-            }
-        }
-        Write-Host "  [+] TCPNoDelay & TcpAckFrequency set to 1 (Nagle's buffering delay eliminated)." -ForegroundColor Green
-    }
+    # 1. Apply TCP gaming stack optimizations (TCPNoDelay, TcpAckFrequency, netsh global, protecting iPhone and Wintun)
+    Set-TcpGamingStackOptimizations | Out-Null
 
     # 2. Configure physical gaming network adapters strictly skipping Apple Mobile Device and Wintun tunnel
     $adapters = Get-PhysicalGamingAdapters
@@ -1800,6 +1790,560 @@ function Restore-NTFSGamingOptimizations {
         }
         catch {
             Write-Warning "Failed to restore NTFS settings: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    return $true
+}
+
+# ── Kernel DPC & Memory Management Optimizations ────────────────────────────
+
+function Get-KernelDpcConfig {
+    [CmdletBinding()]
+    param()
+
+    $memPath    = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+    $kernelPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel"
+    $prioPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl"
+    $powerPath  = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
+
+    $disablePaging    = $null
+    $threadDpc        = $null
+    $win32Prio        = $null
+    $powerThrottleOff = $null
+
+    if (Test-Path $memPath) {
+        $p = Get-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.DisablePagingExecutive) { $disablePaging = [int]$p.DisablePagingExecutive }
+    }
+    if (Test-Path $kernelPath) {
+        $p = Get-ItemProperty -Path $kernelPath -Name "ThreadDpcEnable" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.ThreadDpcEnable) { $threadDpc = [int]$p.ThreadDpcEnable }
+    }
+    if (Test-Path $prioPath) {
+        $p = Get-ItemProperty -Path $prioPath -Name "Win32PrioritySeparation" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.Win32PrioritySeparation) { $win32Prio = [int]$p.Win32PrioritySeparation }
+    }
+    if (Test-Path $powerPath) {
+        $p = Get-ItemProperty -Path $powerPath -Name "PowerThrottlingOff" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.PowerThrottlingOff) { $powerThrottleOff = [int]$p.PowerThrottlingOff }
+    }
+
+    return @{
+        DisablePagingExecutive  = $disablePaging
+        ThreadDpcEnable         = $threadDpc
+        Win32PrioritySeparation = $win32Prio
+        PowerThrottlingOff      = $powerThrottleOff
+    }
+}
+
+function Set-KernelDpcOptimizations {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Applying Kernel DPC & Memory Management Optimizations..." -ForegroundColor Cyan
+
+    $memPath    = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+    $kernelPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel"
+    $prioPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl"
+    $powerPath  = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
+
+    try {
+        if (-not (Test-Path $memPath)) { New-Item -Path $memPath -Force | Out-Null }
+        Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] DisablePagingExecutive = 1 (Kernel and system drivers locked in physical RAM)." -ForegroundColor Green
+
+        if (-not (Test-Path $kernelPath)) { New-Item -Path $kernelPath -Force | Out-Null }
+        Set-ItemProperty -Path $kernelPath -Name "ThreadDpcEnable" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] ThreadDpcEnable = 0 (Immediate kernel DPC execution, worker thread delay eliminated)." -ForegroundColor Green
+
+        if (-not (Test-Path $prioPath)) { New-Item -Path $prioPath -Force | Out-Null }
+        Set-ItemProperty -Path $prioPath -Name "Win32PrioritySeparation" -Value 38 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] Win32PrioritySeparation = 0x26 (38) (Short, variable 3:1 foreground gaming boost)." -ForegroundColor Green
+
+        if (-not (Test-Path $powerPath)) { New-Item -Path $powerPath -Force | Out-Null }
+        Set-ItemProperty -Path $powerPath -Name "PowerThrottlingOff" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] PowerThrottlingOff = 1 (Global CPU power throttling disabled for game threads)." -ForegroundColor Green
+
+        return $true
+    }
+    catch {
+        Write-Warning "Failed to set Kernel DPC optimizations: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-KernelDpcOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$KernelDpcConfig
+    )
+
+    if ($KernelDpcConfig) {
+        Write-Host "[*] Restoring Kernel DPC & Memory Management settings..." -ForegroundColor Cyan
+
+        $memPath    = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+        $kernelPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel"
+        $prioPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl"
+        $powerPath  = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
+
+        $origPaging = if ($KernelDpcConfig -is [hashtable]) { $KernelDpcConfig["DisablePagingExecutive"] } else { $KernelDpcConfig.DisablePagingExecutive }
+        $origDpc    = if ($KernelDpcConfig -is [hashtable]) { $KernelDpcConfig["ThreadDpcEnable"] } else { $KernelDpcConfig.ThreadDpcEnable }
+        $origPrio   = if ($KernelDpcConfig -is [hashtable]) { $KernelDpcConfig["Win32PrioritySeparation"] } else { $KernelDpcConfig.Win32PrioritySeparation }
+        $origPwr    = if ($KernelDpcConfig -is [hashtable]) { $KernelDpcConfig["PowerThrottlingOff"] } else { $KernelDpcConfig.PowerThrottlingOff }
+
+        try {
+            if (Test-Path $memPath) {
+                if ($null -ne $origPaging) {
+                    Set-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Value $origPaging -Type DWord -Force -ErrorAction SilentlyContinue
+                } else {
+                    Remove-ItemProperty -Path $memPath -Name "DisablePagingExecutive" -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if (Test-Path $kernelPath) {
+                if ($null -ne $origDpc) {
+                    Set-ItemProperty -Path $kernelPath -Name "ThreadDpcEnable" -Value $origDpc -Type DWord -Force -ErrorAction SilentlyContinue
+                } else {
+                    Remove-ItemProperty -Path $kernelPath -Name "ThreadDpcEnable" -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if (Test-Path $prioPath) {
+                if ($null -ne $origPrio) {
+                    Set-ItemProperty -Path $prioPath -Name "Win32PrioritySeparation" -Value $origPrio -Type DWord -Force -ErrorAction SilentlyContinue
+                } else {
+                    Remove-ItemProperty -Path $prioPath -Name "Win32PrioritySeparation" -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if (Test-Path $powerPath) {
+                if ($null -ne $origPwr) {
+                    Set-ItemProperty -Path $powerPath -Name "PowerThrottlingOff" -Value $origPwr -Type DWord -Force -ErrorAction SilentlyContinue
+                } else {
+                    Remove-ItemProperty -Path $powerPath -Name "PowerThrottlingOff" -Force -ErrorAction SilentlyContinue
+                }
+            }
+            Write-Host "  [+] Kernel DPC & Memory Management settings restored." -ForegroundColor Green
+            return $true
+        }
+        catch {
+            Write-Warning "Failed to restore Kernel DPC settings: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    return $true
+}
+
+# ── Direct Peripheral Input Buffer Queue Optimizations ──────────────────────
+
+function Get-InputBufferConfig {
+    [CmdletBinding()]
+    param()
+
+    $mouPath = "HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters"
+    $kbdPath = "HKLM:\SYSTEM\CurrentControlSet\Services\kbdclass\Parameters"
+
+    $mouQueue = $null
+    $kbdQueue = $null
+
+    if (Test-Path $mouPath) {
+        $p = Get-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.MouseDataQueueSize) { $mouQueue = [int]$p.MouseDataQueueSize }
+    }
+    if (Test-Path $kbdPath) {
+        $p = Get-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.KeyboardDataQueueSize) { $kbdQueue = [int]$p.KeyboardDataQueueSize }
+    }
+
+    return @{
+        MouseDataQueueSize    = $mouQueue
+        KeyboardDataQueueSize = $kbdQueue
+    }
+}
+
+function Set-InputBufferOptimizations {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Applying Direct Input Buffer Queue Optimizations (Mouse & Keyboard direct delivery)..." -ForegroundColor Cyan
+
+    $mouPath = "HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters"
+    $kbdPath = "HKLM:\SYSTEM\CurrentControlSet\Services\kbdclass\Parameters"
+
+    try {
+        if (-not (Test-Path $mouPath)) { New-Item -Path $mouPath -Force | Out-Null }
+        Set-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] MouseDataQueueSize = 16 (Direct mouse packet delivery, minimal queue buffering)." -ForegroundColor Green
+
+        if (-not (Test-Path $kbdPath)) { New-Item -Path $kbdPath -Force | Out-Null }
+        Set-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -Value 16 -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] KeyboardDataQueueSize = 16 (Direct keyboard event delivery)." -ForegroundColor Green
+
+        return $true
+    }
+    catch {
+        Write-Warning "Failed to set Input Buffer optimizations: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-InputBufferOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$InputBufferConfig
+    )
+
+    if ($InputBufferConfig) {
+        Write-Host "[*] Restoring Mouse & Keyboard input buffer queue sizes..." -ForegroundColor Cyan
+
+        $mouPath = "HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters"
+        $kbdPath = "HKLM:\SYSTEM\CurrentControlSet\Services\kbdclass\Parameters"
+
+        $origMou = if ($InputBufferConfig -is [hashtable]) { $InputBufferConfig["MouseDataQueueSize"] } else { $InputBufferConfig.MouseDataQueueSize }
+        $origKbd = if ($InputBufferConfig -is [hashtable]) { $InputBufferConfig["KeyboardDataQueueSize"] } else { $InputBufferConfig.KeyboardDataQueueSize }
+
+        try {
+            if (Test-Path $mouPath) {
+                if ($null -ne $origMou) {
+                    Set-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -Value $origMou -Type DWord -Force -ErrorAction SilentlyContinue
+                } else {
+                    Remove-ItemProperty -Path $mouPath -Name "MouseDataQueueSize" -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if (Test-Path $kbdPath) {
+                if ($null -ne $origKbd) {
+                    Set-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -Value $origKbd -Type DWord -Force -ErrorAction SilentlyContinue
+                } else {
+                    Remove-ItemProperty -Path $kbdPath -Name "KeyboardDataQueueSize" -Force -ErrorAction SilentlyContinue
+                }
+            }
+            Write-Host "  [+] Input buffer queue sizes restored to original values." -ForegroundColor Green
+            return $true
+        }
+        catch {
+            Write-Warning "Failed to restore input buffer queue sizes: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    return $true
+}
+
+# ── BCDedit High-Precision System Timer Optimizations ───────────────────────
+
+function Get-BcdeditTimerConfig {
+    [CmdletBinding()]
+    param()
+
+    $result = @{
+        DynamicTick   = $null
+        TscSyncPolicy = $null
+    }
+
+    try {
+        $raw = bcdedit /enum "{current}" 2>&1
+        if ($raw) {
+            foreach ($line in $raw) {
+                if ($line -match '^\s*disabledynamictick\s+(\S+)') {
+                    $result.DynamicTick = $matches[1].Trim()
+                }
+                elseif ($line -match '^\s*tscsyncpolicy\s+(\S+)') {
+                    $result.TscSyncPolicy = $matches[1].Trim()
+                }
+            }
+        }
+    }
+    catch {
+        Write-Verbose "Could not query BCDedit: $($_.Exception.Message)"
+    }
+
+    return $result
+}
+
+function Set-BcdeditTimerOptimizations {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Applying BCDedit Kernel Timer Optimizations (disabledynamictick yes, tscsyncpolicy Enhanced)..." -ForegroundColor Cyan
+    try {
+        $out1 = bcdedit /set disabledynamictick yes 2>&1
+        $code1 = $LASTEXITCODE
+        $out2 = bcdedit /set tscsyncpolicy Enhanced 2>&1
+        $code2 = $LASTEXITCODE
+
+        if ($code1 -eq 0) {
+            Write-Host "  [+] BCDedit disabledynamictick set to 'yes' (eliminates dynamic timer latency jitter)." -ForegroundColor Green
+        } else {
+            Write-Warning "Could not configure disabledynamictick ($code1): $out1"
+        }
+
+        if ($code2 -eq 0) {
+            Write-Host "  [+] BCDedit tscsyncpolicy set to 'Enhanced' (synchronizes TSC timestamp counters across cores)." -ForegroundColor Green
+        } else {
+            Write-Warning "Could not configure tscsyncpolicy ($code2): $out2"
+        }
+
+        return ($code1 -eq 0 -and $code2 -eq 0)
+    }
+    catch {
+        Write-Warning "Failed to set BCDedit timer optimizations: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-BcdeditTimerOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$BcdeditConfig
+    )
+
+    if ($BcdeditConfig) {
+        Write-Host "[*] Restoring BCDedit timer configuration..." -ForegroundColor Cyan
+        $origTick = if ($BcdeditConfig -is [hashtable]) { $BcdeditConfig["DynamicTick"] } else { $BcdeditConfig.DynamicTick }
+        $origTsc  = if ($BcdeditConfig -is [hashtable]) { $BcdeditConfig["TscSyncPolicy"] } else { $BcdeditConfig.TscSyncPolicy }
+
+        try {
+            if ($null -ne $origTick -and $origTick -ne "") {
+                $null = bcdedit /set disabledynamictick $origTick 2>&1
+                Write-Host "  [+] BCDedit disabledynamictick restored to '$origTick'." -ForegroundColor Green
+            } else {
+                $null = bcdedit /deletevalue disabledynamictick 2>&1
+                Write-Host "  [+] BCDedit disabledynamictick removed (reverted to system default)." -ForegroundColor Green
+            }
+
+            if ($null -ne $origTsc -and $origTsc -ne "") {
+                $null = bcdedit /set tscsyncpolicy $origTsc 2>&1
+                Write-Host "  [+] BCDedit tscsyncpolicy restored to '$origTsc'." -ForegroundColor Green
+            } else {
+                $null = bcdedit /deletevalue tscsyncpolicy 2>&1
+                Write-Host "  [+] BCDedit tscsyncpolicy removed (reverted to system default)." -ForegroundColor Green
+            }
+            return $true
+        }
+        catch {
+            Write-Warning "Failed to restore BCDedit timer settings: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    return $true
+}
+
+# ── TCP Gaming Network Stack Optimizations ──────────────────────────────────
+
+function Get-TcpStackConfig {
+    [CmdletBinding()]
+    param()
+
+    $result = @{
+        Timestamps = $null
+        ECN        = $null
+        RSS        = $null
+        Interfaces = @()
+    }
+
+    try {
+        $raw = netsh int tcp show global 2>&1
+        if ($raw) {
+            foreach ($line in $raw) {
+                if ($line -match 'RFC 1323 Timestamps\s*:\s*(\w+)') {
+                    $result.Timestamps = $matches[1].Trim()
+                }
+                elseif ($line -match 'ECN Capability\s*:\s*(\w+)') {
+                    $result.ECN = $matches[1].Trim()
+                }
+                elseif ($line -match 'Receive-Side Scaling State\s*:\s*(\w+)') {
+                    $result.RSS = $matches[1].Trim()
+                }
+            }
+        }
+    } catch {}
+
+    $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
+    $gamingAdapters = Get-PhysicalGamingAdapters
+    $allowedGuids = @($gamingAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
+
+    if (Test-Path $interfacesPath) {
+        Get-ChildItem -Path $interfacesPath | ForEach-Object {
+            $guid = $_.PSChildName
+            if ($allowedGuids.Count -eq 0 -or ($allowedGuids -contains $guid)) {
+                $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+                $result.Interfaces += @{
+                    Guid            = $guid
+                    TcpAckFrequency = if ($null -ne $p.TcpAckFrequency) { [int]$p.TcpAckFrequency } else { $null }
+                    TCPNoDelay      = if ($null -ne $p.TCPNoDelay) { [int]$p.TCPNoDelay } else { $null }
+                }
+            }
+        }
+    }
+
+    return $result
+}
+
+function Set-TcpGamingStackOptimizations {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Applying TCP Gaming Stack Optimizations (TcpAckFrequency=1, TCPNoDelay=1, timestamps=disabled, ecn=disabled, rss=enabled)..." -ForegroundColor Cyan
+
+    $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
+    $gamingAdapters = Get-PhysicalGamingAdapters
+    $allowedGuids = @($gamingAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
+
+    $protectedAdapters = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object {
+        $name = $_.Name
+        $desc = $_.InterfaceDescription
+        ($name -eq "Ethernet 2") -or ($name -eq "wwan99") -or
+        ($name -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V|vEthernet') -or
+        ($desc -match '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V')
+    })
+    $protectedGuids = @($protectedAdapters | Where-Object { $_.InterfaceGuid } | ForEach-Object { $_.InterfaceGuid })
+
+    if (Test-Path $interfacesPath) {
+        $configuredCount = 0
+        Get-ChildItem -Path $interfacesPath | ForEach-Object {
+            $guid = $_.PSChildName
+            if ($protectedGuids -contains $guid) {
+                Write-Verbose "Skipping protected interface GUID: $guid"
+                return
+            }
+
+            if ($allowedGuids.Count -eq 0 -or ($allowedGuids -contains $guid)) {
+                $props = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+                if ($allowedGuids -contains $guid -or ($props.DhcpIPAddress -or $props.IPAddress)) {
+                    Set-ItemProperty -Path $_.PSPath -Name "TCPNoDelay" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                    Set-ItemProperty -Path $_.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+                    $configuredCount++
+                }
+            }
+        }
+        Write-Host "  [+] TCPNoDelay & TcpAckFrequency set to 1 across $configuredCount gaming interface(s)." -ForegroundColor Green
+        Write-Host "  [+] Protected Apple Mobile Device (Ethernet 2) & Wintun (wwan99) from TCP stack modifications." -ForegroundColor Green
+    }
+
+    try {
+        $null = netsh int tcp set global timestamps=disabled ecncapability=disabled rss=enabled 2>&1
+        Write-Host "  [+] TCP global parameters applied: timestamps=disabled, ecncapability=disabled, rss=enabled." -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Failed to set netsh tcp global parameters: $($_.Exception.Message)"
+    }
+
+    return $true
+}
+
+function Restore-TcpGamingStackOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$TcpStackConfig
+    )
+
+    if ($TcpStackConfig) {
+        Write-Host "[*] Restoring TCP gaming stack configuration..." -ForegroundColor Cyan
+
+        $ts     = if ($TcpStackConfig -is [hashtable]) { $TcpStackConfig["Timestamps"] } else { $TcpStackConfig.Timestamps }
+        $ecn    = if ($TcpStackConfig -is [hashtable]) { $TcpStackConfig["ECN"] } else { $TcpStackConfig.ECN }
+        $rss    = if ($TcpStackConfig -is [hashtable]) { $TcpStackConfig["RSS"] } else { $TcpStackConfig.RSS }
+        $ifaces = if ($TcpStackConfig -is [hashtable]) { $TcpStackConfig["Interfaces"] } else { $TcpStackConfig.Interfaces }
+
+        $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
+        if ($ifaces -and (Test-Path $interfacesPath)) {
+            foreach ($item in @($ifaces)) {
+                $guid    = if ($item -is [hashtable]) { $item["Guid"] } else { $item.Guid }
+                $noDelay = if ($item -is [hashtable]) { $item["TCPNoDelay"] } else { $item.TCPNoDelay }
+                $ackFreq = if ($item -is [hashtable]) { $item["TcpAckFrequency"] } else { $item.TcpAckFrequency }
+
+                $targetPath = Join-Path $interfacesPath $guid
+                if (Test-Path $targetPath) {
+                    if ($null -ne $noDelay) {
+                        Set-ItemProperty -Path $targetPath -Name "TCPNoDelay" -Value $noDelay -Type DWord -Force -ErrorAction SilentlyContinue
+                    } else {
+                        Remove-ItemProperty -Path $targetPath -Name "TCPNoDelay" -Force -ErrorAction SilentlyContinue
+                    }
+                    if ($null -ne $ackFreq) {
+                        Set-ItemProperty -Path $targetPath -Name "TcpAckFrequency" -Value $ackFreq -Type DWord -Force -ErrorAction SilentlyContinue
+                    } else {
+                        Remove-ItemProperty -Path $targetPath -Name "TcpAckFrequency" -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+        }
+
+        try {
+            $tsVal  = if ($ts) { $ts } else { "enabled" }
+            $ecnVal = if ($ecn) { $ecn } else { "disabled" }
+            $rssVal = if ($rss) { $rss } else { "enabled" }
+            $null = netsh int tcp set global timestamps=$tsVal ecncapability=$ecnVal rss=$rssVal 2>&1
+            Write-Host "  [+] TCP global parameters restored (timestamps=$tsVal, ecncapability=$ecnVal, rss=$rssVal)." -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Failed to restore netsh tcp global parameters: $($_.Exception.Message)"
+        }
+        return $true
+    }
+    return $true
+}
+
+# ── Hardware-Accelerated GPU Scheduling (HAGS) ──────────────────────────────
+
+function Get-HagsGpuSchedulingConfig {
+    [CmdletBinding()]
+    param()
+
+    $gfxPath = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+    $hwSchMode = $null
+    if (Test-Path $gfxPath) {
+        $p = Get-ItemProperty -Path $gfxPath -Name "HwSchMode" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.HwSchMode) {
+            $hwSchMode = [int]$p.HwSchMode
+        }
+    }
+    return @{ HwSchMode = $hwSchMode }
+}
+
+function Set-HagsGpuScheduling {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Configuring Hardware-Accelerated GPU Scheduling (HAGS)..." -ForegroundColor Cyan
+    $gfxPath = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+    try {
+        if (-not (Test-Path $gfxPath)) {
+            New-Item -Path $gfxPath -Force | Out-Null
+        }
+        Set-ItemProperty -Path $gfxPath -Name "HwSchMode" -Value 2 -Type DWord -Force -ErrorAction Stop
+        Write-Host "  [+] HAGS (Hardware-Accelerated GPU Scheduling) enabled (HwSchMode = 2)." -ForegroundColor Green
+        return $true
+    }
+    catch {
+        Write-Warning "Could not configure HAGS: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-HagsGpuScheduling {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$HagsConfig
+    )
+
+    if ($HagsConfig) {
+        Write-Host "[*] Restoring Hardware-Accelerated GPU Scheduling (HAGS) setting..." -ForegroundColor Cyan
+        $gfxPath = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+        $origMode = if ($HagsConfig -is [hashtable]) { $HagsConfig["HwSchMode"] } else { $HagsConfig.HwSchMode }
+        try {
+            if ($null -ne $origMode) {
+                Set-ItemProperty -Path $gfxPath -Name "HwSchMode" -Value $origMode -Type DWord -Force -ErrorAction Stop
+                Write-Host "  [+] HAGS restored to original mode: $origMode." -ForegroundColor Green
+            } else {
+                Remove-ItemProperty -Path $gfxPath -Name "HwSchMode" -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] HAGS HwSchMode property removed (default)." -ForegroundColor Green
+            }
+            return $true
+        }
+        catch {
+            Write-Warning "Failed to restore HAGS setting: $($_.Exception.Message)"
             return $false
         }
     }

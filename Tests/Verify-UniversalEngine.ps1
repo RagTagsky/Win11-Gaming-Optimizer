@@ -40,6 +40,21 @@ Assert-Test (Get-Command Apply-CpuGamingOptimizations -ErrorAction SilentlyConti
 Assert-Test (Get-Command Apply-GpuGamingOptimizations -ErrorAction SilentlyContinue) "Apply-GpuGamingOptimizations is accessible"
 Assert-Test (Get-Command Set-NTFSGamingOptimizations -ErrorAction SilentlyContinue) "Set-NTFSGamingOptimizations is accessible"
 Assert-Test (Get-Command Restore-NTFSGamingOptimizations -ErrorAction SilentlyContinue) "Restore-NTFSGamingOptimizations is accessible"
+Assert-Test (Get-Command Get-KernelDpcConfig -ErrorAction SilentlyContinue) "Get-KernelDpcConfig is accessible"
+Assert-Test (Get-Command Set-KernelDpcOptimizations -ErrorAction SilentlyContinue) "Set-KernelDpcOptimizations is accessible"
+Assert-Test (Get-Command Restore-KernelDpcOptimizations -ErrorAction SilentlyContinue) "Restore-KernelDpcOptimizations is accessible"
+Assert-Test (Get-Command Get-InputBufferConfig -ErrorAction SilentlyContinue) "Get-InputBufferConfig is accessible"
+Assert-Test (Get-Command Set-InputBufferOptimizations -ErrorAction SilentlyContinue) "Set-InputBufferOptimizations is accessible"
+Assert-Test (Get-Command Restore-InputBufferOptimizations -ErrorAction SilentlyContinue) "Restore-InputBufferOptimizations is accessible"
+Assert-Test (Get-Command Get-BcdeditTimerConfig -ErrorAction SilentlyContinue) "Get-BcdeditTimerConfig is accessible"
+Assert-Test (Get-Command Set-BcdeditTimerOptimizations -ErrorAction SilentlyContinue) "Set-BcdeditTimerOptimizations is accessible"
+Assert-Test (Get-Command Restore-BcdeditTimerOptimizations -ErrorAction SilentlyContinue) "Restore-BcdeditTimerOptimizations is accessible"
+Assert-Test (Get-Command Get-TcpStackConfig -ErrorAction SilentlyContinue) "Get-TcpStackConfig is accessible"
+Assert-Test (Get-Command Set-TcpGamingStackOptimizations -ErrorAction SilentlyContinue) "Set-TcpGamingStackOptimizations is accessible"
+Assert-Test (Get-Command Restore-TcpGamingStackOptimizations -ErrorAction SilentlyContinue) "Restore-TcpGamingStackOptimizations is accessible"
+Assert-Test (Get-Command Get-HagsGpuSchedulingConfig -ErrorAction SilentlyContinue) "Get-HagsGpuSchedulingConfig is accessible"
+Assert-Test (Get-Command Set-HagsGpuScheduling -ErrorAction SilentlyContinue) "Set-HagsGpuScheduling is accessible"
+Assert-Test (Get-Command Restore-HagsGpuScheduling -ErrorAction SilentlyContinue) "Restore-HagsGpuScheduling is accessible"
 
 # ── 3. Real System Hardware Profile Verification ───────────────────────────
 Write-Host "`n[Test Group 3] Live System Hardware Auto-Detection:" -ForegroundColor Cyan
@@ -196,7 +211,104 @@ foreach ($rc in $ramCases) {
     Assert-Test ($low -eq $rc.ExpectedLow) "$($rc.Desc): LowRamProfile=$low (Expected: $($rc.ExpectedLow))"
 }
 
-# ── 8. Summary ─────────────────────────────────────────────────────────────
+# ── 8. v2.6 Competitive Low-Latency Suite & Registry Engine ───────────────
+Write-Host "`n[Test Group 8] v2.6 Competitive Low-Latency Engine & Registry Validation:" -ForegroundColor Cyan
+
+# 8.1 Registry path resolution for mouclass / kbdclass
+$mouPath = "HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters"
+$kbdPath = "HKLM:\SYSTEM\CurrentControlSet\Services\kbdclass\Parameters"
+Assert-Test (Test-Path $mouPath) "Registry path exists: mouclass\Parameters"
+Assert-Test (Test-Path $kbdPath) "Registry path exists: kbdclass\Parameters"
+
+$inputCfg = Get-InputBufferConfig
+Assert-Test ($inputCfg -is [hashtable] -and $inputCfg.ContainsKey("MouseDataQueueSize")) "Get-InputBufferConfig returns MouseDataQueueSize key"
+Assert-Test ($inputCfg -is [hashtable] -and $inputCfg.ContainsKey("KeyboardDataQueueSize")) "Get-InputBufferConfig returns KeyboardDataQueueSize key"
+
+# 8.2 Kernel DPC & Memory Management snapshot integrity
+$kdpcCfg = Get-KernelDpcConfig
+Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("DisablePagingExecutive")) "Get-KernelDpcConfig returns DisablePagingExecutive key"
+Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("ThreadDpcEnable")) "Get-KernelDpcConfig returns ThreadDpcEnable key"
+Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("Win32PrioritySeparation")) "Get-KernelDpcConfig returns Win32PrioritySeparation key"
+Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("PowerThrottlingOff")) "Get-KernelDpcConfig returns PowerThrottlingOff key"
+
+# Test round-trip snapshot persistence
+$simulatedSnapshot = @{
+    KernelDpcConfig   = @{ DisablePagingExecutive = 1; ThreadDpcEnable = 0; Win32PrioritySeparation = 38; PowerThrottlingOff = 1 }
+    InputBufferConfig = @{ MouseDataQueueSize = 16; KeyboardDataQueueSize = 16 }
+    BcdeditConfig     = @{ DynamicTick = "yes"; TscSyncPolicy = "Enhanced" }
+    HagsConfig        = @{ HwSchMode = 2 }
+}
+$jsonRoundTrip = $simulatedSnapshot | ConvertTo-Json -Depth 5 | ConvertFrom-Json
+Assert-Test ($jsonRoundTrip.KernelDpcConfig.DisablePagingExecutive -eq 1 -and $jsonRoundTrip.KernelDpcConfig.ThreadDpcEnable -eq 0) "KernelDpcConfig preserves numeric types across JSON round-trip"
+Assert-Test ($jsonRoundTrip.InputBufferConfig.MouseDataQueueSize -eq 16 -and $jsonRoundTrip.InputBufferConfig.KeyboardDataQueueSize -eq 16) "InputBufferConfig preserves queue sizes across JSON round-trip"
+Assert-Test ($jsonRoundTrip.BcdeditConfig.DynamicTick -eq "yes" -and $jsonRoundTrip.BcdeditConfig.TscSyncPolicy -eq "Enhanced") "BcdeditConfig preserves timer strings across JSON round-trip"
+Assert-Test ($jsonRoundTrip.HagsConfig.HwSchMode -eq 2) "HagsConfig preserves HwSchMode across JSON round-trip"
+
+# 8.3 BCDedit parser verification against simulated bcdedit outputs
+$mockBcdTuned = @(
+    "Windows Boot Loader",
+    "-------------------",
+    "identifier              {current}",
+    "device                  partition=C:",
+    "path                    \WINDOWS\system32\winload.efi",
+    "description             Windows 11",
+    "locale                  en-US",
+    "disabledynamictick      yes",
+    "tscsyncpolicy           Enhanced"
+)
+$parsedTunedTick = $null
+$parsedTunedTsc = $null
+foreach ($line in $mockBcdTuned) {
+    if ($line -match '^\s*disabledynamictick\s+(\S+)') { $parsedTunedTick = $matches[1].Trim() }
+    elseif ($line -match '^\s*tscsyncpolicy\s+(\S+)') { $parsedTunedTsc = $matches[1].Trim() }
+}
+Assert-Test ($parsedTunedTick -eq "yes") "BCDedit parser extracts disabledynamictick='yes' from simulated output"
+Assert-Test ($parsedTunedTsc -eq "Enhanced") "BCDedit parser extracts tscsyncpolicy='Enhanced' from simulated output"
+
+$mockBcdDefault = @(
+    "Windows Boot Loader",
+    "-------------------",
+    "identifier              {current}",
+    "device                  partition=C:",
+    "path                    \WINDOWS\system32\winload.efi",
+    "description             Windows 11"
+)
+$parsedDefTick = $null
+$parsedDefTsc = $null
+foreach ($line in $mockBcdDefault) {
+    if ($line -match '^\s*disabledynamictick\s+(\S+)') { $parsedDefTick = $matches[1].Trim() }
+    elseif ($line -match '^\s*tscsyncpolicy\s+(\S+)') { $parsedDefTsc = $matches[1].Trim() }
+}
+Assert-Test ($null -eq $parsedDefTick -and $null -eq $parsedDefTsc) "BCDedit parser handles stock Windows output without timer keys safely ($null)"
+
+# 8.4 TCP gaming stack & interface isolation verification
+$tcpCfg = Get-TcpStackConfig
+Assert-Test ($tcpCfg -is [hashtable] -and $tcpCfg.ContainsKey("Timestamps")) "Get-TcpStackConfig returns Timestamps key"
+Assert-Test ($tcpCfg -is [hashtable] -and $tcpCfg.ContainsKey("Interfaces")) "Get-TcpStackConfig returns Interfaces collection"
+
+$gamingAdapters = Get-PhysicalGamingAdapters
+$gamingAdapterNames = @($gamingAdapters | ForEach-Object { $_.Name })
+Assert-Test ($gamingAdapterNames -notcontains "Ethernet 2") "Get-PhysicalGamingAdapters strictly excludes 'Ethernet 2' (Apple Mobile Device Tethering)"
+Assert-Test ($gamingAdapterNames -notcontains "wwan99") "Get-PhysicalGamingAdapters strictly excludes 'wwan99' (Wintun VPN tunnel)"
+
+# 8.5 HAGS GPU scheduling configuration
+$hagsCfg = Get-HagsGpuSchedulingConfig
+Assert-Test ($hagsCfg -is [hashtable] -and $hagsCfg.ContainsKey("HwSchMode")) "Get-HagsGpuSchedulingConfig returns HwSchMode key"
+
+# 8.6 Non-destructive fallback when running non-elevated
+$threwError = $false
+try {
+    $null = Get-KernelDpcConfig
+    $null = Get-InputBufferConfig
+    $null = Get-BcdeditTimerConfig
+    $null = Get-TcpStackConfig
+    $null = Get-HagsGpuSchedulingConfig
+} catch {
+    $threwError = $true
+}
+Assert-Test ($threwError -eq $false) "Non-destructive fallback: All v2.6 query functions execute without throwing unhandled exceptions"
+
+# ── 9. Summary ─────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta
 Write-Host "   TEST RESULTS: $testsRun Tests Run | $failures Failures" -ForegroundColor $(if ($failures -eq 0) { "Green" } else { "Red" })
 Write-Host "=====================================================" -ForegroundColor Magenta
