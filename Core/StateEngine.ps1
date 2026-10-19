@@ -139,17 +139,24 @@ function New-SystemStateBackup {
     }
 
     # 3. Startup Folder Shortcuts (.lnk / .url) Snapshot
+    $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
+    if (-not (Test-Path $quarantineDir)) {
+        New-Item -ItemType Directory -Path $quarantineDir -Force | Out-Null
+    }
+
     $startupDirs = @(
         "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
         "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
     )
     foreach ($sDir in $startupDirs) {
         if (Test-Path $sDir) {
-            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
+                $cleanName = $_.Name -replace '\.ugm_backup$', ''
                 $snapshot.StartupShortcuts += @{
-                    Name         = $_.Name
-                    OriginalPath = $_.FullName
-                    BackupPath   = "$($_.FullName).ugm_backup"
+                    Name           = $cleanName
+                    OriginalFolder = $sDir
+                    OriginalPath   = Join-Path $sDir $cleanName
+                    QuarantinePath = Join-Path $quarantineDir $cleanName
                 }
             }
         }
@@ -294,17 +301,23 @@ function Disable-UserStateAggressive {
         }
     }
 
-    # 2. Temporarily disable Startup folder shortcuts (.lnk -> .lnk.ugm_backup)
+    # 2. Quarantine Startup folder shortcuts (Move completely out of Startup folder to eliminate "Open With .ugm" dialogs)
+    $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
+    if (-not (Test-Path $quarantineDir)) {
+        New-Item -ItemType Directory -Path $quarantineDir -Force | Out-Null
+    }
+
     $startupDirs = @(
         "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
         "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
     )
     foreach ($sDir in $startupDirs) {
         if (Test-Path $sDir) {
-            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url") -and $_.Name -notmatch "\.ugm_backup$" } | ForEach-Object {
-                $backupName = "$($_.Name).ugm_backup"
-                Rename-Item -Path $_.FullName -NewName $backupName -Force -ErrorAction SilentlyContinue
-                Write-Host "  [x] Disabled startup folder shortcut: $($_.Name)" -ForegroundColor Yellow
+            Get-ChildItem -Path $sDir -File | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
+                $cleanName = $_.Name -replace '\.ugm_backup$', ''
+                $destPath = Join-Path $quarantineDir $cleanName
+                Move-Item -Path $_.FullName -Destination $destPath -Force -ErrorAction SilentlyContinue
+                Write-Host "  [x] Quarantined startup shortcut: $cleanName" -ForegroundColor Yellow
             }
         }
     }
@@ -483,7 +496,24 @@ function Restore-SystemState {
         }
     }
 
-    # Restore Startup folder shortcuts
+    # Restore Quarantined Startup folder shortcuts
+    $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
+    if (Test-Path $quarantineDir) {
+        Get-ChildItem -Path $quarantineDir -File | ForEach-Object {
+            $destDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+            if ($stateData -and $stateData.StartupShortcuts) {
+                $match = $stateData.StartupShortcuts | Where-Object { $_.Name -eq $_.Name } | Select-Object -First 1
+                if ($match -and $match.OriginalFolder -and (Test-Path $match.OriginalFolder)) {
+                    $destDir = $match.OriginalFolder
+                }
+            }
+            $targetPath = Join-Path $destDir $_.Name
+            Move-Item -Path $_.FullName -Destination $targetPath -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Restored startup shortcut: $($_.Name)" -ForegroundColor Green
+        }
+    }
+
+    # Also clean up any legacy *.ugm_backup files that might still exist in Startup folders
     $startupDirs = @(
         "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
         "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
@@ -493,7 +523,7 @@ function Restore-SystemState {
             Get-ChildItem -Path $sDir -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
                 $origName = $_.Name -replace '\.ugm_backup$', ''
                 Rename-Item -Path $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] Restored startup shortcut: $origName" -ForegroundColor Green
+                Write-Host "  [+] Restored legacy backup shortcut: $origName" -ForegroundColor Green
             }
         }
     }

@@ -1,5 +1,68 @@
 ﻿{
-    "Version":  "2.0",
+    "StartupShortcuts":  [
+                             {
+                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk",
+                                 "Name":  "AyuGram.lnk",
+                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk.ugm_backup"
+                             },
+                             {
+                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk",
+                                 "Name":  "ege-tracker-sync.lnk",
+                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk.ugm_backup"
+                             },
+                             {
+                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk",
+                                 "Name":  "TimeTracker.lnk",
+                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk.ugm_backup"
+                             }
+                         ],
+    "StartupItems":  [
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "ctfmon",
+                             "Value":  "C:\\Windows\\System32\\ctfmon.exe"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "AMDNoiseSuppression",
+                             "Value":  "\"C:\\WINDOWS\\system32\\AMD\\ANR\\AMDNoiseSuppression.exe\""
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "Steam",
+                             "Value":  "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "Discord",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Discord\\Update.exe\" --processStart Discord.exe --process-start-args \"--start-inactive\""
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "GoogleDriveFS",
+                             "Value":  "\"C:\\Program Files\\Google\\Drive File Stream\\132.0.0.0\\GoogleDriveFS.exe\" --startup_mode"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "EADM",
+                             "Value":  "\"C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe\" -silentOs"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "pulsesync.app",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Programs\\PulseSync\\PulseSync.exe\""
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "GoogleUpdaterTaskUser157.0.8089.0",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Google\\GoogleUpdater\\157.0.8089.0\\updater.exe\" --wake"
+                         },
+                         {
+                             "Scope":  "HKCU",
+                             "Name":  "Gemini",
+                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Google\\Gemini\\GeminiAppLauncher.exe\""
+                         }
+                     ],
     "MultimediaConfig":  {
                              "SystemProfile":  {
                                                    "NetworkThrottlingIndex":  4294967295,
@@ -12,6 +75,29 @@
                                                "GPU Priority":  8
                                            }
                          },
+    "GameDVRConfig":  {
+                          "AppCaptureEnabled":  0,
+                          "GameDVR_Enabled":  0,
+                          "GameDVR_FSEBehaviorMode":  2
+                      },
+    "PowerScheme":  "929fef13-d38f-4d3a-b857-7c19197b2246",
+    "NetworkLatencyConfig":  [
+                                 {
+                                     "Guid":  "{8eb6cecf-6919-4cf4-8c70-e55823aa4b53}",
+                                     "TCPNoDelay":  null,
+                                     "TcpAckFrequency":  null
+                                 },
+                                 {
+                                     "Guid":  "{ac46bc20-ec53-4485-8fa1-cdd08e34f382}",
+                                     "TCPNoDelay":  null,
+                                     "TcpAckFrequency":  null
+                                 },
+                                 {
+                                     "Guid":  "{c2fe9cd4-8e35-40c4-ac5b-397e8fc60e81}",
+                                     "TCPNoDelay":  null,
+                                     "TcpAckFrequency":  null
+                                 }
+                             ],
     "ScheduledTasks":  [
                            {
                                "TaskName":  "MapsToastTask",
@@ -19,18 +105,14 @@
                                "OriginalState":  "Ready"
                            },
                            {
-                               "TaskName":  "ShowFeedbackToast",
-                               "TaskPath":  "\\Microsoft\\Windows\\PerformanceTrace\\",
-                               "OriginalState":  "Ready"
-                           },
-                           {
-                               "TaskName":  "SustainabilityTelemetry",
-                               "TaskPath":  "\\Microsoft\\Windows\\Sustainability\\",
+                               "TaskName":  "ScheduledDefrag",
+                               "TaskPath":  "\\Microsoft\\Windows\\Defrag\\",
                                "OriginalState":  "Ready"
                            }
                        ],
-    "Timestamp":  "2026-10-17T19:56:37.7423127+04:00",
+    "BootRunCount":  1,
     "State":  "Restored",
+    "Timestamp":  "2026-10-18T20:16:26.9704611+04:00",
     "Services":  [
                      {
                          "OriginalStatus":  "Stopped",
@@ -87,8 +169,8 @@
                          "DisplayName":  "Оптимизация доставки"
                      },
                      {
-                         "OriginalStatus":  "Stopped",
-                         "OriginalStartupType":  "Disabled",
+                         "OriginalStatus":  "Running",
+                         "OriginalStartupType":  "Auto",
                          "Name":  "UsoSvc",
                          "DisplayName":  "Служба оркестратора обновлений"
                      },
@@ -249,7 +331,7 @@
                          "DisplayName":  "Определение оборудования оболочки"
                      },
                      {
-                         "OriginalStatus":  "Stopped",
+                         "OriginalStatus":  "Running",
                          "OriginalStartupType":  "Manual",
                          "Name":  "smphost",
                          "DisplayName":  "SMP дисковых пространств (Майкрософт)"
@@ -435,7 +517,7 @@
                          "DisplayName":  "Сетевая служба Xbox Live"
                      },
                      {
-                         "OriginalStatus":  "Running",
+                         "OriginalStatus":  "Stopped",
                          "OriginalStartupType":  "Manual",
                          "Name":  "SSDPSRV",
                          "DisplayName":  "Обнаружение SSDP"
@@ -445,13 +527,617 @@
                          "OriginalStartupType":  "Manual",
                          "Name":  "UPnPHost",
                          "DisplayName":  "Узел универсальных PNP-устройств"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "EABackgroundService",
+                         "DisplayName":  "EABackgroundService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "LibreOfficeMaintenance",
+                         "DisplayName":  "LibreOffice Maintenance Service"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "TermService",
+                         "DisplayName":  "Службы удаленных рабочих столов"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SessionEnv",
+                         "DisplayName":  "Настройка сервера удаленных рабочих столов"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "UmRdpService",
+                         "DisplayName":  "Перенаправитель портов пользовательского режима служб удаленных рабочих столов"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WinRM",
+                         "DisplayName":  "Служба удаленного управления Windows (WS-Management)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "HvHost",
+                         "DisplayName":  "Служба узла HV"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmicguestinterface",
+                         "DisplayName":  "Интерфейс гостевой службы Hyper-V"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmicheartbeat",
+                         "DisplayName":  "Служба пульса (Hyper-V)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmickvpexchange",
+                         "DisplayName":  "Служба обмена данными (Hyper-V)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmicrdv",
+                         "DisplayName":  "Служба виртуализации удаленных рабочих столов Hyper-V"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmicshutdown",
+                         "DisplayName":  "Служба завершения работы в качестве гостя (Hyper-V)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmictimesync",
+                         "DisplayName":  "Служба синхронизации времени Hyper-V"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmicvmsession",
+                         "DisplayName":  "Служба Hyper-V PowerShell Direct"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "vmicvss",
+                         "DisplayName":  "Служба запросов на теневое копирование томов Hyper-V"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "MSiSCSI",
+                         "DisplayName":  "Служба инициатора Майкрософт iSCSI"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SNMPTrap",
+                         "DisplayName":  "Ловушка SNMP"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "RpcLocator",
+                         "DisplayName":  "Локатор удаленного вызова процедур (RPC)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "fhsvc",
+                         "DisplayName":  "Служба истории файлов"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "wbengine",
+                         "DisplayName":  "Служба модуля архивации на уровне блоков"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SDRSVC",
+                         "DisplayName":  "Программа архивации данных"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "CloudBackupRestoreSvc",
+                         "DisplayName":  "Облачная служба резервного копирования и восстановления"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "OneSyncSvc",
+                         "DisplayName":  "Синхронизация узла"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "wuqisvc",
+                         "DisplayName":  "Аналитика качества и использования Майкрософт"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "wmiApSrv",
+                         "DisplayName":  "Адаптер производительности WMI"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "pla",
+                         "DisplayName":  "Журналы и оповещения производительности"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "Wecsvc",
+                         "DisplayName":  "Сборщик событий Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "TroubleshootingSvc",
+                         "DisplayName":  "Рекомендованная служба устранения неполадок"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WManSvc",
+                         "DisplayName":  "Служба управления Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "AppMgmt",
+                         "DisplayName":  "Управление приложениями"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "AppVClient",
+                         "DisplayName":  "Microsoft App-V Client"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "UevAgentService",
+                         "DisplayName":  "Служба виртуализации взаимодействия с пользователем"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "shpamsvc",
+                         "DisplayName":  "Shared PC Account Manager"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "perceptionsimulation",
+                         "DisplayName":  "Служба имитации восприятия Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "WSAIFabricSvc",
+                         "DisplayName":  "Узел компонентов ИИ Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PeerDistSvc",
+                         "DisplayName":  "BranchCache"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "CscService",
+                         "DisplayName":  "Автономные файлы"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WebClient",
+                         "DisplayName":  "Веб-клиент"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "WdiSystemHost",
+                         "DisplayName":  "Узел системы диагностики"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "WdiServiceHost",
+                         "DisplayName":  "Узел службы диагностики"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "DPS",
+                         "DisplayName":  "Служба политики диагностики"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PrintScanBrokerService",
+                         "DisplayName":  "PrintScanBrokerService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PrintDeviceConfigurationService",
+                         "DisplayName":  "Служба настройки принтеров"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PrintWorkflowUserSvc",
+                         "DisplayName":  "PrintWorkflow"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "icssvc",
+                         "DisplayName":  "Служба Windows Mobile Hotspot"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "autotimesvc",
+                         "DisplayName":  "Время в сети мобильной связи"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "lfsvc",
+                         "DisplayName":  "Служба географического положения"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WFDSConMgrSvc",
+                         "DisplayName":  "Служба диспетчера подключений служб Wi-Fi Direct"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "CertPropSvc",
+                         "DisplayName":  "Распространение сертификата"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "LocalKdc",
+                         "DisplayName":  "Локальный центр распространения ключей Kerberos"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "BDESVC",
+                         "DisplayName":  "Служба шифрования дисков BitLocker"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "EFS",
+                         "DisplayName":  "Шифрованная файловая система (EFS)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "NaturalAuthentication",
+                         "DisplayName":  "Проверка подлинности на основе физических параметров"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "InstallService",
+                         "DisplayName":  "Служба установки Microsoft Store"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PushToInstall",
+                         "DisplayName":  "Служба PushToInstall Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "AxInstSV",
+                         "DisplayName":  "Установщик ActiveX (AxInstSV)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "CDPUserSvc",
+                         "DisplayName":  "Служба пользователя платформы подключенных устройств"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "BluetoothUserService",
+                         "DisplayName":  "Служба поддержки пользователей Bluetooth"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "CaptureService",
+                         "DisplayName":  "CaptureService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "BcastDVRUserService",
+                         "DisplayName":  "Пользовательская служба DVR для игр и трансляции"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "DevicePickerUserSvc",
+                         "DisplayName":  "DevicePicker"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "DevicesFlowUserSvc",
+                         "DisplayName":  "DevicesFlow"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "DeviceAssociationBrokerSvc",
+                         "DisplayName":  "DeviceAssociationBroker"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "SmsRouter",
+                         "DisplayName":  "Служба маршрутизатора SMS Microsoft Windows."
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "MessagingService",
+                         "DisplayName":  "MessagingService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PenService",
+                         "DisplayName":  "PenService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "P9RdrService",
+                         "DisplayName":  "P9RdrService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "AarSvc",
+                         "DisplayName":  "Agent Activation Runtime"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "UserDataSvc",
+                         "DisplayName":  "Служба доступа к данным пользователя"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "UnistoreSvc",
+                         "DisplayName":  "Служба хранения данных пользователя"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "PimIndexMaintenanceSvc",
+                         "DisplayName":  "Служба контактных данных"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "ConsentUxUserSvc",
+                         "DisplayName":  "Служба пользователя ConsentUX"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "UdkUserSvc",
+                         "DisplayName":  "Пользовательская служба UDK"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "cbdhsvc",
+                         "DisplayName":  "Пользовательская служба буфера обмена"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "NPSMSvc",
+                         "DisplayName":  "Служба диспетчера текущего сеанса"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "DialogBlockingService",
+                         "DisplayName":  "DialogBlockingService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "refsdedupsvc",
+                         "DisplayName":  "Служба Dedup ReFS"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "TieringEngineService",
+                         "DisplayName":  "Управление уровнями хранилища"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "EntAppSvc",
+                         "DisplayName":  "Служба управления корпоративными приложениями"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "McmSvc",
+                         "DisplayName":  "Служба управления подключениями мобильных устройств"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "ADPSvc",
+                         "DisplayName":  "Служба платформы агрегированных данных"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "cloudidsvc",
+                         "DisplayName":  "Служба идентификации облачных удостоверений (Майкрософт)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "DmEnrollmentSvc",
+                         "DisplayName":  "Служба регистрации управления устройством"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "dcsvc",
+                         "DisplayName":  "Служба объявленной конфигурации (DC)"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "wlpasvc",
+                         "DisplayName":  "Служба помощника по локальному профилю"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "DsSvc",
+                         "DisplayName":  "Служба совместного доступа к данным"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WEPHOSTSVC",
+                         "DisplayName":  "Служба узла поставщика шифрования Windows"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "hpatchmon",
+                         "DisplayName":  "Hotpatch Monitoring Service"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "McpManagementService",
+                         "DisplayName":  "McpManagementService"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Disabled",
+                         "Name":  "embeddedmode",
+                         "DisplayName":  "Встроенный режим"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "svsvc",
+                         "DisplayName":  "Быстрая проверка"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "WarpJITSvc",
+                         "DisplayName":  "Warp JIT Service"
+                     },
+                     {
+                         "OriginalStatus":  "Stopped",
+                         "OriginalStartupType":  "Manual",
+                         "Name":  "IsolationSession",
+                         "DisplayName":  "IsolationSession"
                      }
                  ],
-    "GameDVRConfig":  {
-                          "AppCaptureEnabled":  0,
-                          "GameDVR_Enabled":  0,
-                          "GameDVR_FSEBehaviorMode":  2
-                      },
+    "NetworkAdapterProperties":  [
+                                     [
+                                         {
+                                             "FlowControl":  "3",
+                                             "EEE":  "1",
+                                             "PowerSavingMode":  "1",
+                                             "AdapterName":  "Ethernet",
+                                             "GreenEthernet":  "1",
+                                             "InterruptModeration":  "1",
+                                             "InterfaceDesc":  "Realtek PCIe GbE Family Controller"
+                                         }
+                                     ]
+                                 ],
+    "NTFSConfig":  {
+                       "NtfsDisable8dot3NameCreation":  1,
+                       "NtfsDisableLastAccessUpdate":  2147483649
+                   },
+    "VisualConfig":  {
+                         "EnableTransparency":  1,
+                         "MinAnimate":  "0"
+                     },
+    "HardwareProfile":  {
+                            "GpuResolution":  "1920x1080 @ 180Hz",
+                            "GpuDevicePriority":  null,
+                            "SystemDiskModel":  "ADATA LEGEND 900",
+                            "GpuVendor":  "AMD",
+                            "LowCoreProfile":  false,
+                            "GpuMsiSupported":  true,
+                            "CpuVendor":  "AMD",
+                            "SystemDriveLetter":  "C",
+                            "PhysicalCores":  6,
+                            "GpuPnpDeviceId":  "PCI\\VEN_1002\u0026DEV_73FF\u0026SUBSYS_52401849\u0026REV_C7\\6\u00261D394319\u00260\u002600000019",
+                            "GpuName":  "AMD Radeon RX 6600",
+                            "CpuArchitecture":  "x64",
+                            "IsHdd":  false,
+                            "TotalRamGB":  31.93,
+                            "HasAnyHdd":  true,
+                            "LogicalCores":  12,
+                            "HddProfile":  true,
+                            "SystemDiskBusType":  "NVMe",
+                            "TotalRamBytes":  34282012672,
+                            "PagefileManaged":  true,
+                            "PagefileConfigured":  true,
+                            "LowRamProfile":  false,
+                            "SystemDiskMediaType":  "SSD",
+                            "CpuName":  "AMD Ryzen 5 5600X 6-Core Processor",
+                            "SystemDiskNumber":  1,
+                            "PagefileWarning":  null
+                        },
+    "Version":  "2.5",
+    "ProcessorThrottleMin":  100,
     "AppModelStartupTasks":  [
                                  {
                                      "OriginalState":  2,
@@ -460,91 +1146,23 @@
                                      "Package":  "28017CharlesMilette.TranslucentTB_v826wp6bftszj"
                                  }
                              ],
-    "NetworkLatencyConfig":  [
-                                 {
-                                     "Guid":  "{8eb6cecf-6919-4cf4-8c70-e55823aa4b53}",
-                                     "TCPNoDelay":  null,
-                                     "TcpAckFrequency":  null
-                                 },
-                                 {
-                                     "Guid":  "{ac46bc20-ec53-4485-8fa1-cdd08e34f382}",
-                                     "TCPNoDelay":  null,
-                                     "TcpAckFrequency":  null
-                                 },
-                                 {
-                                     "Guid":  "{c2fe9cd4-8e35-40c4-ac5b-397e8fc60e81}",
-                                     "TCPNoDelay":  null,
-                                     "TcpAckFrequency":  null
-                                 }
-                             ],
-    "StartupItems":  [
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "ctfmon",
-                             "Value":  "C:\\Windows\\System32\\ctfmon.exe"
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "AMDNoiseSuppression",
-                             "Value":  "\"C:\\WINDOWS\\system32\\AMD\\ANR\\AMDNoiseSuppression.exe\""
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "Steam",
-                             "Value":  "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent"
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "Discord",
-                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Discord\\Update.exe\" --processStart Discord.exe --process-start-args \"--start-inactive\""
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "GoogleDriveFS",
-                             "Value":  "\"C:\\Program Files\\Google\\Drive File Stream\\132.0.0.0\\GoogleDriveFS.exe\" --startup_mode"
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "EADM",
-                             "Value":  "\"C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EALauncher.exe\" -silentOs"
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "pulsesync.app",
-                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Programs\\PulseSync\\PulseSync.exe\""
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "GoogleUpdaterTaskUser157.0.8089.0",
-                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Google\\GoogleUpdater\\157.0.8089.0\\updater.exe\" --wake"
-                         },
-                         {
-                             "Scope":  "HKCU",
-                             "Name":  "Gemini",
-                             "Value":  "\"C:\\Users\\ragtagsky\\AppData\\Local\\Google\\Gemini\\GeminiAppLauncher.exe\""
-                         }
-                     ],
-    "StartupShortcuts":  [
-                             {
-                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk",
-                                 "Name":  "AyuGram.lnk",
-                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\AyuGram.lnk.ugm_backup"
-                             },
-                             {
-                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk",
-                                 "Name":  "ege-tracker-sync.lnk",
-                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ege-tracker-sync.lnk.ugm_backup"
-                             },
-                             {
-                                 "OriginalPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk",
-                                 "Name":  "TimeTracker.lnk",
-                                 "BackupPath":  "C:\\Users\\ragtagsky\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\TimeTracker.lnk.ugm_backup"
-                             }
-                         ],
-    "PowerScheme":  "929fef13-d38f-4d3a-b857-7c19197b2246",
-    "BootRunCount":  1,
-    "VisualConfig":  {
-                         "EnableTransparency":  1,
-                         "MinAnimate":  "0"
-                     }
+    "MSIConfig":  {
+                      "Vendor":  "AMD",
+                      "DeviceName":  "AMD Radeon RX 6600",
+                      "PNPDeviceID":  "PCI\\VEN_1002\u0026DEV_73FF\u0026SUBSYS_52401849\u0026REV_C7\\6\u00261D394319\u00260\u002600000019",
+                      "MSISupported":  1,
+                      "DevicePriority":  null,
+                      "BasePath":  "HKLM:\\SYSTEM\\CurrentControlSet\\Enum\\PCI\\VEN_1002\u0026DEV_73FF\u0026SUBSYS_52401849\u0026REV_C7\\6\u00261D394319\u00260\u002600000019\\Device Parameters\\Interrupt Management"
+                  },
+    "CoreParkingMinCores":  100,
+    "UlpsConfig":  [
+                       [
+                           {
+                               "DriverDesc":  "AMD Radeon RX 6600",
+                               "Path":  "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\0000",
+                               "EnableUlps":  1,
+                               "SubKeyName":  "0000"
+                           }
+                       ]
+                   ]
 }
