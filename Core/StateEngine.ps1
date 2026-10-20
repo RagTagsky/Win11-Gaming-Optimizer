@@ -14,6 +14,45 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 
+function Get-ActiveStateSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Path = $Script:ActiveStateFile
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    for ($i = 0; $i -lt 5; $i++) {
+        try {
+            return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+        } catch {
+            Start-Sleep -Milliseconds 100
+        }
+    }
+    return $null
+}
+
+function Set-ActiveStateSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Path = $Script:ActiveStateFile,
+
+        [Parameter(Mandatory = $true)]
+        [object]$Data
+    )
+
+    for ($i = 0; $i -lt 5; $i++) {
+        try {
+            $Data | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Path -Force -Encoding UTF8
+            return $true
+        } catch {
+            Start-Sleep -Milliseconds 100
+        }
+    }
+    return $false
+}
+
 # Load optimizer module with include guard
 if (-not (Get-Command Get-HardwareProfile -ErrorAction SilentlyContinue)) {
     . (Join-Path $PSScriptRoot "SystemOptimizer.ps1")
@@ -80,6 +119,11 @@ function New-SystemStateBackup {
         Timestamp                = (Get-Date).ToString("o")
         State                    = "Armed"
         BootRunCount             = 0
+        SessionLogonHandled      = $false
+        UserSessionHandled       = $false
+        SystemSessionHandled     = $false
+        SystemRestored           = $false
+        UserRestored             = $false
         HardwareProfile          = $hwProfile
         PowerScheme              = (Get-ActivePowerSchemeGuid)
         MultimediaConfig         = (Get-MultimediaGamingConfig)
@@ -475,22 +519,263 @@ function Disable-UserStateAggressive {
     Write-Host "[+] User startup environment completely stripped and optimized for gaming." -ForegroundColor Green
 }
 
+function Restore-QuarantinedShortcuts {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $false)]
+        [string]$QuarantineDir = (Join-Path $Script:BackupDir "QuarantinedShortcuts"),
+
+        [Parameter(Mandatory = $false)]
+        [string]$UserStartup = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
+
+        [Parameter(Mandatory = $false)]
+        [string]$CommonStartup = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup",
+
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$StateData = $null,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("All", "System", "User")]
+        [string]$Scope = "All"
+    )
+
+    if (-not (Test-Path -LiteralPath $QuarantineDir)) {
+        return
+    }
+
+    $userDir = Join-Path $QuarantineDir "User"
+    $commonDir = Join-Path $QuarantineDir "ProgramData"
+
+    # 1. Restore segregated User startup shortcuts
+    if ($Scope -in @("All", "User") -and (Test-Path -LiteralPath $userDir)) {
+        if (-not (Test-Path -LiteralPath $UserStartup)) {
+            New-Item -ItemType Directory -Path $UserStartup -Force | Out-Null
+        }
+        Get-ChildItem -LiteralPath $userDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            $destName = $_.Name -replace '\.ugm_backup$', ''
+            Move-Item -LiteralPath $_.FullName -Destination (Join-Path $UserStartup $destName) -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Restored user startup shortcut: $destName" -ForegroundColor Green
+        }
+        $remUser = Get-ChildItem -LiteralPath $userDir -Force -ErrorAction SilentlyContinue
+        if (-not $remUser -or $remUser.Count -eq 0) {
+            Remove-Item -LiteralPath $userDir -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 2. Restore segregated Common / ProgramData startup shortcuts
+    if ($Scope -in @("All", "System") -and (Test-Path -LiteralPath $commonDir)) {
+        if (-not (Test-Path -LiteralPath $CommonStartup)) {
+            New-Item -ItemType Directory -Path $CommonStartup -Force | Out-Null
+        }
+        Get-ChildItem -LiteralPath $commonDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            $destName = $_.Name -replace '\.ugm_backup$', ''
+            Move-Item -LiteralPath $_.FullName -Destination (Join-Path $CommonStartup $destName) -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Restored common startup shortcut: $destName" -ForegroundColor Green
+        }
+        $remCommon = Get-ChildItem -LiteralPath $commonDir -Force -ErrorAction SilentlyContinue
+        if (-not $remCommon -or $remCommon.Count -eq 0) {
+            Remove-Item -LiteralPath $commonDir -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 3. Restore unsegregated and legacy shortcuts sitting directly in the root of QuarantineDir
+    # (e.g. from prior versions or backups like active_state.json)
+    $rootFiles = Get-ChildItem -LiteralPath $QuarantineDir -File -Force -ErrorAction SilentlyContinue | Where-Object {
+        $_.Extension -in @(".lnk", ".url", ".ugm_backup")
+    }
+    if ($rootFiles -and $rootFiles.Count -gt 0) {
+        Write-Host "  [*] Scanning unsegregated / legacy shortcuts in quarantine root..." -ForegroundColor Cyan
+        foreach ($rf in $rootFiles) {
+            $cleanName = $rf.Name -replace '\.ugm_backup$', ''
+            $destFolder = $UserStartup
+            $destScope = "User"
+
+            if ($StateData -and $StateData.StartupShortcuts) {
+                $matched = $StateData.StartupShortcuts | Where-Object {
+                    $_.Name -eq $cleanName -or
+                    $_.Name -eq $rf.Name -or
+                    ($_.QuarantinePath -and (($_.QuarantinePath | Split-Path -Leaf) -eq $cleanName -or ($_.QuarantinePath | Split-Path -Leaf) -eq $rf.Name)) -or
+                    ($_.OriginalPath -and (($_.OriginalPath | Split-Path -Leaf) -eq $cleanName -or ($_.OriginalPath | Split-Path -Leaf) -eq $rf.Name))
+                } | Select-Object -First 1
+
+                if ($matched) {
+                    if ($matched.FolderTag -eq "ProgramData" -or ($matched.OriginalFolder -and $matched.OriginalFolder -like "*ProgramData*")) {
+                        $destFolder = $CommonStartup
+                        $destScope = "System"
+                    } elseif ($matched.OriginalFolder) {
+                        $destFolder = $matched.OriginalFolder
+                        $destScope = "User"
+                    }
+                }
+            }
+
+            if ($Scope -eq "All" -or $Scope -eq $destScope) {
+                if (-not (Test-Path -LiteralPath $destFolder)) {
+                    New-Item -ItemType Directory -Path $destFolder -Force -ErrorAction SilentlyContinue | Out-Null
+                }
+                $destPath = Join-Path $destFolder $cleanName
+                Move-Item -LiteralPath $rf.FullName -Destination $destPath -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored root quarantined shortcut: $cleanName -> $destFolder" -ForegroundColor Green
+            }
+        }
+    }
+
+    # 4. Clean up any empty subdirectories in QuarantineDir (bottom-up recursion)
+    Get-ChildItem -LiteralPath $QuarantineDir -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+        Sort-Object -Property FullName -Descending | ForEach-Object {
+            $subRemaining = Get-ChildItem -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            if (-not $subRemaining -or $subRemaining.Count -eq 0) {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+    # 5. ONLY delete QuarantineDir if it is completely empty
+    $rootRemaining = Get-ChildItem -LiteralPath $QuarantineDir -Force -ErrorAction SilentlyContinue
+    if (-not $rootRemaining -or $rootRemaining.Count -eq 0) {
+        Remove-Item -LiteralPath $QuarantineDir -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] Quarantine directory completely emptied and removed." -ForegroundColor Gray
+    } else {
+        Write-Verbose "Quarantine directory '$QuarantineDir' contains $($rootRemaining.Count) unhandled item(s). Retained for data safety."
+    }
+}
+
+function Restore-UserProfileState {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$StateData = $null,
+
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$StartupConfig = $null
+    )
+
+    $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem
+    if ($isSystem) {
+        Write-Warning "Cannot restore User Profile state under NT AUTHORITY\SYSTEM (HKCU maps to .DEFAULT and APPDATA maps to systemprofile). Must run in interactive user context."
+        return $false
+    }
+
+    if (-not $StateData) {
+        $StateData = Get-ActiveStateSafe
+    }
+
+    Write-Host "`n[*] Restoring interactive user profile desktop state..." -ForegroundColor Cyan
+
+    # 1. Restore HKCU Run items
+    if ($StateData -and $StateData.StartupItems) {
+        Write-Host "  [*] Restoring user registry startup items (HKCU)..." -ForegroundColor Gray
+        foreach ($item in $StateData.StartupItems) {
+            if ($item.Scope -eq "HKCU") {
+                $hive = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+                if (Test-Path -LiteralPath $hive) {
+                    Set-ItemProperty -Path $hive -Name $item.Name -Value $item.Value -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [+] Restored user startup entry: $($item.Name) [HKCU]" -ForegroundColor Green
+                }
+            }
+        }
+    }
+
+    # 2. Restore User Quarantined Startup Shortcuts & Root Quarantined Shortcuts
+    $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
+    $userStartup = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+    Restore-QuarantinedShortcuts -QuarantineDir $quarantineDir -UserStartup $userStartup -StateData $StateData -Scope "User"
+
+    # 3. Clean up legacy *.ugm_backup files in user startup folder
+    if (Test-Path -LiteralPath $userStartup) {
+        Get-ChildItem -LiteralPath $userStartup -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
+            $origName = $_.Name -replace '\.ugm_backup$', ''
+            Rename-Item -LiteralPath $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Restored legacy backup shortcut: $origName" -ForegroundColor Green
+        }
+    }
+
+    # 4. Restore UWP AppModel Startup Tasks (TranslucentTB, etc.)
+    if ($StateData -and $StateData.AppModelStartupTasks) {
+        Write-Host "  [*] Restoring UWP AppModel startup tasks (TranslucentTB, etc.)..." -ForegroundColor Gray
+        foreach ($uwpEntry in $StateData.AppModelStartupTasks) {
+            if ($uwpEntry.RegistryPath -and (Test-Path -LiteralPath $uwpEntry.RegistryPath)) {
+                Set-ItemProperty -Path $uwpEntry.RegistryPath -Name "State" -Value $uwpEntry.OriginalState -Type DWord -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored UWP startup task: $($uwpEntry.TaskId) -> State $($uwpEntry.OriginalState)" -ForegroundColor Green
+            }
+        }
+    }
+
+    # 5. Restore Visual / DWM Settings (EnableTransparency, MinAnimate)
+    if ($StateData -and $StateData.VisualConfig) {
+        Write-Host "  [*] Restoring visual effects & DWM transparency..." -ForegroundColor Gray
+        $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        if (Test-Path -LiteralPath $transparencyPath) {
+            Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value $StateData.VisualConfig.EnableTransparency -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+        if (Test-Path -LiteralPath $metricsPath) {
+            Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value $StateData.VisualConfig.MinAnimate -Type String -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] Visual transparency & animations restored in user profile." -ForegroundColor Green
+    }
+
+    # 6. Restore GameDVR User Settings
+    if ($StateData -and $StateData.GameDVRConfig) {
+        $gdvr = $StateData.GameDVRConfig
+        $gameDvrPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR"
+        $configStorePath = "HKCU:\System\GameConfigStore"
+        if (-not (Test-Path -LiteralPath $gameDvrPath)) { New-Item -Path $gameDvrPath -Force -ErrorAction SilentlyContinue | Out-Null }
+        if (-not (Test-Path -LiteralPath $configStorePath)) { New-Item -Path $configStorePath -Force -ErrorAction SilentlyContinue | Out-Null }
+        if ($null -ne $gdvr.AppCaptureEnabled) {
+            Set-ItemProperty -Path $gameDvrPath -Name "AppCaptureEnabled" -Value $gdvr.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_Enabled) {
+            Set-ItemProperty -Path $configStorePath -Name "GameDVR_Enabled" -Value $gdvr.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $gdvr.GameDVR_FSEBehaviorMode) {
+            Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  [+] GameDVR user registry parameters restored." -ForegroundColor Green
+    }
+
+    # Update active state file: mark UserRestored = $true atomically with latest state from disk
+    $latest = Get-ActiveStateSafe
+    if ($latest) {
+        $latest.UserRestored = $true
+        if ($latest.SystemRestored) {
+            $latest.State = "Restored"
+        } else {
+            $latest.State = "Restoring_UserDone"
+        }
+        Set-ActiveStateSafe -Data $latest | Out-Null
+    }
+
+    return $true
+}
+
 function Restore-SystemState {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [AllowEmptyCollection()]
-        [string[]]$Whitelist,
+        [string[]]$Whitelist = @(),
 
         [Parameter(Mandatory = $false)]
-        [PSCustomObject]$StartupConfig
+        [PSCustomObject]$StartupConfig = $null,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("All", "System", "User")]
+        [string]$Scope = "All"
     )
 
-    if (-not (Test-Path $Script:ActiveStateFile)) {
+    $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem
+    if ($isSystem -and $Scope -eq "All") {
+        Write-Warning "Restore-SystemState running under NT AUTHORITY\SYSTEM. Automatically scoping down to 'System' to preserve user profile integrity."
+        $Scope = "System"
+    }
+
+    $stateData = Get-ActiveStateSafe
+    if (-not $stateData) {
         Write-Warning "No active backup state file found at '$Script:ActiveStateFile'. Checking for residual backup shortcuts..."
     }
-    else {
-        $stateData = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+
+    if ($Scope -eq "User") {
+        return (Restore-UserProfileState -StateData $stateData -StartupConfig $StartupConfig)
     }
 
     Write-Host "`n[*] Restoring system services to original state..." -ForegroundColor Cyan
@@ -524,85 +809,32 @@ function Restore-SystemState {
         }
     }
 
-    # Restore HKCU / HKLM Run items
+    # Restore HKLM Run items
     if ($stateData -and $stateData.StartupItems) {
-        Write-Host "`n[*] Restoring registry startup items..." -ForegroundColor Cyan
+        Write-Host "`n[*] Restoring system registry startup items (HKLM)..." -ForegroundColor Cyan
         foreach ($item in $stateData.StartupItems) {
-            $hive = switch ($item.Scope) {
-                "HKCU" { "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" }
-                "HKLM" { "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" }
-            }
-            if ($hive -and (Test-Path $hive)) {
-                Set-ItemProperty -Path $hive -Name $item.Name -Value $item.Value -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] Restored startup entry: $($item.Name) [$($item.Scope)]" -ForegroundColor Green
+            if ($item.Scope -eq "HKLM") {
+                $hive = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+                if (Test-Path -LiteralPath $hive) {
+                    Set-ItemProperty -Path $hive -Name $item.Name -Value $item.Value -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [+] Restored startup entry: $($item.Name) [HKLM]" -ForegroundColor Green
+                }
             }
         }
     }
 
-    # Restore Quarantined Startup folder shortcuts
+    # Restore Common Quarantined Startup folder shortcuts & ProgramData legacy root shortcuts
     $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
-    if (Test-Path -LiteralPath $quarantineDir) {
-        $userDir = Join-Path $quarantineDir "User"
-        $commonDir = Join-Path $quarantineDir "ProgramData"
-        $userStartup = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
-        $commonStartup = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    $commonStartup = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+    Restore-QuarantinedShortcuts -QuarantineDir $quarantineDir -CommonStartup $commonStartup -StateData $stateData -Scope "System"
 
-        if (Test-Path -LiteralPath $userDir) {
-            if (-not (Test-Path -LiteralPath $userStartup)) { New-Item -ItemType Directory -Path $userStartup -Force | Out-Null }
-            Get-ChildItem -LiteralPath $userDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
-                Move-Item -LiteralPath $_.FullName -Destination (Join-Path $userStartup $_.Name) -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] Restored startup shortcut: $($_.Name)" -ForegroundColor Green
-            }
+    # Clean up legacy *.ugm_backup files in ProgramData startup folder
+    if (Test-Path -LiteralPath $commonStartup) {
+        Get-ChildItem -LiteralPath $commonStartup -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
+            $origName = $_.Name -replace '\.ugm_backup$', ''
+            Rename-Item -LiteralPath $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Restored legacy common backup shortcut: $origName" -ForegroundColor Green
         }
-        if (Test-Path -LiteralPath $commonDir) {
-            if (-not (Test-Path -LiteralPath $commonStartup)) { New-Item -ItemType Directory -Path $commonStartup -Force | Out-Null }
-            Get-ChildItem -LiteralPath $commonDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
-                Move-Item -LiteralPath $_.FullName -Destination (Join-Path $commonStartup $_.Name) -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] Restored startup shortcut: $($_.Name)" -ForegroundColor Green
-            }
-        }
-        # Clean up empty quarantine directory
-        Remove-Item -LiteralPath $quarantineDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
-    # Also clean up any legacy *.ugm_backup files that might still exist in Startup folders
-    $startupDirs = @(
-        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup",
-        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
-    )
-    foreach ($sDir in $startupDirs) {
-        if (Test-Path -LiteralPath $sDir) {
-            Get-ChildItem -LiteralPath $sDir -File -Filter "*.ugm_backup" -ErrorAction SilentlyContinue | ForEach-Object {
-                $origName = $_.Name -replace '\.ugm_backup$', ''
-                Rename-Item -LiteralPath $_.FullName -NewName $origName -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] Restored legacy backup shortcut: $origName" -ForegroundColor Green
-            }
-        }
-    }
-
-    # Restore UWP AppModel Startup Tasks
-    if ($stateData -and $stateData.AppModelStartupTasks) {
-        Write-Host "`n[*] Restoring UWP AppModel startup tasks (TranslucentTB, etc.)..." -ForegroundColor Cyan
-        foreach ($uwpEntry in $stateData.AppModelStartupTasks) {
-            if ($uwpEntry.RegistryPath -and (Test-Path $uwpEntry.RegistryPath)) {
-                Set-ItemProperty -Path $uwpEntry.RegistryPath -Name "State" -Value $uwpEntry.OriginalState -Type DWord -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] Restored UWP startup task: $($uwpEntry.TaskId) -> State $($uwpEntry.OriginalState)" -ForegroundColor Green
-            }
-        }
-    }
-
-    # Restore Visual / DWM Settings
-    if ($stateData -and $stateData.VisualConfig) {
-        Write-Host "`n[*] Restoring visual effects & DWM transparency..." -ForegroundColor Cyan
-        $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-        if (Test-Path $transparencyPath) {
-            Set-ItemProperty -Path $transparencyPath -Name "EnableTransparency" -Value $stateData.VisualConfig.EnableTransparency -Type DWord -Force -ErrorAction SilentlyContinue
-        }
-        $metricsPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
-        if (Test-Path $metricsPath) {
-            Set-ItemProperty -Path $metricsPath -Name "MinAnimate" -Value $stateData.VisualConfig.MinAnimate -Type String -Force -ErrorAction SilentlyContinue
-        }
-        Write-Host "  [+] Visual transparency & animations restored." -ForegroundColor Green
     }
 
     # Restore Power Scheme
@@ -649,24 +881,15 @@ function Restore-SystemState {
             -NetworkAdapterProperties $stateData.NetworkAdapterProperties | Out-Null
     }
 
-    # Restore GameDVR Settings
+    # Restore GameDVR System Policies (HKLM)
     if ($stateData -and $stateData.GameDVRConfig) {
         $gdvr = $stateData.GameDVRConfig
-        if ($null -ne $gdvr.AppCaptureEnabled) {
-            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $gdvr.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
-        }
-        if ($null -ne $gdvr.GameDVR_Enabled) {
-            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $gdvr.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
-        }
-        if ($null -ne $gdvr.GameDVR_FSEBehaviorMode) {
-            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
-        }
         if ($null -ne $gdvr.AllowGameDVR) {
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Value $gdvr.AllowGameDVR -Type DWord -Force -ErrorAction SilentlyContinue
         } else {
             Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -ErrorAction SilentlyContinue
         }
-        Write-Host "  [+] GameDVR original settings restored." -ForegroundColor Green
+        Write-Host "  [+] GameDVR machine policy restored." -ForegroundColor Green
     } else {
         Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -ErrorAction SilentlyContinue
     }
@@ -729,13 +952,29 @@ function Restore-SystemState {
     Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
     Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
 
-    # Mark state as restored
-    if ($stateData) {
-        $stateData.State = "Restored"
-        $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    # Mark system state as restored atomically with latest state from disk
+    $latest = Get-ActiveStateSafe
+    if ($latest) {
+        $latest.SystemRestored = $true
+        if ($Scope -eq "All") {
+            # In All scope, execute user profile restoration now
+            Restore-UserProfileState -StateData $latest -StartupConfig $StartupConfig | Out-Null
+            $latest = Get-ActiveStateSafe
+            if ($latest) {
+                $latest.State = "Restored"
+                Set-ActiveStateSafe -Data $latest | Out-Null
+            }
+        } else {
+            if ($latest.UserRestored) {
+                $latest.State = "Restored"
+            } else {
+                $latest.State = "Restoring_SystemDone"
+            }
+            Set-ActiveStateSafe -Data $latest | Out-Null
+        }
     }
 
-    Write-Host "`n[+] System state restored. Services: $restoredCount restored, $failedCount failed." -ForegroundColor Green
+    Write-Host "`n[+] System state restored ($Scope scope). Services: $restoredCount restored, $failedCount failed." -ForegroundColor Green
     return $true
 }
 

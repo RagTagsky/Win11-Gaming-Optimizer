@@ -292,20 +292,78 @@ Set-Content -LiteralPath (Join-Path $testQUser "Discord.lnk") -Value "User Disco
 Set-Content -LiteralPath (Join-Path $testQCommon "Discord.lnk") -Value "ProgramData Discord Target"
 Set-Content -LiteralPath (Join-Path $testQUser "Game [Modded] (v2.0).lnk") -Value "Bracketed Game Target"
 
-Get-ChildItem -LiteralPath $testQUser -File -Force | ForEach-Object {
-    Move-Item -LiteralPath $_.FullName -Destination (Join-Path $testUserStartup $_.Name) -Force
+# Unsegregated and legacy shortcuts directly in quarantine root
+Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyAppWithMeta.lnk") -Value "Legacy User App"
+Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyAppNoMeta.lnk") -Value "Legacy Fallback App"
+Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyProgramData.lnk") -Value "Legacy ProgramData App"
+Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyAppWithBackupExt.lnk.ugm_backup") -Value "Legacy Backup User App"
+Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyCommonBackup.lnk.ugm_backup") -Value "Legacy Backup Common App"
+
+# Foreign/residual file to test non-destructive empty-only quarantine directory cleanup
+Set-Content -LiteralPath (Join-Path $testQuarantine "residual_backup.txt") -Value "Residual data that must not cause folder deletion"
+
+$mockStateData = [PSCustomObject]@{
+    StartupShortcuts = @(
+        [PSCustomObject]@{
+            Name           = "LegacyAppWithMeta.lnk"
+            OriginalFolder = $testUserStartup
+            FolderTag      = "User"
+        },
+        [PSCustomObject]@{
+            Name           = "LegacyProgramData.lnk"
+            OriginalFolder = $testCommonStartup
+            FolderTag      = "ProgramData"
+        },
+        [PSCustomObject]@{
+            Name           = "LegacyAppWithBackupExt.lnk"
+            OriginalFolder = $testUserStartup
+            FolderTag      = "User"
+        },
+        [PSCustomObject]@{
+            Name           = "LegacyCommonBackup.lnk"
+            OriginalFolder = $testCommonStartup
+            FolderTag      = "ProgramData"
+        }
+    )
 }
-Get-ChildItem -LiteralPath $testQCommon -File -Force | ForEach-Object {
-    Move-Item -LiteralPath $_.FullName -Destination (Join-Path $testCommonStartup $_.Name) -Force
-}
+
+# Phase 1: Run production Restore-QuarantinedShortcuts with Scope "System"
+Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "System"
+
+$commonDiscordPhase1 = Test-Path -LiteralPath (Join-Path $testCommonStartup "Discord.lnk")
+$legacyProgramDataPhase1 = Test-Path -LiteralPath (Join-Path $testCommonStartup "LegacyProgramData.lnk")
+$legacyCommonBackupPhase1 = Test-Path -LiteralPath (Join-Path $testCommonStartup "LegacyCommonBackup.lnk")
+$userDiscordPhase1 = Test-Path -LiteralPath (Join-Path $testUserStartup "Discord.lnk")
+$quarantinePreservedPhase1 = Test-Path -LiteralPath $testQuarantine
+
+Assert-Test ($commonDiscordPhase1) "Phase 1 (System Scope): Common Discord.lnk restored to ProgramData"
+Assert-Test ($legacyProgramDataPhase1) "Phase 1 (System Scope): Legacy ProgramData root shortcut restored to Common Startup"
+Assert-Test ($legacyCommonBackupPhase1) "Phase 1 (System Scope): Legacy ProgramData .ugm_backup shortcut restored with clean .lnk extension"
+Assert-Test (-not $userDiscordPhase1) "Phase 1 (System Scope): User shortcuts strictly preserved in quarantine during System phase"
+Assert-Test ($quarantinePreservedPhase1) "Phase 1 (System Scope): Quarantine directory strictly preserved while User items remain"
+
+# Phase 2: Run production Restore-QuarantinedShortcuts with Scope "User"
+Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "User"
 
 $userDiscordRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "Discord.lnk")
-$commonDiscordRestored = Test-Path -LiteralPath (Join-Path $testCommonStartup "Discord.lnk")
 $bracketGameRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "Game [Modded] (v2.0).lnk")
+$legacyWithMetaRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "LegacyAppWithMeta.lnk")
+$legacyNoMetaRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "LegacyAppNoMeta.lnk")
+$legacyBackupUserRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "LegacyAppWithBackupExt.lnk")
+$quarantinePreservedWhenNonEmpty = Test-Path -LiteralPath $testQuarantine
 
-Assert-Test ($userDiscordRestored) "Same-name User Discord.lnk correctly routes to AppData Startup"
-Assert-Test ($commonDiscordRestored) "Same-name ProgramData Discord.lnk correctly routes to ProgramData Startup (Zero Collision)"
-Assert-Test ($bracketGameRestored) "Special bracketed shortcut 'Game [Modded] (v2.0).lnk' routes without wildcard parsing error"
+Assert-Test ($userDiscordRestored) "Phase 2 (User Scope): Same-name User Discord.lnk correctly routes to AppData Startup"
+Assert-Test ($bracketGameRestored) "Phase 2 (User Scope): Special bracketed shortcut 'Game [Modded] (v2.0).lnk' routes without wildcard parsing error"
+Assert-Test ($legacyWithMetaRestored) "Phase 2 (User Scope): Legacy root shortcut with metadata routes to original folder"
+Assert-Test ($legacyNoMetaRestored) "Phase 2 (User Scope): Legacy root shortcut without metadata defaults safely to AppData Startup"
+Assert-Test ($legacyBackupUserRestored) "Phase 2 (User Scope): Legacy root .ugm_backup shortcut matches metadata and restores with clean .lnk extension"
+Assert-Test ($quarantinePreservedWhenNonEmpty) "Quarantine directory is strictly preserved when non-empty (residual file present)"
+
+# Remove residual file and verify clean quarantine directory deletion when fully empty
+Remove-Item -LiteralPath (Join-Path $testQuarantine "residual_backup.txt") -Force -ErrorAction SilentlyContinue
+Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "All"
+$quarantineDeletedWhenEmpty = (-not (Test-Path -LiteralPath $testQuarantine))
+Assert-Test ($quarantineDeletedWhenEmpty) "Quarantine directory is cleanly deleted when completely empty"
 
 Remove-Item -LiteralPath $tempTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -408,8 +466,80 @@ Assert-Test ($stContent.BlacklistProcesses -notcontains "amdow") "amdow overlay 
 Assert-Test ($null -eq $stContent.StartupRegistryPaths) "Dead StartupRegistryPaths removed from startup_apps.json"
 Assert-Test ($null -eq $stContent.StartupFolders) "Dead StartupFolders removed from startup_apps.json"
 Assert-Test ($null -eq $stContent.TargetAppModelPackages) "Dead TargetAppModelPackages removed from startup_apps.json"
+# 11.9 Two-Phase Restoration & User Profile Isolation Contract
+$cmdUserProfile = Get-Command Restore-UserProfileState -ErrorAction SilentlyContinue
+Assert-Test ($null -ne $cmdUserProfile) "Restore-UserProfileState is exported from StateEngine.ps1"
 
-# 11.9 Pure UTF-8 without BOM Encoding Check
+$cmdSystemState = Get-Command Restore-SystemState -ErrorAction SilentlyContinue
+Assert-Test ($cmdSystemState.Parameters.ContainsKey("Scope")) "Restore-SystemState exports -Scope parameter"
+
+$scopeAttr = $cmdSystemState.Parameters["Scope"].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+$hasValidScopes = ($null -ne $scopeAttr -and ($scopeAttr.ValidValues -contains "All") -and ($scopeAttr.ValidValues -contains "System") -and ($scopeAttr.ValidValues -contains "User"))
+Assert-Test ($hasValidScopes) "Restore-SystemState validates scopes 'All', 'System', 'User'"
+
+$ugmPath = Join-Path $repoRoot "UltraGamingMode.ps1"
+$ugmCmd = Get-Command $ugmPath
+$actionAttr = $ugmCmd.Parameters["Action"].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+$hasRestoreUserAction = ($null -ne $actionAttr -and ($actionAttr.ValidValues -contains "RestoreUser"))
+Assert-Test ($hasRestoreUserAction) "UltraGamingMode.ps1 declares 'RestoreUser' in Action ValidateSet"
+
+$hasScopeParam = $ugmCmd.Parameters.ContainsKey("Scope")
+Assert-Test ($hasScopeParam) "UltraGamingMode.ps1 declares 'Scope' parameter in Param block"
+
+$scopeAttr2 = $ugmCmd.Parameters["Scope"].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+$hasValidUgmScopes = ($null -ne $scopeAttr2 -and ($scopeAttr2.ValidValues -contains "User"))
+Assert-Test ($hasValidUgmScopes) "UltraGamingMode.ps1 validates 'User' in Scope ValidateSet"
+
+$userProfileDef = (Get-Command Restore-UserProfileState).Definition
+$hasSystemGuard = ($userProfileDef -like '*WindowsIdentity*IsSystem*' -and $userProfileDef -like '*return $false*')
+Assert-Test ($hasSystemGuard) "Restore-UserProfileState strictly blocks execution under SYSTEM to prevent profile corruption"
+
+$systemStateDef = (Get-Command Restore-SystemState).Definition
+$hasScopeGuard = ($systemStateDef -like '*WindowsIdentity*IsSystem*' -and $systemStateDef -like '*$Scope = "System"*')
+Assert-Test ($hasScopeGuard) "Restore-SystemState automatically downscopes to 'System' under SYSTEM"
+
+$ugmContent = Get-Content -LiteralPath $ugmPath -Raw -Encoding UTF8
+$hasPrematureExit = ($ugmContent -match 'if\s*\(-not\s*\$isSystem\s*-and\s*\$hasScheduledWatchdog\)\s*\{\s*Write-Verbose[^\}]+exit 0')
+Assert-Test (-not $hasPrematureExit) "UltraGamingMode.ps1 does not prematurely exit 0 in interactive user watchdog"
+
+# 11.10 Non-Elevated Execution Contract for RestoreUser and User Scope
+$adminCheckBlock = if ($ugmContent -match '(?ms)if \(-not \$isAdmin\) \{(.*?)\r?\n\}') { $Matches[1] } else { "" }
+$allowsRestoreUserNonElevated = ($adminCheckBlock -match '\$Action\s*-eq\s*["'']RestoreUser["'']')
+Assert-Test ($allowsRestoreUserNonElevated) "UltraGamingMode.ps1 unconditionally permits non-elevated execution for -Action RestoreUser"
+
+$allowsUserScopeNonElevated = ($adminCheckBlock -match '\$Scope\s*-eq\s*["'']User["'']')
+Assert-Test ($allowsUserScopeNonElevated) "UltraGamingMode.ps1 permits non-elevated execution for -Scope User"
+
+# 11.11 Coordinated Trigger Cleanup Contract
+$preservesTriggersUntilBothDone = ($ugmContent -match 'UserRestored' -and $ugmContent -match 'SystemRestored' -and $ugmContent -match 'Unregister-BootTasks')
+Assert-Test ($preservesTriggersUntilBothDone) "UltraGamingMode.ps1 coordinates trigger cleanup only when both scopes are restored"
+
+# 11.12 Two-Phase Atomic State Merge Validation
+$tempStateFile = Join-Path $env:TEMP ("UGM_AtomicState_" + [System.Guid]::NewGuid().ToString("N") + ".json")
+$initialData = [PSCustomObject]@{
+    State = "GameMode_Active"
+    SystemRestored = $false
+    UserRestored = $false
+}
+Set-ActiveStateSafe -Path $tempStateFile -Data $initialData | Out-Null
+
+# Simulate System pass running first
+$sysState = Get-ActiveStateSafe -Path $tempStateFile
+$sysState.SystemRestored = $true
+$sysState.State = "Restoring_SystemDone"
+Set-ActiveStateSafe -Path $tempStateFile -Data $sysState | Out-Null
+
+# Simulate concurrent User pass loading latest from disk
+$usrState = Get-ActiveStateSafe -Path $tempStateFile
+$usrState.UserRestored = $true
+if ($usrState.SystemRestored) { $usrState.State = "Restored" }
+Set-ActiveStateSafe -Path $tempStateFile -Data $usrState | Out-Null
+
+$finalState = Get-ActiveStateSafe -Path $tempStateFile
+Assert-Test ($finalState.SystemRestored -eq $true -and $finalState.UserRestored -eq $true -and $finalState.State -eq "Restored") "Two-phase atomic state updates merge cleanly to Restored without overwriting"
+Remove-Item -LiteralPath $tempStateFile -Force -ErrorAction SilentlyContinue
+
+# 11.13 Pure UTF-8 without BOM Encoding Check
 $allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json"
 $hasBom = $false
 foreach ($f in $allConfigFiles) {

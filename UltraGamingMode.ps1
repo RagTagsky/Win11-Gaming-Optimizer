@@ -17,33 +17,28 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus")]
+    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser")]
     [string]$Action = "Status",
+
+    [Parameter()]
+    [ValidateSet("All", "System", "User")]
+    [string]$Scope = "All",
 
     [switch]$Watchdog
 )
 
 # ── Admin Rights & Watchdog Delegation Check ──────────────────────────────────
 $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem
-if ($Watchdog) {
-    # If the SYSTEM scheduled task is armed, delegate watchdog handling entirely to it (prevents user-session race/elevation prompts)
-    $hasScheduledWatchdog = [bool](Get-ScheduledTask -TaskName "UltraGamingMode_Watchdog" -ErrorAction SilentlyContinue)
-    if (-not $isSystem -and $hasScheduledWatchdog) {
-        Write-Verbose "Watchdog invoked in interactive user session. Session management is delegated to SYSTEM scheduled task."
-        exit 0
-    }
-}
-
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
+
 if (-not $isAdmin) {
     if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus")) {
         Write-Warning "Running in non-elevated mode. Operating with current user privileges."
     }
-    elseif ($Watchdog) {
-        Write-Warning "Watchdog invoked without administrator privileges. Session management delegated to scheduled task."
-        exit 0
+    elseif ($Action -eq "RestoreUser" -or ($Action -eq "Restore" -and ($Watchdog -or $Scope -eq "User"))) {
+        Write-Verbose "Watchdog / User profile restoration running with current user privileges."
     }
     else {
         Write-Error "Ultra Gaming Mode requires Administrator privileges for '$Action'. Please run as Administrator."
@@ -200,6 +195,16 @@ switch ($Action) {
         # 3. Register boot-time trigger under SYSTEM
         Register-BootTasks
 
+        # 4. Arm user-level RunOnce fail-safe watchdog in HKCU
+        $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
+        $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+        $userRestoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action RestoreUser -Watchdog"
+        Set-ItemProperty `
+            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+            -Name "*UltraGamingModeRestore" `
+            -Value $userRestoreCmd `
+            -Force -ErrorAction SilentlyContinue
+
         Write-Host "`n[SUCCESS] PC is primed for Ultra Gaming Mode!" -ForegroundColor Green
         Write-Host "  - Third-party startup apps, shortcuts, and TranslucentTB are suppressed." -ForegroundColor White
         Write-Host "  - On next restart, 173 non-essential Windows services will be disabled." -ForegroundColor White
@@ -256,9 +261,13 @@ switch ($Action) {
                     $bootTime = Get-ResilientBootTimestamp
                     $stateData.State = "GameMode_Active"
                     $stateData.SessionLogonHandled = $false
+                    $stateData.UserSessionHandled = $false
+                    $stateData.SystemSessionHandled = $false
+                    $stateData.SystemRestored = $false
+                    $stateData.UserRestored = $false
                     $stateData.BootRunCount = [int]$stateData.BootRunCount + 1
                     $stateData.GamingBootTime = $bootTime
-                    $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $stateFile -Force -Encoding UTF8
+                    Set-ActiveStateSafe -Path $stateFile -Data $stateData | Out-Null
 
                     # 4. Arm RunOnce fail-safe watchdog: fires on next reboot/logon after gaming mode
                     $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
@@ -273,7 +282,7 @@ switch ($Action) {
                 elseif ($stateData.State -eq "GameMode_Active") {
                     # If we reach here, the PC was rebooted while in gaming mode.
                     Write-Host "[*] System rebooted after Gaming Mode. Restoring normal state..." -ForegroundColor Cyan
-                    Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg
+                    Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg -Scope System
                     Unregister-BootTasks
                 }
             }
@@ -284,18 +293,41 @@ switch ($Action) {
         }
     }
 
-    "Restore" {
+    { $_ -in @("Restore", "RestoreUser") } {
         $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
-        if ($Watchdog -and (Test-Path $stateFile)) {
-            $stateData = Get-Content -Path $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($Watchdog -and (Test-Path -LiteralPath $stateFile)) {
+            $stateData = Get-ActiveStateSafe -Path $stateFile
 
             # Deterministic session check: first interactive logon after entering GameMode_Active
-            $isSameBoot = ($stateData.State -eq "GameMode_Active" -and (-not $stateData.SessionLogonHandled))
+            # We track user and system logon separately so they do not race or interfere
+            $isSameBoot = $false
+            if ($stateData -and $stateData.State -eq "GameMode_Active") {
+                if ($isSystem) {
+                    if ($null -ne $stateData.SystemSessionHandled) {
+                        $isSameBoot = (-not $stateData.SystemSessionHandled)
+                    } else {
+                        $isSameBoot = (-not $stateData.SessionLogonHandled)
+                    }
+                } else {
+                    if ($null -ne $stateData.UserSessionHandled) {
+                        $isSameBoot = (-not $stateData.UserSessionHandled)
+                    } else {
+                        $isSameBoot = (-not $stateData.SessionLogonHandled)
+                    }
+                }
+            }
 
             if ($isSameBoot) {
                 Write-Host "[+] Gaming session logon detected. Maintaining Ultra Gaming Mode." -ForegroundColor Green
-                $stateData.SessionLogonHandled = $true
-                $stateData | ConvertTo-Json -Depth 6 | Set-Content -Path $stateFile -Force -Encoding UTF8
+                $latest = Get-ActiveStateSafe -Path $stateFile
+                if (-not $latest) { $latest = $stateData }
+                if ($isSystem) {
+                    $latest.SystemSessionHandled = $true
+                } else {
+                    $latest.UserSessionHandled = $true
+                }
+                $latest.SessionLogonHandled = ($latest.SystemSessionHandled -and $latest.UserSessionHandled)
+                Set-ActiveStateSafe -Path $stateFile -Data $latest | Out-Null
 
                 # Ensure any stray bloat processes that managed to start are stopped
                 if ($startupCfg.BlacklistProcesses) {
@@ -304,12 +336,22 @@ switch ($Action) {
                 # Re-arm RunOnce for the NEXT reboot with fully quoted path
                 $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
                 $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-                $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
-                Set-ItemProperty `
-                    -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
-                    -Name "*UltraGamingModeRestore" `
-                    -Value $restoreCmd `
-                    -Force
+                if ($isSystem -or $isAdmin) {
+                    $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
+                    Set-ItemProperty `
+                        -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+                        -Name "*UltraGamingModeRestore" `
+                        -Value $restoreCmd `
+                        -Force -ErrorAction SilentlyContinue
+                }
+                if (-not $isSystem) {
+                    $userRestoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action RestoreUser -Watchdog"
+                    Set-ItemProperty `
+                        -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+                        -Name "*UltraGamingModeRestore" `
+                        -Value $userRestoreCmd `
+                        -Force -ErrorAction SilentlyContinue
+                }
                 Write-Host "[+] Fail-safe RunOnce watchdog re-armed for next reboot/logon." -ForegroundColor Yellow
                 exit 0
             }
@@ -319,11 +361,54 @@ switch ($Action) {
         Write-Host "             RESTORING NORMAL SYSTEM STATE            " -ForegroundColor Cyan
         Write-Host "=====================================================" -ForegroundColor Cyan
 
-        $result = Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg
-        Unregister-BootTasks
+        # Determine effective restoration scope
+        $effectiveScope = $Scope
+        if ($Action -eq "RestoreUser") {
+            $effectiveScope = "User"
+        } elseif ($isSystem) {
+            $effectiveScope = "System"
+        } elseif (-not $isAdmin) {
+            $effectiveScope = "User"
+        } elseif ($Watchdog) {
+            $stateData = if (Test-Path -LiteralPath $stateFile) { Get-ActiveStateSafe -Path $stateFile } else { $null }
+            $hasScheduledWatchdog = [bool](Get-ScheduledTask -TaskName "UltraGamingMode_Watchdog" -ErrorAction SilentlyContinue)
+            if ($stateData -and $stateData.SystemRestored) {
+                $effectiveScope = "User"
+            } elseif ($hasScheduledWatchdog) {
+                # SYSTEM task handles system scope; user process handles user profile scope
+                $effectiveScope = "User"
+            } else {
+                $effectiveScope = "All"
+            }
+        }
+
+        $result = Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg -Scope $effectiveScope
+
+        # Coordinated cleanup of triggers
+        $latestState = if (Test-Path -LiteralPath $stateFile) { Get-ActiveStateSafe -Path $stateFile } else { $null }
+        $bothRestored = ($latestState -and $latestState.SystemRestored -and $latestState.UserRestored)
+
+        if ($effectiveScope -eq "All" -or $bothRestored) {
+            # Both scopes complete: full cleanup of all tasks and RunOnce entries
+            Unregister-BootTasks
+            Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+        } elseif ($effectiveScope -eq "User") {
+            # User scope complete: remove user RunOnce
+            Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+            if ($isAdmin -and $latestState -and $latestState.SystemRestored) {
+                Unregister-BootTasks
+            }
+        } elseif ($effectiveScope -eq "System" -and $isSystem) {
+            # System scope complete under SYSTEM: unregister boot trigger, but PRESERVE scheduled watchdog and HKLM RunOnce if user has not yet restored
+            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+            if ($latestState -and $latestState.UserRestored) {
+                Unregister-ScheduledTask -TaskName $watchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+            }
+        }
 
         if ($result) {
-            Write-Host "`n[SUCCESS] All services, startup items, UWP apps, and visual parameters restored." -ForegroundColor Green
+            Write-Host "`n[SUCCESS] Restoration completed ($effectiveScope Scope)." -ForegroundColor Green
         }
         else {
             Write-Warning "Restoration encountered issues. Check the log above for details."
@@ -337,11 +422,13 @@ switch ($Action) {
 
         $currentState = Get-CurrentStateStatus
         $stateColor = switch ($currentState) {
-            "Normal"           { "Green" }
-            "Armed"            { "Yellow" }
-            "GameMode_Active"  { "Red" }
-            "Restored"         { "Green" }
-            default            { "Gray" }
+            "Normal"               { "Green" }
+            "Armed"                { "Yellow" }
+            "GameMode_Active"      { "Red" }
+            "Restored"             { "Green" }
+            "Restoring_SystemDone" { "Yellow" }
+            "Restoring_UserDone"   { "Yellow" }
+            default                { "Gray" }
         }
         Write-Host " Current State: $currentState" -ForegroundColor $stateColor
 
