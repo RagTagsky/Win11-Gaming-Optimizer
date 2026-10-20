@@ -406,6 +406,49 @@ function Get-ResilientBootTimestamp {
     return (Get-Date).ToString("o")
 }
 
+function Get-SystemBootId {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $val = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters" -Name "BootId" -ErrorAction SilentlyContinue).BootId
+        if ($null -ne $val) {
+            return [int]$val
+        }
+    } catch {}
+
+    return $null
+}
+
+function Test-IsSameBootSession {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [Nullable[int]]$SavedBootId,
+
+        [Parameter(Mandatory = $false)]
+        [string]$SavedBootTime
+    )
+
+    $currentBootId = Get-SystemBootId
+    if ($null -ne $currentBootId -and $null -ne $SavedBootId) {
+        return ($currentBootId -eq $SavedBootId)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SavedBootTime)) {
+        return $false
+    }
+
+    $currentBootTime = Get-ResilientBootTimestamp
+    try {
+        $dtSaved = [DateTime]::Parse($SavedBootTime)
+        $dtCurrent = [DateTime]::Parse($currentBootTime)
+        return ([Math]::Abs(($dtCurrent - $dtSaved).TotalSeconds) -lt 120)
+    } catch {
+        return ($currentBootTime -eq $SavedBootTime)
+    }
+}
+
 function Test-IsLowRamSystem {
     [CmdletBinding()]
     param(

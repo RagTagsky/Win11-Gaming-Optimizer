@@ -97,22 +97,7 @@ function Register-BootTasks {
         -Settings $taskSettings `
         -Force | Out-Null
 
-    # Register logon watchdog scheduled task to handle session transitions with full privileges without UAC prompts
-    $watchdogAction = New-ScheduledTaskAction `
-        -Execute $psExe `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$actionScript`" -Action Restore -Watchdog"
-
-    $watchdogTrigger = New-ScheduledTaskTrigger -AtLogOn
-
-    Register-ScheduledTask `
-        -TaskName $watchdogTaskName `
-        -Action $watchdogAction `
-        -Trigger $watchdogTrigger `
-        -Principal $taskPrincipal `
-        -Settings $taskSettings `
-        -Force | Out-Null
-
-    Write-Host "[+] Next-Boot and Logon Task Scheduler triggers successfully armed." -ForegroundColor Green
+    Write-Host "[+] Next-Boot Task Scheduler trigger successfully armed." -ForegroundColor Green
 }
 
 # ── Helper: Clean Up All Scheduled Triggers ──────────────────────────────────
@@ -121,6 +106,10 @@ function Unregister-BootTasks {
     Unregister-ScheduledTask -TaskName $watchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-ItemProperty `
         -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+        -Name "*UltraGamingModeRestore" `
+        -ErrorAction SilentlyContinue
+    Remove-ItemProperty `
+        -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
         -Name "*UltraGamingModeRestore" `
         -ErrorAction SilentlyContinue
     Write-Host "[+] Scheduled tasks and RunOnce watchdogs cleaned up." -ForegroundColor Gray
@@ -195,15 +184,9 @@ switch ($Action) {
         # 3. Register boot-time trigger under SYSTEM
         Register-BootTasks
 
-        # 4. Arm user-level RunOnce fail-safe watchdog in HKCU
-        $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
-        $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-        $userRestoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action RestoreUser -Watchdog"
-        Set-ItemProperty `
-            -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
-            -Name "*UltraGamingModeRestore" `
-            -Value $userRestoreCmd `
-            -Force -ErrorAction SilentlyContinue
+        # 4. Clean up any residual RunOnce watchdog entries
+        Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
 
         Write-Host "`n[SUCCESS] PC is primed for Ultra Gaming Mode!" -ForegroundColor Green
         Write-Host "  - Third-party startup apps, shortcuts, and TranslucentTB are suppressed." -ForegroundColor White
@@ -222,6 +205,20 @@ switch ($Action) {
                 $stateData = Get-Content -Path $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
 
                 if ($stateData.State -eq "Armed") {
+                    # Capture boot session identifiers and set active state immediately before service changes
+                    $bootId = Get-SystemBootId
+                    $bootTime = Get-ResilientBootTimestamp
+                    $stateData.State = "GameMode_Active"
+                    $stateData.GamingBootId = $bootId
+                    $stateData.GamingBootTime = $bootTime
+                    $stateData.BootRunCount = [int]$stateData.BootRunCount + 1
+                    $stateData.SessionLogonHandled = $false
+                    $stateData.UserSessionHandled = $false
+                    $stateData.SystemSessionHandled = $false
+                    $stateData.SystemRestored = $false
+                    $stateData.UserRestored = $false
+                    Set-ActiveStateSafe -Path $stateFile -Data $stateData | Out-Null
+
                     # 1. Disable all blacklisted services
                     $disabledCount = 0
                     foreach ($item in $blacklist) {
@@ -257,19 +254,7 @@ switch ($Action) {
                         Optimize-SystemMemory -Aggressive | Out-Null
                     }
 
-                    # 3. Update state to active and capture boot timestamp
-                    $bootTime = Get-ResilientBootTimestamp
-                    $stateData.State = "GameMode_Active"
-                    $stateData.SessionLogonHandled = $false
-                    $stateData.UserSessionHandled = $false
-                    $stateData.SystemSessionHandled = $false
-                    $stateData.SystemRestored = $false
-                    $stateData.UserRestored = $false
-                    $stateData.BootRunCount = [int]$stateData.BootRunCount + 1
-                    $stateData.GamingBootTime = $bootTime
-                    Set-ActiveStateSafe -Path $stateFile -Data $stateData | Out-Null
-
-                    # 4. Arm RunOnce fail-safe watchdog: fires on next reboot/logon after gaming mode
+                    # 3. Arm RunOnce fail-safe watchdog: fires on subsequent reboot/logon after gaming mode
                     $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
                     $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
                     $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
@@ -298,42 +283,27 @@ switch ($Action) {
         if ($Watchdog -and (Test-Path -LiteralPath $stateFile)) {
             $stateData = Get-ActiveStateSafe -Path $stateFile
 
-            # Deterministic session check: first interactive logon after entering GameMode_Active
-            # We track user and system logon separately so they do not race or interfere
+            # Safety Guard 1: Never auto-restore while armed or applying boot mode
+            if ($stateData -and ($stateData.State -eq "Armed" -or $stateData.State -eq "Applying_BootMode")) {
+                Write-Host "[*] Gaming mode is armed/applying for this boot. Skipping watchdog restore." -ForegroundColor Yellow
+                exit 0
+            }
+
+            # Safety Guard 2: Deterministic boot session check via kernel BootId and boot timestamp
             $isSameBoot = $false
             if ($stateData -and $stateData.State -eq "GameMode_Active") {
-                if ($isSystem) {
-                    if ($null -ne $stateData.SystemSessionHandled) {
-                        $isSameBoot = (-not $stateData.SystemSessionHandled)
-                    } else {
-                        $isSameBoot = (-not $stateData.SessionLogonHandled)
-                    }
-                } else {
-                    if ($null -ne $stateData.UserSessionHandled) {
-                        $isSameBoot = (-not $stateData.UserSessionHandled)
-                    } else {
-                        $isSameBoot = (-not $stateData.SessionLogonHandled)
-                    }
-                }
+                $isSameBoot = Test-IsSameBootSession -SavedBootId $stateData.GamingBootId -SavedBootTime $stateData.GamingBootTime
             }
 
             if ($isSameBoot) {
-                Write-Host "[+] Gaming session logon detected. Maintaining Ultra Gaming Mode." -ForegroundColor Green
-                $latest = Get-ActiveStateSafe -Path $stateFile
-                if (-not $latest) { $latest = $stateData }
-                if ($isSystem) {
-                    $latest.SystemSessionHandled = $true
-                } else {
-                    $latest.UserSessionHandled = $true
-                }
-                $latest.SessionLogonHandled = ($latest.SystemSessionHandled -and $latest.UserSessionHandled)
-                Set-ActiveStateSafe -Path $stateFile -Data $latest | Out-Null
+                Write-Host "[+] Active Ultra Gaming Mode session verified (BootId: $($stateData.GamingBootId)). Maintaining gaming optimizations." -ForegroundColor Green
 
                 # Ensure any stray bloat processes that managed to start are stopped
                 if ($startupCfg.BlacklistProcesses) {
                     Stop-BlacklistedProcesses -ProcessNames $startupCfg.BlacklistProcesses
                 }
-                # Re-arm RunOnce for the NEXT reboot with fully quoted path
+
+                # Re-arm HKLM RunOnce for the NEXT reboot so fail-safe auto-revert fires when gaming ends
                 $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
                 $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
                 if ($isSystem -or $isAdmin) {
@@ -344,15 +314,7 @@ switch ($Action) {
                         -Value $restoreCmd `
                         -Force -ErrorAction SilentlyContinue
                 }
-                if (-not $isSystem) {
-                    $userRestoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action RestoreUser -Watchdog"
-                    Set-ItemProperty `
-                        -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
-                        -Name "*UltraGamingModeRestore" `
-                        -Value $userRestoreCmd `
-                        -Force -ErrorAction SilentlyContinue
-                }
-                Write-Host "[+] Fail-safe RunOnce watchdog re-armed for next reboot/logon." -ForegroundColor Yellow
+                Write-Host "[+] Fail-safe RunOnce watchdog re-armed for next reboot." -ForegroundColor Yellow
                 exit 0
             }
         }

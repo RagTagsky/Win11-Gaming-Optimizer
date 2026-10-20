@@ -539,7 +539,28 @@ $finalState = Get-ActiveStateSafe -Path $tempStateFile
 Assert-Test ($finalState.SystemRestored -eq $true -and $finalState.UserRestored -eq $true -and $finalState.State -eq "Restored") "Two-phase atomic state updates merge cleanly to Restored without overwriting"
 Remove-Item -LiteralPath $tempStateFile -Force -ErrorAction SilentlyContinue
 
-# 11.13 Pure UTF-8 without BOM Encoding Check (Source & Config Files)
+# 11.13 Boot Session & Watchdog Race Condition Prevention Contract
+$bootId = Get-SystemBootId
+if ($null -ne $bootId) {
+    Assert-Test ($bootId -is [int]) "Get-SystemBootId returns valid integer BootId ($bootId)"
+    Assert-Test (Test-IsSameBootSession -SavedBootId $bootId) "Test-IsSameBootSession returns True for identical BootId"
+    Assert-Test (-not (Test-IsSameBootSession -SavedBootId ($bootId + 1))) "Test-IsSameBootSession returns False for different BootId"
+} else {
+    Assert-Test ($true) "Get-SystemBootId handled gracefully on system without Prefetch BootId"
+}
+
+$currentBoot = Get-ResilientBootTimestamp
+$oldBoot = ([DateTime]::Parse($currentBoot).AddHours(-5)).ToString("o")
+Assert-Test (Test-IsSameBootSession -SavedBootId $null -SavedBootTime $currentBoot) "Test-IsSameBootSession fallback returns True for matching boot timestamp"
+Assert-Test (-not (Test-IsSameBootSession -SavedBootId $null -SavedBootTime $oldBoot)) "Test-IsSameBootSession fallback returns False for 5-hour-old boot timestamp"
+Assert-Test (-not (Test-IsSameBootSession -SavedBootId $null -SavedBootTime "")) "Test-IsSameBootSession fallback returns False for empty boot timestamp"
+
+# Watchdog safety guard in UltraGamingMode.ps1
+Assert-Test ($ugmContent -match 'Test-IsSameBootSession') "UltraGamingMode.ps1 utilizes Test-IsSameBootSession for watchdog session detection"
+Assert-Test ($ugmContent -match '\$stateData\.State -eq ["'']Armed["'']') "UltraGamingMode.ps1 guards against premature restoration when state is Armed"
+Assert-Test ($ugmContent -notmatch 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce.*-Action RestoreUser -Watchdog') "UltraGamingMode.ps1 does not arm premature user RunOnce during Enable action"
+
+# 11.14 Pure UTF-8 without BOM Encoding Check (Source & Config Files)
 $allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/]Backups[\\/]' }
 $hasBom = $false
 foreach ($f in $allConfigFiles) {
