@@ -1,0 +1,61 @@
+# ==============================================================================
+# Windows 11 Ultra Gaming Mode — Git Ignore Configuration
+# ==============================================================================
+
+# ── Dynamic Runtime State & Backups ──────────────────────────────────────────
+# Snapshot of host-specific services, hardware profile, and original state
+Backups/*
+!Backups/.gitkeep
+
+# Quarantined shortcuts and local backup files
+*.ugm_backup
+*.bak
+*.backup
+*.old
+
+# ── Logs & Temporary Files ───────────────────────────────────────────────────
+*.log
+*.tmp
+*.temp
+*.transcript.txt
+
+# ── Test & Benchmark Artifacts ───────────────────────────────────────────────
+UGM_Test_*
+TestResults/
+*.prof
+*.vprof
+
+# ── Windows Operating System Artifacts ───────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# ── IDEs, Editors & Developer Tools ──────────────────────────────────────────
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Visual Studio / JetBrains
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Vim / Emacs / Sublime swap files
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ── PowerShell & Shell History ───────────────────────────────────────────────
+.history/
+*PowerShell_transcript.*

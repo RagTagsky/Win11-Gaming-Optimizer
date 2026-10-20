@@ -539,8 +539,8 @@ $finalState = Get-ActiveStateSafe -Path $tempStateFile
 Assert-Test ($finalState.SystemRestored -eq $true -and $finalState.UserRestored -eq $true -and $finalState.State -eq "Restored") "Two-phase atomic state updates merge cleanly to Restored without overwriting"
 Remove-Item -LiteralPath $tempStateFile -Force -ErrorAction SilentlyContinue
 
-# 11.13 Pure UTF-8 without BOM Encoding Check
-$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json"
+# 11.13 Pure UTF-8 without BOM Encoding Check (Source & Config Files)
+$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/]Backups[\\/]' }
 $hasBom = $false
 foreach ($f in $allConfigFiles) {
     $bytes = [System.IO.File]::ReadAllBytes($f.FullName)

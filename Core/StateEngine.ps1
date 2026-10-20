@@ -42,9 +42,11 @@ function Set-ActiveStateSafe {
         [object]$Data
     )
 
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     for ($i = 0; $i -lt 5; $i++) {
         try {
-            $Data | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Path -Force -Encoding UTF8
+            $json = $Data | ConvertTo-Json -Depth 6
+            [System.IO.File]::WriteAllText($Path, $json, $utf8NoBom)
             return $true
         } catch {
             Start-Sleep -Milliseconds 100
