@@ -153,25 +153,29 @@ function New-SystemStateBackup {
         HagsConfig               = $null
     }
 
-    # 1. Services Snapshot
+    # 1. Services Snapshot - shortcut: optimized for FPS & speed (batch CIM query instead of 173 individual calls)
+    $cimServices = @(Get-CimInstance -ClassName Win32_Service -Property Name, DisplayName, StartMode, State -ErrorAction SilentlyContinue)
+    $serviceMap = @{}
+    foreach ($cs in $cimServices) {
+        $serviceMap[$cs.Name] = $cs
+    }
+
+    $servicesList = [System.Collections.Generic.List[object]]::new()
     foreach ($item in $BlacklistConfig) {
         $sName = $item.Name
-        # Skip whitelisted services entirely
         if ($Whitelist -contains $sName) { continue }
 
-        $svc = Get-Service -Name $sName -ErrorAction SilentlyContinue
-        if ($svc) {
-            $wmiSvc = Get-CimInstance -ClassName Win32_Service -Filter "Name='$sName'" -ErrorAction SilentlyContinue
-            $startMode = if ($wmiSvc) { $wmiSvc.StartMode } else { "Manual" }
-
-            $snapshot.Services += @{
+        $wmiSvc = $serviceMap[$sName]
+        if ($wmiSvc) {
+            $servicesList.Add(@{
                 Name                = $sName
-                DisplayName         = $svc.DisplayName
-                OriginalStartupType = $startMode
-                OriginalStatus      = $svc.Status.ToString()
-            }
+                DisplayName         = $wmiSvc.DisplayName
+                OriginalStartupType = $wmiSvc.StartMode
+                OriginalStatus      = $wmiSvc.State
+            })
         }
     }
+    $snapshot.Services = @($servicesList)
 
     # 2. HKCU & HKLM Run Registry Items Snapshot
     $runHives = @(
@@ -514,9 +518,9 @@ function Disable-UserStateAggressive {
 
     # 10. Apply Low-Latency Kernel DPC, Input Buffer Queues, Timers & HAGS (takes effect on reboot)
     Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
-    Set-InputBufferOptimizations | Out-Null
+    Set-InputBufferOptimizations -QueueSize 100 | Out-Null
     Set-BcdeditTimerOptimizations | Out-Null
-    Set-HagsGpuScheduling | Out-Null
+    Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
 
     Write-Host "[+] User startup environment completely stripped and optimized for gaming." -ForegroundColor Green
 }

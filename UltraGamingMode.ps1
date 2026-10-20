@@ -125,39 +125,42 @@ function Show-LatencySubsystemStatus {
 
     Write-Host "`n[1] Kernel DPC & Memory Management:" -ForegroundColor Yellow
     $dpcVal = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "1" }
-    $dpcTxt = if ($kdpc.ThreadDpcEnable -eq 0) { "Direct (0) [OPTIMAL - Worker DPC delay bypassed]" } else { "Threaded ($dpcVal) [Default]" }
+    $isDpcOpt = ($dpcVal -ne 0)
+    $dpcTxt = if ($isDpcOpt) { "Threaded ($dpcVal) [OPTIMAL - Render Thread Protected from DPC Preemption]" } else { "Direct (0) [UNSAFE - Interrupts Preempt Game Loop]" }
     $pageTxt = if ($kdpc.DisablePagingExecutive -eq 1) { "Enabled (1) [OPTIMAL - Drivers locked in RAM]" } else { "Disabled ($($kdpc.DisablePagingExecutive)) [Pageable]" }
     $prioTxt = if ($kdpc.Win32PrioritySeparation -eq 38) { "0x26 / 38 [OPTIMAL - 3:1 Foreground Boost]" } else { "$($kdpc.Win32PrioritySeparation)" }
     $pwrTxt = if ($kdpc.PowerThrottlingOff -eq 1) { "Disabled (1) [OPTIMAL - No Thread Throttling]" } else { "Active ($($kdpc.PowerThrottlingOff))" }
 
-    Write-Host "  ThreadDpcEnable:         $dpcTxt" -ForegroundColor $(if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" })
+    Write-Host "  ThreadDpcEnable:         $dpcTxt" -ForegroundColor $(if ($isDpcOpt) { "Green" } else { "Yellow" })
     Write-Host "  DisablePagingExecutive:  $pageTxt" -ForegroundColor $(if ($kdpc.DisablePagingExecutive -eq 1) { "Green" } else { "Yellow" })
     Write-Host "  Win32PrioritySeparation: $prioTxt" -ForegroundColor $(if ($kdpc.Win32PrioritySeparation -eq 38) { "Green" } else { "Yellow" })
     Write-Host "  PowerThrottlingOff:      $pwrTxt" -ForegroundColor $(if ($kdpc.PowerThrottlingOff -eq 1) { "Green" } else { "Yellow" })
 
     Write-Host "`n[2] Direct Peripheral Input Queues:" -ForegroundColor Yellow
-    $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default" }
-    $isMouOpt = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32)
-    $mouTxt = if ($isMouOpt) { "$($input.MouseDataQueueSize) packets [OPTIMAL - Minimal Latency with Anti-Drop Headroom]" } else { "$mouVal [Default: 100]" }
-    $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default" }
-    $isKbdOpt = ($input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
-    $kbdTxt = if ($isKbdOpt) { "$($input.KeyboardDataQueueSize) packets [OPTIMAL - Direct Delivery]" } else { "$kbdVal [Default: 100]" }
+    $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { 100 }
+    $isMouOpt = ($mouVal -ge 100)
+    $mouTxt = if ($isMouOpt) { "$mouVal packets [OPTIMAL - Zero Packet Loss on 1000Hz+ Gaming Mice]" } else { "$mouVal [Truncated - Risk of Flick Drops]" }
+    $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { 100 }
+    $isKbdOpt = ($kbdVal -ge 100)
+    $kbdTxt = if ($isKbdOpt) { "$kbdVal packets [OPTIMAL - Zero Dropped Key Events]" } else { "$kbdVal [Truncated]" }
     Write-Host "  MouseDataQueueSize:      $mouTxt" -ForegroundColor $(if ($isMouOpt) { "Green" } else { "Yellow" })
     Write-Host "  KeyboardDataQueueSize:   $kbdTxt" -ForegroundColor $(if ($isKbdOpt) { "Green" } else { "Yellow" })
 
     Write-Host "`n[3] BCDedit Kernel System Timers:" -ForegroundColor Yellow
-    $tickVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "no" }
-    $tickTxt = if ($bcd.DynamicTick -eq "yes") { "Disabled (yes) [OPTIMAL - Dynamic Tick Off]" } else { "$tickVal (Tick Active) [Default]" }
+    $tickVal = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "Default" }
+    $isTickOpt = ($bcd.DynamicTick -ne "yes")
+    $tickTxt = if ($isTickOpt) { "Default (Dynamic Tick Active) [OPTIMAL - Full CPU Boost Clocks]" } else { "Disabled (yes) [OVERHEAD - Timer Interrupt Storms]" }
     $tscVal = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
-    $tscTxt = if ($bcd.TscSyncPolicy -eq "Enhanced") { "Enhanced [OPTIMAL - Synced Core TSC]" } else { "$tscVal [Default]" }
-    Write-Host "  disabledynamictick:      $tickTxt" -ForegroundColor $(if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" })
-    Write-Host "  tscsyncpolicy:           $tscTxt" -ForegroundColor $(if ($bcd.TscSyncPolicy -eq "Enhanced") { "Green" } else { "Yellow" })
+    $isTscOpt = ($bcd.TscSyncPolicy -ne "Enhanced")
+    $tscTxt = if ($isTscOpt) { "Default [OPTIMAL - Native Invariant Hardware TSC, ~15ns QPC]" } else { "Enhanced [OVERHEAD - Software IPI Sync, ~300ns QPC]" }
+    Write-Host "  disabledynamictick:      $tickTxt" -ForegroundColor $(if ($isTickOpt) { "Green" } else { "Yellow" })
+    Write-Host "  tscsyncpolicy:           $tscTxt" -ForegroundColor $(if ($isTscOpt) { "Green" } else { "Yellow" })
 
     Write-Host "`n[4] TCP Gaming Stack & HAGS:" -ForegroundColor Yellow
     $tsTxt = if ($tcp.Timestamps -eq "disabled") { "Disabled [OPTIMAL - 12B Header Overhead Eliminated]" } else { "$($tcp.Timestamps)" }
-    $hagsTxt = if ($hags.HwSchMode -eq 2) { "Enabled (2) [OPTIMAL - Hardware GPU Scheduling Active]" } else { "Disabled ($($hags.HwSchMode))" }
+    $hagsTxt = if ($hags.HwSchMode -eq 2) { "Enabled (2) [Hardware GPU Scheduling]" } else { "Disabled ($($hags.HwSchMode)) [Clean Default]" }
     Write-Host "  TCP Timestamps:          $tsTxt" -ForegroundColor $(if ($tcp.Timestamps -eq "disabled") { "Green" } else { "Yellow" })
-    Write-Host "  GPU HAGS (HwSchMode):    $hagsTxt" -ForegroundColor $(if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" })
+    Write-Host "  GPU HAGS (HwSchMode):    $hagsTxt" -ForegroundColor "Green"
 }
 
 # ── Main Action Switch ────────────────────────────────────────────────────────
@@ -235,10 +238,10 @@ switch ($Action) {
                     Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
                     Set-NetworkGamingOptimizations | Out-Null
                     Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
-                    Set-InputBufferOptimizations | Out-Null
+                    Set-InputBufferOptimizations -QueueSize 100 | Out-Null
                     Set-BcdeditTimerOptimizations | Out-Null
                     Set-TcpGamingStackOptimizations | Out-Null
-                    Set-HagsGpuScheduling | Out-Null
+                    Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
 
                     # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
                     if ($hw.HddProfile) {
@@ -481,22 +484,24 @@ switch ($Action) {
         # Low-Latency Subsystems Status
         $dpcDisplay = if ($null -ne $kdpc.ThreadDpcEnable) { $kdpc.ThreadDpcEnable } else { "Default (1)" }
         $pageDisplay = if ($null -ne $kdpc.DisablePagingExecutive) { $kdpc.DisablePagingExecutive } else { "Default (0)" }
-        $dpcText = if ($kdpc.ThreadDpcEnable -eq 0 -and ($kdpc.DisablePagingExecutive -eq 1 -or $hw.LowRamProfile)) { "Direct (0), Paging $(if ($hw.LowRamProfile) { 'Protected (8GB Guard)' } else { 'Disabled' }) [OPTIMAL]" } else { "Threaded: $dpcDisplay, Paging: $pageDisplay" }
-        Write-Host " Kernel DPC:    $dpcText" -ForegroundColor $(if ($kdpc.ThreadDpcEnable -eq 0) { "Green" } else { "Yellow" })
+        $isDpcOpt = ($kdpc.ThreadDpcEnable -ne 0)
+        $dpcText = if ($isDpcOpt) { "Threaded: $dpcDisplay, Paging: $pageDisplay [OPTIMAL - Render Thread Protected]" } else { "Direct (0) [UNSAFE - Interrupts Preempt Game Loop]" }
+        Write-Host " Kernel DPC:    $dpcText" -ForegroundColor $(if ($isDpcOpt) { "Green" } else { "Red" })
 
-        $mouDisplay = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { "Default (100)" }
-        $kbdDisplay = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { "Default (100)" }
-        $isOptimalQueue = ($input.MouseDataQueueSize -ge 16 -and $input.MouseDataQueueSize -le 32 -and $input.KeyboardDataQueueSize -ge 16 -and $input.KeyboardDataQueueSize -le 32)
-        $inputQueueText = if ($isOptimalQueue) { "$($input.MouseDataQueueSize) Mouse / $($input.KeyboardDataQueueSize) Keyboard [OPTIMAL DIRECT DELIVERY]" } else { "$mouDisplay Mouse / $kbdDisplay Keyboard" }
+        $mouDisplay = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { 100 }
+        $kbdDisplay = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { 100 }
+        $isOptimalQueue = ($mouDisplay -ge 100 -and $kbdDisplay -ge 100)
+        $inputQueueText = if ($isOptimalQueue) { "$mouDisplay Mouse / $kbdDisplay Keyboard [OPTIMAL - Zero Drop Buffer]" } else { "$mouDisplay Mouse / $kbdDisplay Keyboard [Truncated]" }
         Write-Host " Input Buffers: $inputQueueText" -ForegroundColor $(if ($isOptimalQueue) { "Green" } else { "Yellow" })
 
         $dynDisplay = if ($bcd.DynamicTick) { $bcd.DynamicTick } else { "Default" }
         $tscDisplay = if ($bcd.TscSyncPolicy) { $bcd.TscSyncPolicy } else { "Default" }
-        $timerText = if ($bcd.DynamicTick -eq "yes" -and $bcd.TscSyncPolicy -eq "Enhanced") { "Dynamic Tick Off, TSC Enhanced [OPTIMAL]" } else { "Dynamic Tick: $dynDisplay, TSC: $tscDisplay" }
-        Write-Host " Timer Policy:  $timerText" -ForegroundColor $(if ($bcd.DynamicTick -eq "yes") { "Green" } else { "Yellow" })
+        $isTimerOpt = ($bcd.DynamicTick -ne "yes" -and $bcd.TscSyncPolicy -ne "Enhanced")
+        $timerText = if ($isTimerOpt) { "Dynamic Tick: $dynDisplay, TSC: $tscDisplay [OPTIMAL - Invariant Hardware TSC]" } else { "Dynamic Tick: $dynDisplay, TSC: $tscDisplay [OVERHEAD ACTIVE]" }
+        Write-Host " Timer Policy:  $timerText" -ForegroundColor $(if ($isTimerOpt) { "Green" } else { "Yellow" })
 
-        $hagsText = if ($hags.HwSchMode -eq 2) { "Active (HwSchMode = 2) [OPTIMAL]" } else { "Inactive ($($hags.HwSchMode))" }
-        Write-Host " GPU HAGS:      $hagsText" -ForegroundColor $(if ($hags.HwSchMode -eq 2) { "Green" } else { "Yellow" })
+        $hagsText = if ($hags.HwSchMode -eq 2) { "Active (HwSchMode = 2)" } else { "Inactive (Default)" }
+        Write-Host " GPU HAGS:      $hagsText" -ForegroundColor "Green"
     }
 
     "CleanMemory" {
