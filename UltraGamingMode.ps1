@@ -17,14 +17,22 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser")]
+    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate")]
     [string]$Action = "Status",
 
     [Parameter()]
     [ValidateSet("All", "System", "User")]
     [string]$Scope = "All",
 
-    [switch]$Watchdog
+    [switch]$Watchdog,
+
+    [switch]$SkipUpdateCheck,
+
+    [switch]$OnStartup,
+
+    [switch]$Passive,
+
+    [switch]$Force
 )
 
 # ── Admin Rights & Watchdog Delegation Check ──────────────────────────────────
@@ -34,7 +42,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 )
 
 if (-not $isAdmin) {
-    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus")) {
+    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus", "CheckUpdate")) {
         Write-Warning "Running in non-elevated mode. Operating with current user privileges."
     }
     elseif ($Action -eq "RestoreUser" -or ($Action -eq "Restore" -and ($Watchdog -or $Scope -eq "User"))) {
@@ -60,6 +68,11 @@ $startupAppsPath = Join-Path $RootDir "Config\startup_apps.json"
 $blacklist  = (Get-Content $blacklistPath -Raw | ConvertFrom-Json).TargetServices
 $whitelist  = (Get-Content $whitelistPath -Raw | ConvertFrom-Json).ProtectedServices
 $startupCfg = Get-Content $startupAppsPath -Raw | ConvertFrom-Json
+
+# ── Automatic Update Check on Direct Launch ───────────────────────────────────
+if (-not $SkipUpdateCheck -and -not $Watchdog -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate")) {
+    $null = Invoke-AppUpdateWorkflow -Passive -TimeoutSeconds 2
+}
 
 # ── Task Scheduler Names ──────────────────────────────────────────────────────
 $taskName = "UltraGamingMode_BootTrigger"
@@ -380,10 +393,19 @@ switch ($Action) {
         }
     }
 
+    "CheckUpdate" {
+        $updateCode = Invoke-AppUpdateWorkflow -OnStartup:$OnStartup -Passive:$Passive -Force:$Force
+        if ($updateCode -eq 2) {
+            exit 2
+        }
+        exit 0
+    }
+
     "Status" {
         Write-Host "=====================================================" -ForegroundColor White
         Write-Host "             ULTRA GAMING MODE STATUS                 " -ForegroundColor White
         Write-Host "=====================================================" -ForegroundColor White
+        Write-Host " Suite Version: v$($Script:APP_VERSION)" -ForegroundColor Cyan
 
         $currentState = Get-CurrentStateStatus
         $stateColor = switch ($currentState) {

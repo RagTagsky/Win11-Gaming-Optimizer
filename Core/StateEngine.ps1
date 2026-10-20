@@ -13,6 +13,9 @@ if (-not (Test-Path $Script:BackupDir)) {
     New-Item -ItemType Directory -Path $Script:BackupDir -Force | Out-Null
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
+$Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
+$Script:APP_VERSION = "2.7"
+$Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Get-ActiveStateSafe {
     [CmdletBinding()]
@@ -999,3 +1002,277 @@ function Get-CurrentStateStatus {
         return "Normal"
     }
 }
+
+function Get-AppCurrentVersion {
+    [CmdletBinding()]
+    param()
+    return $Script:APP_VERSION
+}
+
+function ConvertTo-SemVer {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$VersionString
+    )
+
+    if ([string]::IsNullOrWhiteSpace($VersionString)) { return $null }
+
+    $clean = ($VersionString.Trim() -replace '^[vV]', '') -replace '[-+_].*$', ''
+    if ($clean -match '^\d+(\.\d+)*$') {
+        $parts = $clean.Split('.')
+        $major = [int]$parts[0]
+        $minor = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
+        $build = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
+        $rev   = if ($parts.Length -gt 3) { [int]$parts[3] } else { 0 }
+        return [System.Version]::new($major, $minor, $build, $rev)
+    }
+    return $null
+}
+
+function Check-AppUpdate {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$CurrentVersion = $Script:APP_VERSION,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Repo = $Script:APP_REPO,
+
+        [Parameter(Mandatory = $false)]
+        [int]$TimeoutSeconds = 3
+    )
+
+    $result = [PSCustomObject]@{
+        Checked         = $false
+        UpdateAvailable = $false
+        CurrentVersion  = $CurrentVersion
+        LatestVersion   = $null
+        ReleaseUrl      = "https://github.com/$Repo/releases"
+        ReleaseName     = $null
+        Error           = $null
+    }
+
+    $oldProgress = $ProgressPreference
+    try {
+        $ProgressPreference = 'SilentlyContinue'
+
+        if (-not ([System.Net.ServicePointManager]::SecurityProtocol -band [System.Net.SecurityProtocolType]::Tls12)) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+        }
+
+        $latestTag = $null
+        $releaseUrl = $null
+        $releaseName = $null
+        $isNetworkOffline = $false
+
+        # Attempt 1: GitHub REST API
+        $apiUrl = "https://api.github.com/repos/$Repo/releases/latest"
+        try {
+            $headers = @{
+                "User-Agent" = "Win11-Gaming-Optimizer-Updater"
+                "Accept"     = "application/vnd.github.v3+json"
+            }
+            $apiResp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec $TimeoutSeconds -ErrorAction Stop
+            if ($apiResp -and $apiResp.tag_name) {
+                $latestTag = [string]$apiResp.tag_name
+                $releaseUrl = [string]$apiResp.html_url
+                $releaseName = [string]$apiResp.name
+            }
+        }
+        catch {
+            $result.Error = $_.Exception.Message
+            if ($_.Exception -is [System.Net.WebException]) {
+                $webEx = [System.Net.WebException]$_.Exception
+                if ($webEx.Status -in @(
+                    [System.Net.WebExceptionStatus]::NameResolutionFailure,
+                    [System.Net.WebExceptionStatus]::ConnectFailure
+                )) {
+                    $isNetworkOffline = $true
+                }
+            }
+        }
+
+        # Attempt 2: Fallback to GitHub Web 302 redirect (rate-limit immune)
+        # Only query web redirect if network is reachable (avoids doubling timeout when offline)
+        if (-not $latestTag -and -not $isNetworkOffline) {
+            try {
+                $webUrl = "https://github.com/$Repo/releases/latest"
+                $req = [System.Net.HttpWebRequest]::Create($webUrl)
+                $req.AllowAutoRedirect = $false
+                $req.Timeout = [math]::Max(1000, $TimeoutSeconds * 1000)
+                $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                $resp = $req.GetResponse()
+                try {
+                    $loc = $resp.Headers['Location']
+                    if ($loc -and $loc -match '/tag/([^/?#]+)') {
+                        $latestTag = $Matches[1]
+                        $releaseUrl = $loc
+                        $releaseName = $latestTag
+                    }
+                }
+                finally {
+                    $resp.Close()
+                }
+            }
+            catch {
+                $result.Error = $_.Exception.Message
+            }
+        }
+
+        if ($latestTag) {
+            $latestSemVer  = ConvertTo-SemVer $latestTag
+            $currentSemVer = ConvertTo-SemVer $CurrentVersion
+
+            $result.Checked       = $true
+            $result.LatestVersion = $latestTag
+            if ($releaseUrl) { $result.ReleaseUrl = $releaseUrl }
+            $result.ReleaseName   = $releaseName
+
+            if ($latestSemVer -and $currentSemVer -and ($latestSemVer -gt $currentSemVer)) {
+                $result.UpdateAvailable = $true
+            }
+            else {
+                $result.UpdateAvailable = $false
+            }
+        }
+    }
+    catch {
+        $result.Error = $_.Exception.Message
+    }
+    finally {
+        $ProgressPreference = $oldProgress
+    }
+
+    return $result
+}
+
+function Invoke-AppUpdateWorkflow {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$CurrentVersion = $Script:APP_VERSION,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$OnStartup,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Passive,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Force,
+
+        [Parameter(Mandatory = $false)]
+        [int]$TimeoutSeconds = 3
+    )
+
+    $isVerbose = $Force -or (-not $OnStartup -and -not $Passive)
+
+    if ($isVerbose) {
+        Write-Host "[*] Checking for updates (GitHub)..." -ForegroundColor Cyan
+    }
+
+    $update = Check-AppUpdate -CurrentVersion $CurrentVersion -TimeoutSeconds $TimeoutSeconds
+    $updateInfoFile = Join-Path $Script:BackupDir "update_info.cmd"
+
+    if ($update.UpdateAvailable) {
+        # Cache update metadata for batch launcher
+        try {
+            $cmdContent = "@set `"UPDATE_AVAILABLE=1`"`r`n@set `"LATEST_VERSION=$($update.LatestVersion)`"`r`n@set `"RELEASE_URL=$($update.ReleaseUrl)`"`r`n"
+            [System.IO.File]::WriteAllText($updateInfoFile, $cmdContent, [System.Text.Encoding]::ASCII)
+        } catch {}
+
+        # If invoked silently during batch launcher bootstrap, do not block menu with Read-Host
+        if ($OnStartup -and -not $Force) {
+            return 2  # 2 = Update available
+        }
+
+        Write-Host ""
+        Write-Host "============================================================" -ForegroundColor Yellow
+        Write-Host "  UPDATE AVAILABLE: Ultra Gaming Mode $($update.LatestVersion) is available!" -ForegroundColor Yellow
+        Write-Host "  Current Version:  v$($update.CurrentVersion)" -ForegroundColor White
+        Write-Host "  Latest Version:   $($update.LatestVersion)" -ForegroundColor Green
+        Write-Host "  Release URL:      $($update.ReleaseUrl)" -ForegroundColor Cyan
+        Write-Host "============================================================" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  [1] Open release page in browser" -ForegroundColor White
+        Write-Host "  [2] Update repository now (git pull)" -ForegroundColor White
+        Write-Host "  [0] Continue to Ultra Gaming Mode" -ForegroundColor Gray
+        Write-Host ""
+
+        $choice = "0"
+        if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+            $choice = Read-Host "Select an option [0-2] (default: 0)"
+            if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "0" }
+        }
+
+        if ($choice -eq "1") {
+            Write-Host "[*] Opening release page in browser..." -ForegroundColor Cyan
+            try {
+                Start-Process $update.ReleaseUrl
+            } catch {
+                Write-Warning "Could not open browser: $($_.Exception.Message)"
+            }
+            return 2
+        }
+        elseif ($choice -eq "2") {
+            $projectRoot = if ($Script:ProjectRoot) { $Script:ProjectRoot } else { [System.IO.Path]::GetFullPath((Join-Path $Script:BackupDir "..")) }
+            $gitDir = Join-Path $projectRoot ".git"
+            $hasGit = (Test-Path -LiteralPath $gitDir) -and (Get-Command git -ErrorAction SilentlyContinue)
+            if ($hasGit) {
+                Write-Host "[*] Pulling latest changes from git repository..." -ForegroundColor Cyan
+                Push-Location $projectRoot
+                try {
+                    & git pull
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "[+] Repository successfully updated." -ForegroundColor Green
+                        if (Test-Path -LiteralPath $updateInfoFile) {
+                            Remove-Item -LiteralPath $updateInfoFile -Force -ErrorAction SilentlyContinue
+                        }
+                        return 0
+                    } else {
+                        Write-Warning "git pull exited with non-zero exit code ($LASTEXITCODE)."
+                        return 2
+                    }
+                }
+                catch {
+                    Write-Warning "git pull encountered an error: $($_.Exception.Message)"
+                    return 2
+                }
+                finally {
+                    Pop-Location
+                }
+            } else {
+                Write-Host "[!] Git repository not detected. Opening release download page..." -ForegroundColor Yellow
+                try {
+                    Start-Process $update.ReleaseUrl
+                } catch {
+                    Write-Warning "Could not open browser: $($_.Exception.Message)"
+                }
+                return 2
+            }
+        }
+
+        return 2  # 2 = Update available, user chose [0] Continue
+    }
+
+    # Clean up stale update cache if suite is already up-to-date
+    if ($update.Checked -and -not $update.UpdateAvailable) {
+        if (Test-Path -LiteralPath $updateInfoFile) {
+            Remove-Item -LiteralPath $updateInfoFile -Force -ErrorAction SilentlyContinue
+        }
+        if ($isVerbose) {
+            Write-Host "[+] Ultra Gaming Mode is up to date (v$($update.CurrentVersion)). Latest release: $($update.LatestVersion)" -ForegroundColor Green
+        }
+        return 0
+    }
+
+    # Offline or unable to connect
+    if ($isVerbose) {
+        Write-Host "[i] Update check skipped: unable to connect to GitHub (offline or rate-limited)." -ForegroundColor Gray
+    }
+    return 0
+}
+
+
+

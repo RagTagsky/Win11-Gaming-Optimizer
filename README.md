@@ -373,6 +373,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
   [3] Flush RAM Cache Now (Standby List)
   [4] System Diagnostic & Hardware Check
   [5] Advanced Tools & Emergency Repairs -->
+  [6] Check for Updates (GitHub)
   [0] Exit
 ============================================================
 ```
@@ -448,6 +449,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 | **`[3]`** | `-Action CleanMemory` | Calls `EmptyWorkingSet` and `Win32StandbyCleaner` (P/Invoke `NtSetSystemInformation`) to purge standby cache and process working sets instantly. |
 | **`[4]`** | `-Action Diagnostic` | Runs pre-flight audit: inspects Universal Hardware Profile (CPU, GPU, RAM, Storage), checks administrator privileges, power plans & Core Parking, MMCSS profiles, network adapters, AMD ULPS, shader caches, GPU MSI mode, VBS/HVCI status, NTFS settings, whitelist protection, bloat services, Kernel DPC, input queues, BCDedit timers, TCP stack, and HAGS status. |
 | **`[5]`** | `Advanced Tools -->` | Opens the Advanced Tools & Emergency Repairs submenu (see below). |
+| **`[6]`** | `-Action CheckUpdate` | Checks GitHub API for newer releases with non-blocking offline resilience and SemVer comparison. Prompts to update via `git pull` or open the release notes. |
 | **`[0]`** | `Exit` | Exits the interactive launcher. |
 
 ### Advanced Tools & Emergency Repairs Submenu (Option [5]):

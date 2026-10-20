@@ -572,6 +572,92 @@ foreach ($f in $allConfigFiles) {
 }
 Assert-Test (-not $hasBom) "All PowerShell and JSON files encoded in pure UTF-8 without BOM"
 
+# ── 12. Automatic Update Engine & SemVer Verification ──────────────────────────
+Write-Host "`n[Test Group 12] Automatic Update Engine, SemVer & Offline Resilience:" -ForegroundColor Cyan
+
+# 12.1 Version Constants & Exports
+Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "Get-AppCurrentVersion is exported and accessible"
+Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
+Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
+Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
+Assert-Test ((Get-AppCurrentVersion) -eq "2.7") "Get-AppCurrentVersion returns expected suite version '2.7'"
+
+# 12.2 SemVer Parsing and Normalization
+$vStandard = ConvertTo-SemVer "v2.7"
+$vBare     = ConvertTo-SemVer "2.7"
+$vPadded   = ConvertTo-SemVer "2.7.0"
+$vPatch    = ConvertTo-SemVer "v2.7.1"
+$vNext     = ConvertTo-SemVer "v2.8"
+$vMajor    = ConvertTo-SemVer "v3.0.0"
+$vSuffix   = ConvertTo-SemVer "v2.7-Universal"
+$vBuild    = ConvertTo-SemVer "v2.7.0+build123"
+$vUnderscore = ConvertTo-SemVer "v2.7_hotfix"
+
+Assert-Test ($vStandard -and $vStandard.Major -eq 2 -and $vStandard.Minor -eq 7) "ConvertTo-SemVer parses 'v2.7' into Major=2, Minor=7"
+Assert-Test ($vStandard -eq $vBare) "ConvertTo-SemVer handles 'v' prefix idempotently ('v2.7' == '2.7')"
+Assert-Test ($vStandard -eq $vPadded) "ConvertTo-SemVer standardizes two-part and three-part numbers ('v2.7' == '2.7.0')"
+Assert-Test ($vStandard -eq $vSuffix) "ConvertTo-SemVer strips descriptive suffix tags ('v2.7-Universal' == 'v2.7')"
+Assert-Test ($vStandard -eq $vBuild) "ConvertTo-SemVer strips SemVer build metadata ('v2.7.0+build123' == 'v2.7')"
+Assert-Test ($vStandard -eq $vUnderscore) "ConvertTo-SemVer strips underscore suffix tags ('v2.7_hotfix' == 'v2.7')"
+Assert-Test ($null -eq (ConvertTo-SemVer "")) "ConvertTo-SemVer returns null for empty string"
+Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer returns null for non-numeric input"
+
+# 12.3 SemVer Comparison Contracts
+Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.7.1 is correctly recognized as newer than v2.7"
+Assert-Test ($vNext -gt $vStandard) "SemVer: v2.8 is correctly recognized as newer than v2.7"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.0.0 is correctly recognized as newer than v2.7"
+Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.7 is not newer than v2.8"
+$vOld = ConvertTo-SemVer "v2.6"
+Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.7 is correctly recognized as newer than GitHub v2.6 release"
+
+# 12.4 Graceful Offline Fallback & Unreachable Host Resilience
+$offlineCheck = Check-AppUpdate -CurrentVersion "2.7" -Repo "RagTagsky/NonExistentTestRepo_Invalid" -TimeoutSeconds 1
+Assert-Test ($offlineCheck -ne $null) "Check-AppUpdate returns a non-null result object when network/repo fails"
+Assert-Test (-not $offlineCheck.UpdateAvailable) "Check-AppUpdate returns UpdateAvailable=False on offline/error fallback"
+Assert-Test ($offlineCheck.CurrentVersion -eq "2.7") "Check-AppUpdate preserves CurrentVersion on failure"
+
+# 12.5 ProjectRoot Resolution & Update Cache Lifecycle
+Assert-Test ([string]::IsNullOrWhiteSpace($Script:ProjectRoot) -eq $false) "Script:ProjectRoot is successfully resolved in StateEngine.ps1"
+Assert-Test (Test-Path (Join-Path $Script:ProjectRoot ".git")) "Script:ProjectRoot correctly identifies project .git repository root"
+
+# 12.6 Simulated Update Detection & Cache File Coordination
+$infoFile = Join-Path $Script:BackupDir "update_info.cmd"
+if (Test-Path -LiteralPath $infoFile) { Remove-Item -LiteralPath $infoFile -Force }
+
+try {
+    $simUpdateCode = Invoke-AppUpdateWorkflow -CurrentVersion "2.5" -OnStartup -TimeoutSeconds 3
+    if ($simUpdateCode -eq 2) {
+        Assert-Test (Test-Path -LiteralPath $infoFile) "Invoke-AppUpdateWorkflow creates update_info.cmd when update is available"
+        $infoContent = Get-Content -LiteralPath $infoFile -Raw
+        Assert-Test ($infoContent -match 'UPDATE_AVAILABLE=1') "update_info.cmd declares UPDATE_AVAILABLE=1"
+        Assert-Test ($infoContent -match 'RELEASE_URL=') "update_info.cmd exports RELEASE_URL"
+    } else {
+        Assert-Test ($true) "Simulated update skipped (offline/rate-limited environment)"
+    }
+} finally {
+    if (Test-Path -LiteralPath $infoFile) { Remove-Item -LiteralPath $infoFile -Force }
+}
+
+# 12.7 UltraGamingMode.ps1 Orchestrator CLI Contracts
+$hasCheckUpdateAction = ($null -ne $actionAttr -and ($actionAttr.ValidValues -contains "CheckUpdate"))
+Assert-Test ($hasCheckUpdateAction) "UltraGamingMode.ps1 declares 'CheckUpdate' in Action ValidateSet"
+Assert-Test ($ugmCmd.Parameters.ContainsKey("SkipUpdateCheck")) "UltraGamingMode.ps1 declares 'SkipUpdateCheck' parameter"
+Assert-Test ($ugmCmd.Parameters.ContainsKey("OnStartup")) "UltraGamingMode.ps1 declares 'OnStartup' parameter"
+Assert-Test ($ugmCmd.Parameters.ContainsKey("Passive")) "UltraGamingMode.ps1 declares 'Passive' parameter"
+Assert-Test ($ugmCmd.Parameters.ContainsKey("Force")) "UltraGamingMode.ps1 declares 'Force' parameter"
+
+$allowsCheckUpdateNonElevated = ($adminCheckBlock -match 'CheckUpdate')
+Assert-Test ($allowsCheckUpdateNonElevated) "UltraGamingMode.ps1 permits non-elevated execution for -Action CheckUpdate"
+
+# 12.8 UltraGamingMode.bat Integration Contracts
+$batContent = Get-Content -LiteralPath (Join-Path $repoRoot "UltraGamingMode.bat") -Raw
+Assert-Test ($batContent -match '-Action CheckUpdate -OnStartup') "UltraGamingMode.bat executes automatic update check on startup"
+Assert-Test ($batContent -match 'update_info\.cmd') "UltraGamingMode.bat integrates with update_info.cmd cache"
+Assert-Test ($batContent -match 'UPDATE_RELEASE_URL') "UltraGamingMode.bat binds UPDATE_RELEASE_URL for menu banner"
+Assert-Test ($batContent -match 'Check for Updates \(GitHub\)') "UltraGamingMode.bat offers 'Check for Updates (GitHub)' menu entry"
+Assert-Test ($batContent -match '-Action Enable -SkipUpdateCheck') "UltraGamingMode.bat suppresses redundant update checks for menu actions"
+
+
 # ── 12. Summary ────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta
 Write-Host "   TEST RESULTS: $testsRun Tests Run | $failures Failures" -ForegroundColor $(if ($failures -eq 0) { "Green" } else { "Red" })

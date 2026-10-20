@@ -373,6 +373,7 @@ Ultra Gaming Mode v2.7 оснащен автономным движком обн
   [3] Flush RAM Cache Now (Standby List)
   [4] System Diagnostic & Hardware Check
   [5] Advanced Tools & Emergency Repairs -->
+  [6] Check for Updates (GitHub)
   [0] Exit
 ============================================================
 ```
@@ -448,6 +449,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 | **`[3]`** | `-Action CleanMemory` | Вызывает `EmptyWorkingSet` и `Win32StandbyCleaner` (P/Invoke `NtSetSystemInformation`) для сброса кэша ожидания ядра и рабочих наборов процессов на лету. |
 | **`[4]`** | `-Action Diagnostic` | Полный аудит: проверка универсального профиля оборудования (ЦП, GPU, ОЗУ, диски), прав администратора, схем питания и парковки ядер, MMCSS, сетевых адаптеров, AMD ULPS, кэша шейдеров, GPU MSI, VBS/HVCI, NTFS, защиты белого списка, фоновых служб, DPC ядра, буферов ввода, таймеров BCDedit, стека TCP и HAGS. |
 | **`[5]`** | `Advanced Tools -->` | Открывает подменю расширенных инструментов и экстренных исправлений (см. ниже). |
+| **`[6]`** | `-Action CheckUpdate` | Проверяет наличие обновлений на GitHub через API с защитой от сбоев сети и поддержкой SemVer. Предлагает обновление через `git pull` или просмотр релиза в браузере. |
 | **`[0]`** | `Exit` | Закрывает командное меню. |
 
 ### Подменю «Дополнительные инструменты и экстренные исправления» (Пункт [5]):
