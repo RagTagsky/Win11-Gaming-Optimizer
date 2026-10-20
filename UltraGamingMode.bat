@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 REM ============================================================
-REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.6
+REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.7
 REM  Universal Hardware Adaptive Tuning & Failsafe Suite
 REM ============================================================
 
@@ -24,12 +24,12 @@ exit /b
 
 :start
 cd /d "%~dp0"
-title Ultra Gaming Mode Controller v2.6
+title Ultra Gaming Mode Controller v2.7
 
 :menu
 cls
 echo ============================================================
-echo            ULTRA GAMING MODE CONTROLLER  v2.6
+echo            ULTRA GAMING MODE CONTROLLER  v2.7
 echo             Universal Hardware Adaptive Suite
 echo ============================================================
 echo.

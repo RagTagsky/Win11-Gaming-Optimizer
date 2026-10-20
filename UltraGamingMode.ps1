@@ -405,7 +405,7 @@ switch ($Action) {
             Write-Host " [!] Pagefile Alert: $($hw.PagefileWarning)" -ForegroundColor Red
         }
 
-        # v2.6 Competitive Latency Badges
+        # v2.7 Competitive Latency Badges
         $kdpc = Get-KernelDpcConfig
         $input = Get-InputBufferConfig
         $bcd = Get-BcdeditTimerConfig
