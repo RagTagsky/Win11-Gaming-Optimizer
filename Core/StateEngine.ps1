@@ -17,6 +17,31 @@ $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:Bac
 $Script:APP_VERSION = "2.7"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
+function Set-StatePropertySafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$StateObject,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+
+        [Parameter(Mandatory = $false)]
+        [object]$Value = $null
+    )
+
+    if ($null -eq $StateObject) { return }
+    if ($StateObject -is [System.Collections.IDictionary]) {
+        $StateObject[$Name] = $Value
+    }
+    elseif ($StateObject.PSObject.Properties[$Name]) {
+        $StateObject.$Name = $Value
+    }
+    else {
+        $StateObject | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force
+    }
+}
+
 function Get-ActiveStateSafe {
     [CmdletBinding()]
     param(
@@ -27,8 +52,29 @@ function Get-ActiveStateSafe {
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
     for ($i = 0; $i -lt 5; $i++) {
         try {
-            return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
+            $obj = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($null -ne $obj) {
+                $defaultProps = @{
+                    State                = "Normal"
+                    GamingBootId         = $null
+                    GamingBootTime       = $null
+                    BootRunCount         = 0
+                    SessionLogonHandled  = $false
+                    UserSessionHandled   = $false
+                    SystemSessionHandled = $false
+                    SystemRestored       = $false
+                    UserRestored         = $false
+                    LastBootError        = $null
+                }
+                foreach ($kv in $defaultProps.GetEnumerator()) {
+                    if (-not $obj.PSObject.Properties[$kv.Key]) {
+                        $obj | Add-Member -NotePropertyName $kv.Key -NotePropertyValue $kv.Value -Force
+                    }
+                }
+            }
+            return $obj
         } catch {
+            Write-Verbose "Get-ActiveStateSafe retry $($i + 1) notice: $($_.Exception.Message)"
             Start-Sleep -Milliseconds 100
         }
     }
@@ -52,6 +98,7 @@ function Set-ActiveStateSafe {
             [System.IO.File]::WriteAllText($Path, $json, $utf8NoBom)
             return $true
         } catch {
+            Write-Verbose "Set-ActiveStateSafe retry $($i + 1) notice: $($_.Exception.Message)"
             Start-Sleep -Milliseconds 100
         }
     }
@@ -120,15 +167,18 @@ function New-SystemStateBackup {
     $hwProfile = Get-HardwareProfile
 
     $snapshot = @{
-        Version                  = "2.6"
+        Version                  = $Script:APP_VERSION
         Timestamp                = (Get-Date).ToString("o")
         State                    = "Armed"
+        GamingBootId             = $null
+        GamingBootTime           = $null
         BootRunCount             = 0
         SessionLogonHandled      = $false
         UserSessionHandled       = $false
         SystemSessionHandled     = $false
         SystemRestored           = $false
         UserRestored             = $false
+        LastBootError            = $null
         HardwareProfile          = $hwProfile
         PowerScheme              = (Get-ActivePowerSchemeGuid)
         MultimediaConfig         = (Get-MultimediaGamingConfig)
@@ -341,8 +391,8 @@ function New-SystemStateBackup {
     # 17. HAGS GPU Scheduling Snapshot
     $snapshot.HagsConfig = Get-HagsGpuSchedulingConfig
 
-    # Write snapshot to disk
-    $snapshot | ConvertTo-Json -Depth 6 | Set-Content -Path $Script:ActiveStateFile -Force -Encoding UTF8
+    # Write snapshot to disk atomically in pure UTF-8 without BOM
+    Set-ActiveStateSafe -Path $Script:ActiveStateFile -Data $snapshot | Out-Null
     Write-Host "[+] Snapshot securely saved to '$Script:ActiveStateFile'." -ForegroundColor Green
     return $Script:ActiveStateFile
 }
@@ -595,7 +645,10 @@ function Restore-QuarantinedShortcuts {
     if ($rootFiles -and $rootFiles.Count -gt 0) {
         Write-Host "  [*] Scanning unsegregated / legacy shortcuts in quarantine root..." -ForegroundColor Cyan
         foreach ($rf in $rootFiles) {
-            $cleanName = $rf.Name -replace '\.ugm_backup$', ''
+            $cleanName = [System.IO.Path]::GetFileName(($rf.Name -replace '\.ugm_backup$', ''))
+            if ([string]::IsNullOrWhiteSpace($cleanName) -or $cleanName -in @(".", "..")) {
+                continue
+            }
             $destFolder = $UserStartup
             $destScope = "User"
 
@@ -611,7 +664,7 @@ function Restore-QuarantinedShortcuts {
                     if ($matched.FolderTag -eq "ProgramData" -or ($matched.OriginalFolder -and $matched.OriginalFolder -like "*ProgramData*")) {
                         $destFolder = $CommonStartup
                         $destScope = "System"
-                    } elseif ($matched.OriginalFolder) {
+                    } elseif ($matched.OriginalFolder -and $matched.OriginalFolder -notmatch '\.\.' -and $matched.OriginalFolder -like "*\Microsoft\Windows\Start Menu\Programs\Startup*") {
                         $destFolder = $matched.OriginalFolder
                         $destScope = "User"
                     }
@@ -745,11 +798,11 @@ function Restore-UserProfileState {
     # Update active state file: mark UserRestored = $true atomically with latest state from disk
     $latest = Get-ActiveStateSafe
     if ($latest) {
-        $latest.UserRestored = $true
+        Set-StatePropertySafe -StateObject $latest -Name "UserRestored" -Value $true
         if ($latest.SystemRestored) {
-            $latest.State = "Restored"
+            Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restored"
         } else {
-            $latest.State = "Restoring_UserDone"
+            Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restoring_UserDone"
         }
         Set-ActiveStateSafe -Data $latest | Out-Null
     }
@@ -964,20 +1017,20 @@ function Restore-SystemState {
     # Mark system state as restored atomically with latest state from disk
     $latest = Get-ActiveStateSafe
     if ($latest) {
-        $latest.SystemRestored = $true
+        Set-StatePropertySafe -StateObject $latest -Name "SystemRestored" -Value $true
         if ($Scope -eq "All") {
             # In All scope, execute user profile restoration now
             Restore-UserProfileState -StateData $latest -StartupConfig $StartupConfig | Out-Null
             $latest = Get-ActiveStateSafe
             if ($latest) {
-                $latest.State = "Restored"
+                Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restored"
                 Set-ActiveStateSafe -Data $latest | Out-Null
             }
         } else {
             if ($latest.UserRestored) {
-                $latest.State = "Restored"
+                Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restored"
             } else {
-                $latest.State = "Restoring_SystemDone"
+                Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restoring_SystemDone"
             }
             Set-ActiveStateSafe -Data $latest | Out-Null
         }
@@ -991,12 +1044,15 @@ function Get-CurrentStateStatus {
     [CmdletBinding()]
     param()
 
-    if (-not (Test-Path $Script:ActiveStateFile)) {
+    if (-not (Test-Path -LiteralPath $Script:ActiveStateFile)) {
         return "Normal"
     }
     try {
-        $data = Get-Content -Path $Script:ActiveStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        return $data.State
+        $data = Get-ActiveStateSafe
+        if ($data -and -not [string]::IsNullOrWhiteSpace([string]$data.State)) {
+            return [string]$data.State
+        }
+        return "Normal"
     }
     catch {
         return "Normal"
@@ -1030,6 +1086,34 @@ function ConvertTo-SemVer {
     return $null
 }
 
+function Test-SafeVersionTag {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Tag
+    )
+    if ([string]::IsNullOrWhiteSpace($Tag)) { return $false }
+    if ($Tag.Length -gt 64) { return $false }
+    return ($Tag -match '^[vV]?\d+(\.\d+){0,3}([-+._][A-Za-z0-9]+)*$')
+}
+
+function Test-SafeGitHubReleaseUrl {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Url,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Repo = $Script:APP_REPO
+    )
+    if ([string]::IsNullOrWhiteSpace($Url)) { return $false }
+    if ($Url.Length -gt 512) { return $false }
+    if ($Url -match '[\r\n"''`&|<>^%]') { return $false }
+
+    $escapedRepo = [regex]::Escape($Repo)
+    return ($Url -match "^https://github\.com/$escapedRepo/releases(/[A-Za-z0-9._\-+/]+)?$")
+}
+
 function Check-AppUpdate {
     [CmdletBinding()]
     param(
@@ -1043,14 +1127,25 @@ function Check-AppUpdate {
         [int]$TimeoutSeconds = 3
     )
 
+    if ($Repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
+        $Repo = $Script:APP_REPO
+    }
+    $defaultReleaseUrl = "https://github.com/$Repo/releases"
+
     $result = [PSCustomObject]@{
         Checked         = $false
         UpdateAvailable = $false
         CurrentVersion  = $CurrentVersion
         LatestVersion   = $null
-        ReleaseUrl      = "https://github.com/$Repo/releases"
+        ReleaseUrl      = $defaultReleaseUrl
         ReleaseName     = $null
         Error           = $null
+    }
+
+    # Never perform outbound network update checks under NT AUTHORITY\SYSTEM
+    if ([Security.Principal.WindowsIdentity]::GetCurrent().IsSystem) {
+        $result.Error = "Skipped under NT AUTHORITY\SYSTEM"
+        return $result
     }
 
     $oldProgress = $ProgressPreference
@@ -1075,9 +1170,17 @@ function Check-AppUpdate {
             }
             $apiResp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec $TimeoutSeconds -ErrorAction Stop
             if ($apiResp -and $apiResp.tag_name) {
-                $latestTag = [string]$apiResp.tag_name
-                $releaseUrl = [string]$apiResp.html_url
-                $releaseName = [string]$apiResp.name
+                $candidateTag = [string]$apiResp.tag_name
+                if (Test-SafeVersionTag -Tag $candidateTag) {
+                    $latestTag = $candidateTag
+                    $candidateUrl = [string]$apiResp.html_url
+                    if (Test-SafeGitHubReleaseUrl -Url $candidateUrl -Repo $Repo) {
+                        $releaseUrl = $candidateUrl
+                    } else {
+                        $releaseUrl = "$defaultReleaseUrl/tag/$latestTag"
+                    }
+                    $releaseName = [string]$apiResp.name
+                }
             }
         }
         catch {
@@ -1106,9 +1209,16 @@ function Check-AppUpdate {
                 try {
                     $loc = $resp.Headers['Location']
                     if ($loc -and $loc -match '/tag/([^/?#]+)') {
-                        $latestTag = $Matches[1]
-                        $releaseUrl = $loc
-                        $releaseName = $latestTag
+                        $candidateTag = $Matches[1]
+                        if (Test-SafeVersionTag -Tag $candidateTag) {
+                            $latestTag = $candidateTag
+                            if (Test-SafeGitHubReleaseUrl -Url $loc -Repo $Repo) {
+                                $releaseUrl = $loc
+                            } else {
+                                $releaseUrl = "$defaultReleaseUrl/tag/$latestTag"
+                            }
+                            $releaseName = $latestTag
+                        }
                     }
                 }
                 finally {
@@ -1126,7 +1236,9 @@ function Check-AppUpdate {
 
             $result.Checked       = $true
             $result.LatestVersion = $latestTag
-            if ($releaseUrl) { $result.ReleaseUrl = $releaseUrl }
+            if ($releaseUrl -and (Test-SafeGitHubReleaseUrl -Url $releaseUrl -Repo $Repo)) {
+                $result.ReleaseUrl = $releaseUrl
+            }
             $result.ReleaseName   = $releaseName
 
             if ($latestSemVer -and $currentSemVer -and ($latestSemVer -gt $currentSemVer)) {
@@ -1166,6 +1278,10 @@ function Invoke-AppUpdateWorkflow {
         [int]$TimeoutSeconds = 3
     )
 
+    if ([Security.Principal.WindowsIdentity]::GetCurrent().IsSystem) {
+        return 0
+    }
+
     $isVerbose = $Force -or (-not $OnStartup -and -not $Passive)
 
     if ($isVerbose) {
@@ -1176,9 +1292,12 @@ function Invoke-AppUpdateWorkflow {
     $updateInfoFile = Join-Path $Script:BackupDir "update_info.cmd"
 
     if ($update.UpdateAvailable) {
-        # Cache update metadata for batch launcher
+        $safeVersion = if (Test-SafeVersionTag -Tag $update.LatestVersion) { $update.LatestVersion } else { "v$($update.CurrentVersion)" }
+        $safeUrl = if (Test-SafeGitHubReleaseUrl -Url $update.ReleaseUrl) { $update.ReleaseUrl } else { "https://github.com/$Script:APP_REPO/releases" }
+
+        # Cache validated update metadata for batch launcher
         try {
-            $cmdContent = "@set `"UPDATE_AVAILABLE=1`"`r`n@set `"LATEST_VERSION=$($update.LatestVersion)`"`r`n@set `"RELEASE_URL=$($update.ReleaseUrl)`"`r`n"
+            $cmdContent = "@set `"UPDATE_AVAILABLE=1`"`r`n@set `"LATEST_VERSION=$safeVersion`"`r`n@set `"RELEASE_URL=$safeUrl`"`r`n"
             [System.IO.File]::WriteAllText($updateInfoFile, $cmdContent, [System.Text.Encoding]::ASCII)
         } catch {}
 
@@ -1189,11 +1308,18 @@ function Invoke-AppUpdateWorkflow {
 
         Write-Host ""
         Write-Host "============================================================" -ForegroundColor Yellow
-        Write-Host "  UPDATE AVAILABLE: Ultra Gaming Mode $($update.LatestVersion) is available!" -ForegroundColor Yellow
+        Write-Host "  UPDATE AVAILABLE: Ultra Gaming Mode $safeVersion is available!" -ForegroundColor Yellow
         Write-Host "  Current Version:  v$($update.CurrentVersion)" -ForegroundColor White
-        Write-Host "  Latest Version:   $($update.LatestVersion)" -ForegroundColor Green
-        Write-Host "  Release URL:      $($update.ReleaseUrl)" -ForegroundColor Cyan
+        Write-Host "  Latest Version:   $safeVersion" -ForegroundColor Green
+        Write-Host "  Release URL:      $safeUrl" -ForegroundColor Cyan
         Write-Host "============================================================" -ForegroundColor Yellow
+
+        if ($Passive -and -not $Force) {
+            Write-Host "  [i] Run 'UltraGamingMode.ps1 -Action CheckUpdate' to update." -ForegroundColor Gray
+            Write-Host ""
+            return 2
+        }
+
         Write-Host ""
         Write-Host "  [1] Open release page in browser" -ForegroundColor White
         Write-Host "  [2] Update repository now (git pull)" -ForegroundColor White
@@ -1209,7 +1335,11 @@ function Invoke-AppUpdateWorkflow {
         if ($choice -eq "1") {
             Write-Host "[*] Opening release page in browser..." -ForegroundColor Cyan
             try {
-                Start-Process $update.ReleaseUrl
+                if (Test-SafeGitHubReleaseUrl -Url $safeUrl) {
+                    Start-Process -FilePath $safeUrl
+                } else {
+                    Write-Warning "Blocked unsafe release URL."
+                }
             } catch {
                 Write-Warning "Could not open browser: $($_.Exception.Message)"
             }
@@ -1218,12 +1348,13 @@ function Invoke-AppUpdateWorkflow {
         elseif ($choice -eq "2") {
             $projectRoot = if ($Script:ProjectRoot) { $Script:ProjectRoot } else { [System.IO.Path]::GetFullPath((Join-Path $Script:BackupDir "..")) }
             $gitDir = Join-Path $projectRoot ".git"
-            $hasGit = (Test-Path -LiteralPath $gitDir) -and (Get-Command git -ErrorAction SilentlyContinue)
+            $gitCmd = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+            $hasGit = (Test-Path -LiteralPath $gitDir) -and ($null -ne $gitCmd)
             if ($hasGit) {
                 Write-Host "[*] Pulling latest changes from git repository..." -ForegroundColor Cyan
                 Push-Location $projectRoot
                 try {
-                    & git pull
+                    & $gitCmd.Source -c core.hooksPath=NUL pull --ff-only
                     if ($LASTEXITCODE -eq 0) {
                         Write-Host "[+] Repository successfully updated." -ForegroundColor Green
                         if (Test-Path -LiteralPath $updateInfoFile) {
@@ -1245,7 +1376,9 @@ function Invoke-AppUpdateWorkflow {
             } else {
                 Write-Host "[!] Git repository not detected. Opening release download page..." -ForegroundColor Yellow
                 try {
-                    Start-Process $update.ReleaseUrl
+                    if (Test-SafeGitHubReleaseUrl -Url $safeUrl) {
+                        Start-Process -FilePath $safeUrl
+                    }
                 } catch {
                     Write-Warning "Could not open browser: $($_.Exception.Message)"
                 }
@@ -1273,6 +1406,5 @@ function Invoke-AppUpdateWorkflow {
     }
     return 0
 }
-
 
 

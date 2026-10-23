@@ -6,6 +6,8 @@ REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.7
 REM  Universal Hardware Adaptive Tuning & Failsafe Suite
 REM ============================================================
 
+set "PS_EXE=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+
 REM 1. Guard against infinite elevation loops
 if /i "%~1"=="ELEVATED" goto :start
 
@@ -17,9 +19,10 @@ REM 3. Secondary check via whoami token group
 whoami /groups 2>nul | find "S-1-16-12288" >nul 2>&1
 if %errorLevel% EQU 0 goto :start
 
-REM 4. Elevate process cleanly if not already running as admin
+REM 4. Elevate process cleanly if not already running as admin (safe against apostrophes/special chars in path)
 echo Requesting Administrator privileges...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/c \"\"%~f0\"\" ELEVATED' -Verb RunAs"
+set "UGM_SELF=%~f0"
+"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath $env:ComSpec -ArgumentList @('/c', ('\"\"{0}\"\" ELEVATED' -f $env:UGM_SELF)) -Verb RunAs"
 exit /b
 
 :start
@@ -28,9 +31,9 @@ title Ultra Gaming Mode Controller v2.7
 
 set "UPDATE_NOTIFICATION="
 set "UPDATE_RELEASE_URL="
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CheckUpdate -OnStartup
+"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CheckUpdate -OnStartup
 if !errorLevel! EQU 2 (
-    if exist "%~dp0Backups\update_info.cmd" call "%~dp0Backups\update_info.cmd"
+    if exist "%~dp0Backups\update_info.cmd" call :load_update_info "%~dp0Backups\update_info.cmd"
     if defined LATEST_VERSION (
         set "UPDATE_NOTIFICATION=   *** UPDATE AVAILABLE (!LATEST_VERSION!): Select [6] to update ***"
     ) else (
@@ -61,25 +64,25 @@ set /p choice="Select an option [0-6]: "
 if defined choice set "choice=!choice: =!"
 
 if "%choice%"=="1" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Enable -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Enable -SkipUpdateCheck
     echo.
     pause
     goto menu
 )
 if "%choice%"=="2" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Restore -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Restore -SkipUpdateCheck
     echo.
     pause
     goto menu
 )
 if "%choice%"=="3" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CleanMemory -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CleanMemory -SkipUpdateCheck
     echo.
     pause
     goto menu
 )
 if "%choice%"=="4" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Diagnostic -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Diagnostic -SkipUpdateCheck
     echo.
     pause
     goto menu
@@ -88,9 +91,9 @@ if "%choice%"=="5" (
     goto tools_menu
 )
 if "%choice%"=="6" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CheckUpdate -Force
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CheckUpdate -Force
     if !errorLevel! EQU 2 (
-        if exist "%~dp0Backups\update_info.cmd" call "%~dp0Backups\update_info.cmd"
+        if exist "%~dp0Backups\update_info.cmd" call :load_update_info "%~dp0Backups\update_info.cmd"
         if defined LATEST_VERSION (
             set "UPDATE_NOTIFICATION=   *** UPDATE AVAILABLE (!LATEST_VERSION!): Select [6] to update ***"
         ) else (
@@ -141,51 +144,51 @@ set /p tool_choice="Select a tool [0-8]: "
 if defined tool_choice set "tool_choice=!tool_choice: =!"
 
 if "%tool_choice%"=="1" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairDisplay -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairDisplay -SkipUpdateCheck
     echo.
     pause
     goto tools_menu
 )
 if "%tool_choice%"=="2" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairServices -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action RepairServices -SkipUpdateCheck
     echo.
     pause
     goto tools_menu
 )
 if "%tool_choice%"=="3" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action FlushShaderCache -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action FlushShaderCache -SkipUpdateCheck
     echo.
     pause
     goto tools_menu
 )
 if "%tool_choice%"=="4" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action ToggleVBS -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action ToggleVBS -SkipUpdateCheck
     echo.
     pause
     goto tools_menu
 )
 if "%tool_choice%"=="5" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action GpuMsiStatus -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action GpuMsiStatus -SkipUpdateCheck
     echo.
     pause
     goto tools_menu
 )
 if "%tool_choice%"=="6" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action KernelLatencyStatus -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action KernelLatencyStatus -SkipUpdateCheck
     echo.
     pause
     goto tools_menu
 )
 if "%tool_choice%"=="7" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Status -SkipUpdateCheck
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action Status -SkipUpdateCheck
     echo.
     pause
     goto tools_menu
 )
 if "%tool_choice%"=="8" (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CheckUpdate -Force
+    "%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0UltraGamingMode.ps1" -Action CheckUpdate -Force
     if !errorLevel! EQU 2 (
-        if exist "%~dp0Backups\update_info.cmd" call "%~dp0Backups\update_info.cmd"
+        if exist "%~dp0Backups\update_info.cmd" call :load_update_info "%~dp0Backups\update_info.cmd"
         if defined LATEST_VERSION (
             set "UPDATE_NOTIFICATION=   *** UPDATE AVAILABLE (!LATEST_VERSION!): Select [6] to update ***"
         ) else (
@@ -214,3 +217,20 @@ if /i "%tool_choice%"=="q" (
 echo Invalid selection. Please try again.
 pause
 goto tools_menu
+
+:load_update_info
+set "LATEST_VERSION="
+set "RELEASE_URL="
+if not exist "%~1" exit /b 0
+for /f "usebackq tokens=1,* delims==" %%A in ("%~1") do (
+    set "_line_key=%%~A"
+    set "_line_val=%%~B"
+    if defined _line_val set "_line_val=!_line_val:"=!"
+    if /i "!_line_key!"=="@set \"LATEST_VERSION" set "LATEST_VERSION=!_line_val!"
+    if /i "!_line_key!"=="@set LATEST_VERSION" set "LATEST_VERSION=!_line_val!"
+    if /i "!_line_key!"=="LATEST_VERSION" set "LATEST_VERSION=!_line_val!"
+    if /i "!_line_key!"=="@set \"RELEASE_URL" set "RELEASE_URL=!_line_val!"
+    if /i "!_line_key!"=="@set RELEASE_URL" set "RELEASE_URL=!_line_val!"
+    if /i "!_line_key!"=="RELEASE_URL" set "RELEASE_URL=!_line_val!"
+)
+exit /b 0

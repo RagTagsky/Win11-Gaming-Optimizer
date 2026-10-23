@@ -1303,6 +1303,7 @@ function Clear-AmdShaderCache {
         (Join-Path $env:LOCALAPPDATA "NVIDIA\DXCache"),
         (Join-Path $env:LOCALAPPDATA "NVIDIA\GLCache"),
         (Join-Path $env:APPDATA "NVIDIA\ComputeCache"),
+        (Join-Path $env:LOCALAPPDATA "NVIDIA Corporation\NV_Cache"),
         (Join-Path $env:LOCALAPPDATA "Intel\ShaderCache"),
         (Join-Path $env:LOCALAPPDATA "Intel\D3DSCache"),
         (Join-Path $env:LOCALAPPDATA "D3DSCache")
@@ -2263,17 +2264,19 @@ function Restore-BcdeditTimerOptimizations {
         $origTsc  = if ($BcdeditConfig -is [hashtable]) { $BcdeditConfig["TscSyncPolicy"] } else { $BcdeditConfig.TscSyncPolicy }
 
         try {
-            if ($null -ne $origTick -and $origTick -ne "") {
-                $null = bcdedit /set disabledynamictick $origTick 2>&1
-                Write-Host "  [+] BCDedit disabledynamictick restored to '$origTick'." -ForegroundColor Green
+            if ($null -ne $origTick -and ([string]$origTick) -match '^(?i)(yes|no)$') {
+                $safeTick = ([string]$origTick).ToLowerInvariant()
+                $null = bcdedit /set disabledynamictick $safeTick 2>&1
+                Write-Host "  [+] BCDedit disabledynamictick restored to '$safeTick'." -ForegroundColor Green
             } else {
                 $null = bcdedit /deletevalue disabledynamictick 2>&1
                 Write-Host "  [+] BCDedit disabledynamictick removed (reverted to system default)." -ForegroundColor Green
             }
 
-            if ($null -ne $origTsc -and $origTsc -ne "") {
-                $null = bcdedit /set tscsyncpolicy $origTsc 2>&1
-                Write-Host "  [+] BCDedit tscsyncpolicy restored to '$origTsc'." -ForegroundColor Green
+            if ($null -ne $origTsc -and ([string]$origTsc) -match '^(?i)(Default|Legacy|Enhanced)$') {
+                $safeTsc = [string]$origTsc
+                $null = bcdedit /set tscsyncpolicy $safeTsc 2>&1
+                Write-Host "  [+] BCDedit tscsyncpolicy restored to '$safeTsc'." -ForegroundColor Green
             } else {
                 $null = bcdedit /deletevalue tscsyncpolicy 2>&1
                 Write-Host "  [+] BCDedit tscsyncpolicy removed (reverted to system default)." -ForegroundColor Green
@@ -2437,20 +2440,25 @@ function Restore-TcpGamingStackOptimizations {
                 $noDelay = if ($item -is [hashtable]) { $item["TCPNoDelay"] } else { $item.TCPNoDelay }
                 $ackFreq = if ($item -is [hashtable]) { $item["TcpAckFrequency"] } else { $item.TcpAckFrequency }
 
+                if ([string]::IsNullOrWhiteSpace($guid) -or ([string]$guid) -notmatch '^\{?[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\}?$') {
+                    Write-Verbose "Skipping invalid interface GUID in TCP stack restore: $guid"
+                    continue
+                }
+
                 if ($protectedGuids -contains $guid) {
                     Write-Verbose "Skipping protected interface GUID in TCP stack restore: $guid"
                     continue
                 }
 
                 $targetPath = Join-Path $interfacesPath $guid
-                if (Test-Path $targetPath) {
+                if (Test-Path -LiteralPath $targetPath) {
                     if ($null -ne $noDelay) {
-                        Set-ItemProperty -Path $targetPath -Name "TCPNoDelay" -Value $noDelay -Type DWord -Force -ErrorAction SilentlyContinue
+                        Set-ItemProperty -Path $targetPath -Name "TCPNoDelay" -Value ([int]$noDelay) -Type DWord -Force -ErrorAction SilentlyContinue
                     } else {
                         Remove-ItemProperty -Path $targetPath -Name "TCPNoDelay" -Force -ErrorAction SilentlyContinue
                     }
                     if ($null -ne $ackFreq) {
-                        Set-ItemProperty -Path $targetPath -Name "TcpAckFrequency" -Value $ackFreq -Type DWord -Force -ErrorAction SilentlyContinue
+                        Set-ItemProperty -Path $targetPath -Name "TcpAckFrequency" -Value ([int]$ackFreq) -Type DWord -Force -ErrorAction SilentlyContinue
                     } else {
                         Remove-ItemProperty -Path $targetPath -Name "TcpAckFrequency" -Force -ErrorAction SilentlyContinue
                     }
@@ -2459,9 +2467,9 @@ function Restore-TcpGamingStackOptimizations {
         }
 
         try {
-            $tsVal  = if ($ts) { $ts } else { "enabled" }
-            $ecnVal = if ($ecn) { $ecn } else { "disabled" }
-            $rssVal = if ($rss) { $rss } else { "enabled" }
+            $tsVal  = if ($ts -and ([string]$ts) -match '^(?i)(enabled|disabled|default)$') { ([string]$ts).ToLowerInvariant() } else { "enabled" }
+            $ecnVal = if ($ecn -and ([string]$ecn) -match '^(?i)(enabled|disabled|default)$') { ([string]$ecn).ToLowerInvariant() } else { "disabled" }
+            $rssVal = if ($rss -and ([string]$rss) -match '^(?i)(enabled|disabled|default)$') { ([string]$rss).ToLowerInvariant() } else { "enabled" }
             $null = netsh int tcp set global timestamps=$tsVal ecncapability=$ecnVal rss=$rssVal 2>&1
             Write-Host "  [+] TCP global parameters restored (timestamps=$tsVal, ecncapability=$ecnVal, rss=$rssVal)." -ForegroundColor Green
         }

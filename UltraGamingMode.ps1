@@ -70,7 +70,7 @@ $whitelist  = (Get-Content $whitelistPath -Raw | ConvertFrom-Json).ProtectedServ
 $startupCfg = Get-Content $startupAppsPath -Raw | ConvertFrom-Json
 
 # ── Automatic Update Check on Direct Launch ───────────────────────────────────
-if (-not $SkipUpdateCheck -and -not $Watchdog -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate")) {
+if (-not $SkipUpdateCheck -and -not $Watchdog -and -not $isSystem -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate")) {
     $null = Invoke-AppUpdateWorkflow -Passive -TimeoutSeconds 2
 }
 
@@ -87,9 +87,10 @@ function Register-BootTasks {
 
     $taskAction = New-ScheduledTaskAction `
         -Execute $psExe `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$actionScript`" -Action ApplyBootMode"
+        -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$actionScript`" -Action ApplyBootMode -SkipUpdateCheck"
 
-    $taskTrigger = New-ScheduledTaskTrigger -AtStartup
+    $startupTrigger = New-ScheduledTaskTrigger -AtStartup
+    $logonTrigger   = New-ScheduledTaskTrigger -AtLogOn
 
     $taskPrincipal = New-ScheduledTaskPrincipal `
         -UserId "NT AUTHORITY\SYSTEM" `
@@ -99,18 +100,68 @@ function Register-BootTasks {
     $taskSettings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
         -Priority 0 `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 
     Register-ScheduledTask `
         -TaskName $taskName `
         -Action $taskAction `
-        -Trigger $taskTrigger `
+        -Trigger @($startupTrigger, $logonTrigger) `
         -Principal $taskPrincipal `
         -Settings $taskSettings `
         -Force | Out-Null
 
     Write-Host "[+] Next-Boot Task Scheduler trigger successfully armed." -ForegroundColor Green
+}
+
+# ── Helper: Register Watchdog Auto-Restore Tasks (Armed During Gaming Boot) ──
+function Register-WatchdogTasks {
+    $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
+    $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+    # 1. Register SYSTEM Scheduled Task Watchdog so System-scope services/tweaks can restore on Boot 2 without UAC prompts
+    try {
+        $wdAction = New-ScheduledTaskAction `
+            -Execute $psExe `
+            -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$actionScript`" -Action Restore -Watchdog -SkipUpdateCheck"
+
+        $wdStartupTrigger = New-ScheduledTaskTrigger -AtStartup
+        $wdLogonTrigger   = New-ScheduledTaskTrigger -AtLogOn
+
+        $wdPrincipal = New-ScheduledTaskPrincipal `
+            -UserId "NT AUTHORITY\SYSTEM" `
+            -LogonType ServiceAccount `
+            -RunLevel Highest
+
+        $wdSettings = New-ScheduledTaskSettingsSet `
+            -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable `
+            -MultipleInstances IgnoreNew `
+            -Priority 0 `
+            -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+
+        Register-ScheduledTask `
+            -TaskName $watchdogTaskName `
+            -Action $wdAction `
+            -Trigger @($wdStartupTrigger, $wdLogonTrigger) `
+            -Principal $wdPrincipal `
+            -Settings $wdSettings `
+            -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    catch {
+        Write-Verbose "Could not register scheduled watchdog task: $($_.Exception.Message)"
+    }
+
+    # 2. Arm HKLM RunOnce so interactive user logon triggers User-scope restoration on Boot 2
+    $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog -SkipUpdateCheck"
+    Set-ItemProperty `
+        -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+        -Name "*UltraGamingModeRestore" `
+        -Value $restoreCmd `
+        -Force -ErrorAction SilentlyContinue
 }
 
 # ── Helper: Clean Up All Scheduled Triggers ──────────────────────────────────
@@ -186,8 +237,27 @@ switch ($Action) {
 
         # Check if already armed or active
         $currentState = Get-CurrentStateStatus
-        if ($currentState -eq "Armed" -or $currentState -eq "GameMode_Active") {
+        if ($currentState -eq "GameMode_Active") {
             Write-Warning "Ultra Gaming Mode is already $currentState. Run with -Action Restore first."
+            exit 0
+        }
+        if ($currentState -eq "Armed") {
+            $existingBootTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            if ($existingBootTask) {
+                Write-Warning "Ultra Gaming Mode is already Armed for next boot. Reboot your PC to activate, or run with -Action Restore to cancel."
+                exit 0
+            }
+            Write-Warning "Detected Armed state with missing Boot Trigger. Re-arming Next-Boot Task Scheduler trigger while preserving existing backup snapshot..."
+            $stateData = Get-ActiveStateSafe
+            if ($stateData) {
+                Set-StatePropertySafe -StateObject $stateData -Name "LastBootError" -Value $null
+                Set-ActiveStateSafe -Data $stateData | Out-Null
+            }
+            Disable-UserStateAggressive -StartupConfig $startupCfg
+            Register-BootTasks
+            Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+            Write-Host "`n[SUCCESS] Boot Trigger re-armed! Reboot your PC to enter Ultra Gaming Mode." -ForegroundColor Green
             exit 0
         }
 
@@ -215,81 +285,107 @@ switch ($Action) {
         # This action is invoked AUTOMATICALLY by Task Scheduler under SYSTEM at startup.
         # It reads the armed state, disables blacklisted services, and arms the auto-restore.
 
+        $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
         try {
-            $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
-            if (Test-Path $stateFile) {
-                $stateData = Get-Content -Path $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if (Test-Path -LiteralPath $stateFile) {
+                $stateData = Get-ActiveStateSafe -Path $stateFile
 
-                if ($stateData.State -eq "Armed") {
-                    # Capture boot session identifiers and set active state immediately before service changes
+                if ($stateData -and $stateData.State -eq "Armed") {
+                    # Capture boot session identifiers and persist active state IMMEDIATELY using Set-StatePropertySafe
                     $bootId = Get-SystemBootId
                     $bootTime = Get-ResilientBootTimestamp
-                    $stateData.State = "GameMode_Active"
-                    $stateData.GamingBootId = $bootId
-                    $stateData.GamingBootTime = $bootTime
-                    $stateData.BootRunCount = [int]$stateData.BootRunCount + 1
-                    $stateData.SessionLogonHandled = $false
-                    $stateData.UserSessionHandled = $false
-                    $stateData.SystemSessionHandled = $false
-                    $stateData.SystemRestored = $false
-                    $stateData.UserRestored = $false
+                    $prevRunCount = if ($null -ne $stateData.BootRunCount) { [int]$stateData.BootRunCount } else { 0 }
+
+                    Set-StatePropertySafe -StateObject $stateData -Name "State" -Value "GameMode_Active"
+                    Set-StatePropertySafe -StateObject $stateData -Name "GamingBootId" -Value $bootId
+                    Set-StatePropertySafe -StateObject $stateData -Name "GamingBootTime" -Value $bootTime
+                    Set-StatePropertySafe -StateObject $stateData -Name "BootRunCount" -Value ($prevRunCount + 1)
+                    Set-StatePropertySafe -StateObject $stateData -Name "SessionLogonHandled" -Value $false
+                    Set-StatePropertySafe -StateObject $stateData -Name "UserSessionHandled" -Value $false
+                    Set-StatePropertySafe -StateObject $stateData -Name "SystemSessionHandled" -Value $false
+                    Set-StatePropertySafe -StateObject $stateData -Name "SystemRestored" -Value $false
+                    Set-StatePropertySafe -StateObject $stateData -Name "UserRestored" -Value $false
+                    Set-StatePropertySafe -StateObject $stateData -Name "LastBootError" -Value $null
                     Set-ActiveStateSafe -Path $stateFile -Data $stateData | Out-Null
+
+                    # Arm fail-safe watchdog tasks and RunOnce immediately after state transition so auto-restore is guaranteed
+                    Register-WatchdogTasks
 
                     # 1. Disable all blacklisted services
                     $disabledCount = 0
                     foreach ($item in $blacklist) {
-                        $res = Set-ServiceStateSafe -ServiceName $item.Name -StartupType "Disabled" -StopNow -Whitelist $whitelist
-                        if ($res) { $disabledCount++ }
-                    }
-
-                    # 2. Activate safe network gaming tweaks, power scheme and adaptive hardware optimizations
-                    $hw = if ($stateData.HardwareProfile) { $stateData.HardwareProfile } else { Get-HardwareProfile }
-                    Enable-UltimatePerformance | Out-Null
-                    Set-GamingMultimediaConfig | Out-Null
-                    Apply-CpuGamingOptimizations -HardwareProfile $hw | Out-Null
-                    Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
-                    Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
-                    Set-NetworkGamingOptimizations | Out-Null
-                    Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
-                    Set-InputBufferOptimizations -QueueSize 100 | Out-Null
-                    Set-BcdeditTimerOptimizations | Out-Null
-                    Set-TcpGamingStackOptimizations | Out-Null
-                    Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
-
-                    # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
-                    if ($hw.HddProfile) {
-                        Disable-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
-                        Disable-ScheduledTask -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
-                        foreach ($sName in @("SysMain", "WSearch")) {
-                            Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                        try {
+                            $res = Set-ServiceStateSafe -ServiceName $item.Name -StartupType "Disabled" -StopNow -Whitelist $whitelist
+                            if ($res) { $disabledCount++ }
+                        } catch {
+                            Write-Verbose "Service disable warning for $($item.Name): $($_.Exception.Message)"
                         }
                     }
 
-                    # If Low-RAM detected, aggressively reclaim memory
-                    if ($hw.LowRamProfile) {
-                        Optimize-SystemMemory -Aggressive | Out-Null
+                    # 2. Activate safe network gaming tweaks, power scheme and adaptive hardware optimizations
+                    try {
+                        $hw = if ($stateData.HardwareProfile) { $stateData.HardwareProfile } else { Get-HardwareProfile }
+                        Enable-UltimatePerformance | Out-Null
+                        Set-GamingMultimediaConfig | Out-Null
+                        Apply-CpuGamingOptimizations -HardwareProfile $hw | Out-Null
+                        Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
+                        Set-NTFSGamingOptimizations -IsHdd:([bool]$hw.HddProfile) | Out-Null
+                        Set-NetworkGamingOptimizations | Out-Null
+                        Set-KernelDpcOptimizations -IsLowRam:([bool]$hw.LowRamProfile) | Out-Null
+                        Set-InputBufferOptimizations -QueueSize 100 | Out-Null
+                        Set-BcdeditTimerOptimizations | Out-Null
+                        Set-TcpGamingStackOptimizations | Out-Null
+                        Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
+
+                        # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
+                        if ($hw.HddProfile) {
+                            Disable-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
+                            Disable-ScheduledTask -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
+                            foreach ($sName in @("SysMain", "WSearch")) {
+                                Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                            }
+                        }
+
+                        # If Low-RAM detected, aggressively reclaim memory
+                        if ($hw.LowRamProfile) {
+                            Optimize-SystemMemory -Aggressive | Out-Null
+                        }
+                    } catch {
+                        Write-Verbose "Hardware optimization warning during ApplyBootMode: $($_.Exception.Message)"
                     }
 
-                    # 3. Arm RunOnce fail-safe watchdog: fires on subsequent reboot/logon after gaming mode
+                    # 3. Ensure RunOnce fail-safe watchdog is armed: fires on subsequent reboot/logon after gaming mode
                     $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
                     $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-                    $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
+                    $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog -SkipUpdateCheck"
                     Set-ItemProperty `
                         -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
                         -Name "*UltraGamingModeRestore" `
                         -Value $restoreCmd `
-                        -Force
+                        -Force -ErrorAction SilentlyContinue
                 }
-                elseif ($stateData.State -eq "GameMode_Active") {
-                    # If we reach here, the PC was rebooted while in gaming mode.
-                    Write-Host "[*] System rebooted after Gaming Mode. Restoring normal state..." -ForegroundColor Cyan
-                    Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg -Scope System
-                    Unregister-BootTasks
+                elseif ($stateData -and $stateData.State -eq "GameMode_Active") {
+                    # Guard against duplicate trigger on the same boot (e.g. AtStartup followed by AtLogOn)
+                    $isSameBoot = Test-IsSameBootSession -SavedBootId $stateData.GamingBootId -SavedBootTime $stateData.GamingBootTime
+                    if (-not $isSameBoot) {
+                        Write-Host "[*] System rebooted after Gaming Mode. Restoring normal state..." -ForegroundColor Cyan
+                        Restore-SystemState -Whitelist $whitelist -StartupConfig $startupCfg -Scope System
+                        Unregister-BootTasks
+                    }
                 }
             }
         }
+        catch {
+            try {
+                $errState = Get-ActiveStateSafe -Path $stateFile
+                if ($errState) {
+                    Set-StatePropertySafe -StateObject $errState -Name "LastBootError" -Value $_.Exception.Message
+                    Set-ActiveStateSafe -Path $stateFile -Data $errState | Out-Null
+                }
+            } catch {}
+        }
         finally {
-            # 5. Remove the boot trigger so it does not fire on every boot even if boot step errors occurred.
+            # Remove the boot trigger so it does not fire on subsequent boots after this boot session.
             Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
         }
     }
@@ -298,6 +394,16 @@ switch ($Action) {
         $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
         if ($Watchdog -and (Test-Path -LiteralPath $stateFile)) {
             $stateData = Get-ActiveStateSafe -Path $stateFile
+
+            # Safety Guard 0: If already completely Restored or Normal, clean up any residual watchdog triggers and exit
+            if ($stateData -and ($stateData.State -eq "Restored" -or $stateData.State -eq "Normal")) {
+                if ($isSystem -or $isAdmin) {
+                    Unregister-BootTasks
+                } else {
+                    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+                }
+                exit 0
+            }
 
             # Safety Guard 1: Never auto-restore while armed or applying boot mode
             if ($stateData -and ($stateData.State -eq "Armed" -or $stateData.State -eq "Applying_BootMode")) {
@@ -314,18 +420,25 @@ switch ($Action) {
             if ($isSameBoot) {
                 Write-Host "[+] Active Ultra Gaming Mode session verified (BootId: $($stateData.GamingBootId)). Maintaining gaming optimizations." -ForegroundColor Green
 
-                # Ensure any stray bloat processes that managed to start are stopped
-                if ($startupCfg.BlacklistProcesses) {
+                # Ensure any stray bloat processes that managed to start are stopped in user session
+                if (-not $isSystem -and $startupCfg.BlacklistProcesses) {
                     Stop-BlacklistedProcesses -ProcessNames $startupCfg.BlacklistProcesses
                 }
 
-                # Re-arm HKLM RunOnce for the NEXT reboot so fail-safe auto-revert fires when gaming ends
+                # Re-arm RunOnce for the NEXT reboot so fail-safe auto-revert fires when gaming ends
                 $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
                 $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog -SkipUpdateCheck"
                 if ($isSystem -or $isAdmin) {
-                    $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog"
                     Set-ItemProperty `
                         -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+                        -Name "*UltraGamingModeRestore" `
+                        -Value $restoreCmd `
+                        -Force -ErrorAction SilentlyContinue
+                }
+                if (-not $isSystem) {
+                    Set-ItemProperty `
+                        -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
                         -Name "*UltraGamingModeRestore" `
                         -Value $restoreCmd `
                         -Force -ErrorAction SilentlyContinue
@@ -377,11 +490,21 @@ switch ($Action) {
                 Unregister-BootTasks
             }
         } elseif ($effectiveScope -eq "System" -and $isSystem) {
-            # System scope complete under SYSTEM: unregister boot trigger, but PRESERVE scheduled watchdog and HKLM RunOnce if user has not yet restored
+            # System scope complete under SYSTEM: unregister boot trigger and scheduled watchdog, but preserve HKLM RunOnce if user has not yet restored
             Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $watchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
             if ($latestState -and $latestState.UserRestored) {
-                Unregister-ScheduledTask -TaskName $watchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
                 Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+            } else {
+                # Ensure HKLM RunOnce remains present so the interactive user logon restores User scope
+                $actionScript = Join-Path $RootDir "UltraGamingMode.ps1"
+                $psExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+                $restoreCmd = "`"$psExe`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Normal -File `"$actionScript`" -Action Restore -Watchdog -SkipUpdateCheck"
+                Set-ItemProperty `
+                    -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" `
+                    -Name "*UltraGamingModeRestore" `
+                    -Value $restoreCmd `
+                    -Force -ErrorAction SilentlyContinue
             }
         }
 
@@ -449,15 +572,26 @@ switch ($Action) {
         }
         else {
             Write-Host " Boot Trigger:  Inactive" -ForegroundColor Gray
+            if ($currentState -eq "Armed") {
+                Write-Host " [!] Warning: State is Armed but Boot Trigger is Inactive. Run Enable [1] to re-arm or Restore [2] to reset." -ForegroundColor Yellow
+            }
         }
 
-        $runOnce = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
-        if ($runOnce) {
+        $runOnceHklm = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+        $runOnceHkcu = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
+        $wdTask      = Get-ScheduledTask -TaskName $watchdogTaskName -ErrorAction SilentlyContinue
+        if ($runOnceHklm -or $runOnceHkcu -or $wdTask) {
             Write-Host " Fail-Safe:     ARMED (will auto-restore on next boot)" -ForegroundColor Yellow
         }
         else {
             Write-Host " Fail-Safe:     Inactive" -ForegroundColor Gray
         }
+
+        $activeStateObj = Get-ActiveStateSafe
+        if ($activeStateObj -and -not [string]::IsNullOrWhiteSpace([string]$activeStateObj.LastBootError)) {
+            Write-Host " [!] Last Boot Error: $($activeStateObj.LastBootError)" -ForegroundColor Red
+        }
+
 
         # Check services stats
         $allServices = @(Get-Service -ErrorAction SilentlyContinue)

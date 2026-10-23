@@ -657,8 +657,85 @@ Assert-Test ($batContent -match 'UPDATE_RELEASE_URL') "UltraGamingMode.bat binds
 Assert-Test ($batContent -match 'Check for Updates \(GitHub\)') "UltraGamingMode.bat offers 'Check for Updates (GitHub)' menu entry"
 Assert-Test ($batContent -match '-Action Enable -SkipUpdateCheck') "UltraGamingMode.bat suppresses redundant update checks for menu actions"
 
+# ── 13. Boot State Transition & Security Hardening Verification ────────────────
+Write-Host "`n[Test Group 13] Boot State Transition (Armed -> GameMode_Active) & Security Hardening:" -ForegroundColor Cyan
 
-# ── 12. Summary ────────────────────────────────────────────────────────────
+# 13.1 Set-StatePropertySafe & Legacy PSCustomObject Schema Normalization (Root Cause Regression Test)
+$legacyJson = '{"State":"Armed","BootRunCount":0,"SessionLogonHandled":false,"UserSessionHandled":false,"SystemSessionHandled":false}'
+$legacyObj = $legacyJson | ConvertFrom-Json
+$setPropSucceeded = $false
+try {
+    Set-StatePropertySafe -StateObject $legacyObj -Name "GamingBootId" -Value 42
+    Set-StatePropertySafe -StateObject $legacyObj -Name "GamingBootTime" -Value "2026-10-23T18:00:00.0000000Z"
+    Set-StatePropertySafe -StateObject $legacyObj -Name "State" -Value "GameMode_Active"
+    Set-StatePropertySafe -StateObject $legacyObj -Name "BootRunCount" -Value ([int]$legacyObj.BootRunCount + 1)
+    $setPropSucceeded = ($legacyObj.State -eq "GameMode_Active" -and $legacyObj.GamingBootId -eq 42 -and $legacyObj.BootRunCount -eq 1)
+} catch {
+    $setPropSucceeded = $false
+}
+Assert-Test ($setPropSucceeded) "Set-StatePropertySafe mutates and adds GamingBootId/GamingBootTime on ConvertFrom-Json PSCustomObject without SetValueInvocationException"
+
+# 13.2 Get-ActiveStateSafe Normalizes Legacy State Files Missing GamingBootId / GamingBootTime
+$tempLegacyFile = Join-Path $env:TEMP ("UGM_LegacyState_" + [System.Guid]::NewGuid().ToString("N") + ".json")
+try {
+    [System.IO.File]::WriteAllText($tempLegacyFile, $legacyJson, (New-Object System.Text.UTF8Encoding($false)))
+    $loadedLegacy = Get-ActiveStateSafe -Path $tempLegacyFile
+    $hasBootIdProp = ($null -ne $loadedLegacy.PSObject.Properties["GamingBootId"])
+    $hasBootTimeProp = ($null -ne $loadedLegacy.PSObject.Properties["GamingBootTime"])
+    $hasLastErrProp = ($null -ne $loadedLegacy.PSObject.Properties["LastBootError"])
+    Assert-Test ($hasBootIdProp -and $hasBootTimeProp -and $hasLastErrProp) "Get-ActiveStateSafe normalizes legacy JSON with GamingBootId, GamingBootTime, and LastBootError properties"
+
+    # Verify direct assignment after Get-ActiveStateSafe also works in PS 5.1
+    $loadedLegacy.GamingBootId = 99
+    $loadedLegacy.GamingBootTime = "2026-10-23T19:00:00.0000000Z"
+    $loadedLegacy.State = "GameMode_Active"
+    Set-ActiveStateSafe -Path $tempLegacyFile -Data $loadedLegacy | Out-Null
+
+    $reloaded = Get-ActiveStateSafe -Path $tempLegacyFile
+    Assert-Test ($reloaded.State -eq "GameMode_Active" -and $reloaded.GamingBootId -eq 99) "Normalized Armed state transitions cleanly to GameMode_Active and persists to disk"
+} finally {
+    Remove-Item -LiteralPath $tempLegacyFile -Force -ErrorAction SilentlyContinue
+}
+
+# 13.3 ApplyBootMode & Enable Stuck-Armed Recovery Contracts in UltraGamingMode.ps1
+Assert-Test ($ugmContent -match 'Set-StatePropertySafe -StateObject \$stateData -Name "GamingBootId"') "UltraGamingMode.ps1 ApplyBootMode uses Set-StatePropertySafe for GamingBootId"
+Assert-Test ($ugmContent -match 'Register-WatchdogTasks') "UltraGamingMode.ps1 ApplyBootMode registers SYSTEM & RunOnce watchdog tasks"
+Assert-Test ($ugmContent -match 'Detected Armed state with missing Boot Trigger') "UltraGamingMode.ps1 Enable action recovers automatically when State is Armed but Boot Trigger is missing"
+
+# 13.4 Security Validation: Test-SafeVersionTag & Test-SafeGitHubReleaseUrl
+Assert-Test (Test-SafeVersionTag -Tag "v2.7") "Test-SafeVersionTag accepts 'v2.7'"
+Assert-Test (Test-SafeVersionTag -Tag "v2.8.1-hotfix1") "Test-SafeVersionTag accepts 'v2.8.1-hotfix1'"
+Assert-Test (-not (Test-SafeVersionTag -Tag 'v2.7"&calc.exe')) "Test-SafeVersionTag blocks command injection payload 'v2.7`"&calc.exe'"
+Assert-Test (-not (Test-SafeVersionTag -Tag 'v2.7|powershell')) "Test-SafeVersionTag blocks pipe metacharacter payload"
+Assert-Test (-not (Test-SafeVersionTag -Tag '')) "Test-SafeVersionTag rejects empty tag"
+
+Assert-Test (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7") "Test-SafeGitHubReleaseUrl accepts valid HTTPS GitHub release URL"
+Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7")) "Test-SafeGitHubReleaseUrl blocks non-HTTPS downgrade URL"
+Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7")) "Test-SafeGitHubReleaseUrl blocks untrusted host domain"
+Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url "file:///C:/Windows/System32/calc.exe")) "Test-SafeGitHubReleaseUrl blocks local file:// protocol handler execution"
+Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url 'https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7"&calc')) "Test-SafeGitHubReleaseUrl blocks shell metacharacters in URL"
+
+# 13.5 Batch Launcher Security Contracts
+Assert-Test ($batContent -notmatch 'call "%~dp0Backups\\update_info\.cmd"') "UltraGamingMode.bat does not blindly execute update_info.cmd via call"
+Assert-Test ($batContent -match 'call :load_update_info') "UltraGamingMode.bat safely parses update_info.cmd via :load_update_info"
+Assert-Test ($batContent -match 'set "PS_EXE=%SystemRoot%\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe"') "UltraGamingMode.bat pins full System32 path for powershell.exe"
+Assert-Test ($batContent -match '\$env:UGM_SELF') "UltraGamingMode.bat uses environment variable `$env:UGM_SELF for injection-safe UAC elevation"
+
+# 13.6 Normalize Existing Backups\active_state.json Schema & Pure UTF-8 Encoding
+$existingActiveState = Get-ActiveStateSafe
+if ($existingActiveState) {
+    Set-ActiveStateSafe -Data $existingActiveState | Out-Null
+    $activeBytes = [System.IO.File]::ReadAllBytes($Script:ActiveStateFile)
+    $activeHasBom = ($activeBytes.Length -ge 3 -and $activeBytes[0] -eq 0xEF -and $activeBytes[1] -eq 0xBB -and $activeBytes[2] -eq 0xBF)
+    Assert-Test (-not $activeHasBom) "Backups\active_state.json is saved as pure UTF-8 without BOM"
+    Assert-Test ($null -ne $existingActiveState.PSObject.Properties["GamingBootId"]) "Backups\active_state.json contains normalized GamingBootId property"
+}
+
+# 13.7 End-to-End Status Execution Verification
+$statusOutput = & $ugmPath -Action Status -SkipUpdateCheck *>&1 | Out-String
+Assert-Test ($statusOutput -match 'ULTRA GAMING MODE STATUS') "UltraGamingMode.ps1 -Action Status executes cleanly without errors"
+
+# ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta
 Write-Host "   TEST RESULTS: $testsRun Tests Run | $failures Failures" -ForegroundColor $(if ($failures -eq 0) { "Green" } else { "Red" })
 Write-Host "=====================================================" -ForegroundColor Magenta
@@ -668,3 +745,5 @@ if ($failures -gt 0) {
 } else {
     exit 0
 }
+
+
