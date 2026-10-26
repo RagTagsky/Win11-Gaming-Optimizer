@@ -391,7 +391,21 @@ function Repair-DisplayPipeline {
         }
     }
 
-    # 4. Clean up harmful MPO and Fullscreen Exclusive (FSE) overrides that cause monitor flickering/blinking in Deadlock & CS2
+    # 4. Clean up harmful MPO and Fullscreen Exclusive (FSE) overrides that cause monitor flickering/blinking in Deadlock & RDR2
+    try {
+        $dwm = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SOFTWARE\Microsoft\Windows\Dwm", $true)
+        if ($dwm) {
+            $dwm.DeleteValue("OverlayTestMode", $false)
+            $dwm.Close()
+        }
+    } catch {}
+    try {
+        $gfx = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Control\GraphicsDrivers", $true)
+        if ($gfx) {
+            $gfx.DeleteValue("DisableOverlays", $false)
+            $gfx.Close()
+        }
+    } catch {}
     $dwmPath = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
     if (Test-Path $dwmPath) {
         Remove-ItemProperty -Path $dwmPath -Name "OverlayTestMode" -ErrorAction SilentlyContinue
@@ -411,8 +425,28 @@ function Repair-DisplayPipeline {
     $dxUserPath = "HKCU:\Software\Microsoft\DirectX\UserGpuPreferences"
     if (Test-Path $dxUserPath) {
         Remove-ItemProperty -Path $dxUserPath -Name "DirectXUserGlobalSettings" -ErrorAction SilentlyContinue
+        try {
+            $dxu = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Microsoft\DirectX\UserGpuPreferences", $true)
+            if ($dxu) {
+                foreach ($appName in $dxu.GetValueNames()) {
+                    $val = [string]$dxu.GetValue($appName)
+                    if ($val -match "SwapEffectUpgradeEnable=0;") {
+                        $newVal = $val -replace "SwapEffectUpgradeEnable=0;", ""
+                        $dxu.SetValue($appName, $newVal, [Microsoft.Win32.RegistryValueKind]::String)
+                    }
+                }
+                $dxu.Close()
+            }
+        } catch {}
     }
-    Write-Host "  [+] MPO and Fullscreen Exclusive overrides cleared (eliminates Deadlock / CS2 screen flickering)." -ForegroundColor Green
+    try {
+        $ifeoRootKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", $true)
+        if ($ifeoRootKey) {
+            $ifeoRootKey.DeleteSubKeyTree("RDR2.exe", $false)
+            $ifeoRootKey.Close()
+        }
+    } catch {}
+    Write-Host "  [+] MPO and Fullscreen Exclusive overrides cleared (eliminates Deadlock / RDR2 screen flickering)." -ForegroundColor Green
 
     Write-Host "`n[SUCCESS] Display pipeline repaired. All DisplayPort ports reset to clean handshake." -ForegroundColor Green
     return $true
@@ -783,7 +817,7 @@ function Set-DeepGameDVROptimizations {
     $configStorePath = "HKCU:\System\GameConfigStore"
     if (-not (Test-Path $configStorePath)) { New-Item -Path $configStorePath -Force | Out-Null }
     Set-ItemProperty -Path $configStorePath -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-    Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value 2 -Type DWord -Force -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
 
     $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
     if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
@@ -2591,7 +2625,7 @@ function Restore-HagsGpuScheduling {
 $Script:GameIfeoExecutables = @(
     "cs2.exe", "project8.exe", "AtomicHeart-Win64-Shipping.exe", "osu!.exe", "Cult Of The Lamb.exe",
     "TS4_x64.exe", "hl2.exe", "dota2.exe", "r5apex.exe", "Valorant-Win64-Shipping.exe",
-    "FortniteClient-Win64-Shipping.exe", "RustClient.exe", "GTA5.exe", "RDR2.exe", "Cyberpunk2077.exe", "eldenring.exe"
+    "FortniteClient-Win64-Shipping.exe", "RustClient.exe", "GTA5.exe", "Cyberpunk2077.exe", "eldenring.exe"
 )
 
 $Script:EtwTelemetryAutoLoggers = @(
@@ -3003,6 +3037,79 @@ function Repair-LegacyOptimizerLeftovers {
     } catch {
         Write-Verbose "IFEO cleanup notice: $($_.Exception.Message)"
     }
+
+    # 2. Harmful MPO and Fullscreen Exclusive (FSE) overrides that cause display flickering/blinking in Deadlock & RDR2
+    try {
+        $dwm = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SOFTWARE\Microsoft\Windows\Dwm", $true)
+        if ($dwm) {
+            if ($null -ne $dwm.GetValue("OverlayTestMode")) {
+                $dwm.DeleteValue("OverlayTestMode", $false)
+                Write-Host "  [x] Removed harmful MPO disable key: HKLM:\SOFTWARE\Microsoft\Windows\Dwm\OverlayTestMode" -ForegroundColor Yellow
+                $fixed++
+            }
+            $dwm.Close()
+        }
+    } catch {}
+
+    try {
+        $gfx = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Control\GraphicsDrivers", $true)
+        if ($gfx) {
+            if ($null -ne $gfx.GetValue("DisableOverlays")) {
+                $gfx.DeleteValue("DisableOverlays", $false)
+                Write-Host "  [x] Removed harmful MPO disable key: HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\DisableOverlays" -ForegroundColor Yellow
+                $fixed++
+            }
+            $gfx.Close()
+        }
+    } catch {}
+
+    try {
+        $gcs = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("System\GameConfigStore", $true)
+        if ($gcs) {
+            foreach ($vName in @("GameDVR_FSEBehavior", "GameDVR_HonorUserFSEBehaviorMode", "GameDVR_DXGIHonorFSEWindowsCompatible", "GameDVR_EFSEFeatureFlags", "GameDVR_FSEBehaviorMode")) {
+                if ($null -ne $gcs.GetValue($vName)) {
+                    $gcs.DeleteValue($vName, $false)
+                    Write-Host "  [x] Removed harmful FSE override key: HKCU:\System\GameConfigStore\$vName" -ForegroundColor Yellow
+                    $fixed++
+                }
+            }
+            $gcs.Close()
+        }
+    } catch {}
+
+    try {
+        $dxu = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Microsoft\DirectX\UserGpuPreferences", $true)
+        if ($dxu) {
+            if ($null -ne $dxu.GetValue("DirectXUserGlobalSettings")) {
+                $dxu.DeleteValue("DirectXUserGlobalSettings", $false)
+                Write-Host "  [x] Removed forced DXGI global override: DirectXUserGlobalSettings" -ForegroundColor Yellow
+                $fixed++
+            }
+            foreach ($appName in $dxu.GetValueNames()) {
+                $val = [string]$dxu.GetValue($appName)
+                if ($val -match "SwapEffectUpgradeEnable=0;") {
+                    $newVal = $val -replace "SwapEffectUpgradeEnable=0;", ""
+                    $dxu.SetValue($appName, $newVal, [Microsoft.Win32.RegistryValueKind]::String)
+                    Write-Host "  [x] Removed SwapEffectUpgradeEnable=0 override for: $appName" -ForegroundColor Yellow
+                    $fixed++
+                }
+            }
+            $dxu.Close()
+        }
+    } catch {}
+
+    # 3. Purge heavy open-world game IFEO (RDR2.exe) that starves DWM rendering threads
+    try {
+        $ifeoRootKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", $true)
+        if ($ifeoRootKey) {
+            if ($ifeoRootKey.GetSubKeyNames() -contains "RDR2.exe") {
+                $ifeoRootKey.DeleteSubKeyTree("RDR2.exe", $false)
+                Write-Host "  [x] Removed RDR2.exe IFEO priority override (prevents DWM thread starvation)." -ForegroundColor Yellow
+                $fixed++
+            }
+            $ifeoRootKey.Close()
+        }
+    } catch {}
 
     # Lift already-running system servers stuck at Idle / BelowNormal
     foreach ($p in @(Get-Process -Name "sihost", "fontdrvhost", "ctfmon" -ErrorAction SilentlyContinue)) {

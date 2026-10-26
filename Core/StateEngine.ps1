@@ -387,7 +387,11 @@ function New-SystemStateBackup {
     if (Test-Path $configStorePath) {
         $props = Get-ItemProperty -Path $configStorePath -ErrorAction SilentlyContinue
         $snapshot.GameDVRConfig["GameDVR_Enabled"] = $props.GameDVR_Enabled
-        $snapshot.GameDVRConfig["GameDVR_FSEBehaviorMode"] = $props.GameDVR_FSEBehaviorMode
+        if ($null -ne $props.GameDVR_FSEBehaviorMode -and $props.GameDVR_FSEBehaviorMode -ne 2) {
+            $snapshot.GameDVRConfig["GameDVR_FSEBehaviorMode"] = $props.GameDVR_FSEBehaviorMode
+        } else {
+            $snapshot.GameDVRConfig["GameDVR_FSEBehaviorMode"] = $null
+        }
     }
     $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
     if (Test-Path $policyPath) {
@@ -830,7 +834,13 @@ function Restore-UserProfileState {
             Set-ItemProperty -Path $configStorePath -Name "GameDVR_Enabled" -Value $gdvr.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
         }
         if ($null -ne $gdvr.GameDVR_FSEBehaviorMode) {
-            Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
+            if ($gdvr.GameDVR_FSEBehaviorMode -ne 2) {
+                Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value $gdvr.GameDVR_FSEBehaviorMode -Type DWord -Force -ErrorAction SilentlyContinue
+            } else {
+                Remove-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
+            }
+        } else {
+            Remove-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
         }
         Write-Host "  [+] GameDVR user registry parameters restored." -ForegroundColor Green
     }

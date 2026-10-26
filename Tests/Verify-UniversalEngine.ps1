@@ -780,6 +780,15 @@ $repairDispDef = (Get-Command Repair-DisplayPipeline).Definition
 $cleansMpo = ($repairDispDef -match 'OverlayTestMode' -and $repairDispDef -match 'DisableOverlays' -and $repairDispDef -match 'GameDVR_FSEBehavior')
 Assert-Test ($cleansMpo) "Repair-DisplayPipeline clears harmful MPO & FSE overrides to prevent monitor flickering in Deadlock & CS2"
 
+# Anti-Flicker Regression Guard in Set-DeepGameDVROptimizations & Repair-LegacyOptimizerLeftovers
+$gameDvrDef = (Get-Command Set-DeepGameDVROptimizations).Definition
+$neverForcesFse = ($gameDvrDef -notmatch 'GameDVR_FSEBehaviorMode["'']\s*-Value\s*2')
+Assert-Test ($neverForcesFse) "Set-DeepGameDVROptimizations never forces GameDVR_FSEBehaviorMode = 2 (preserves Windows 11 Flip Model & VRR)"
+
+$legacyRepairDef = (Get-Command Repair-LegacyOptimizerLeftovers).Definition
+$cleansMpoInLegacy = ($legacyRepairDef -match 'OverlayTestMode' -and $legacyRepairDef -match 'DisableOverlays' -and $legacyRepairDef -match 'RDR2\.exe')
+Assert-Test ($cleansMpoInLegacy) "Repair-LegacyOptimizerLeftovers cleans MPO overrides and RDR2 IFEO priority on every boot and boost"
+
 # AMD Driver Class Power Latency Tweaks
 $aspm0Target = $extendedTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL0s' }
 $aspm1Target = $extendedTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL1' }
@@ -791,6 +800,8 @@ $cs2Ifeo = $extendedTargets | Where-Object { $_.Path -match 'cs2\.exe\\PerfOptio
 $deadlockIfeo = $extendedTargets | Where-Object { $_.Path -match 'project8\.exe\\PerfOptions' -and $_.Name -eq 'CpuPriorityClass' }
 Assert-Test ($null -ne $cs2Ifeo -and $cs2Ifeo.Value -eq 3) "IFEO PerfOptions: Counter-Strike 2 (cs2.exe) configured with CpuPriorityClass = 3 (High)"
 Assert-Test ($null -ne $deadlockIfeo -and $deadlockIfeo.Value -eq 3) "IFEO PerfOptions: Deadlock (project8.exe) configured with CpuPriorityClass = 3 (High)"
+$rdr2Ifeo = $extendedTargets | Where-Object { $_.Path -match 'RDR2\.exe\\PerfOptions' }
+Assert-Test ($null -eq $rdr2Ifeo) "IFEO PerfOptions: Heavy open-world games (RDR2.exe) excluded from High Priority to prevent DWM thread starvation"
 
 # 14.3 Power Latency Config Snapshot & Contract
 $powerCfg = Get-PowerLatencyConfig
