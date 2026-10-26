@@ -775,15 +775,10 @@ $multimediaDef = (Get-Command Set-GamingMultimediaConfig).Definition
 $hasMmcssPriority6 = ($multimediaDef -match '\$gamesTaskPath' -and $multimediaDef -match '-Name\s*["'']Priority["'']\s*-Value\s*6')
 Assert-Test ($hasMmcssPriority6) "Set-GamingMultimediaConfig configures MMCSS Tasks\Games Priority to 6 (Medium) per Microsoft Multimedia Architecture"
 
-# Dual MPO Suppression contract (OverlayTestMode = 5 in Dwm, DisableOverlays = 1 in GraphicsDrivers)
-$mpoTestMode = $extendedTargets | Where-Object { $_.Path -match 'Windows\\Dwm' -and $_.Name -eq 'OverlayTestMode' }
-$mpoDisable = $extendedTargets | Where-Object { $_.Path -match 'GraphicsDrivers' -and $_.Name -eq 'DisableOverlays' }
-Assert-Test ($null -ne $mpoTestMode -and $mpoTestMode.Value -eq 5) "MPO suppression: OverlayTestMode is set to 5"
-Assert-Test ($null -ne $mpoDisable -and $mpoDisable.Value -eq 1) "MPO suppression: DisableOverlays is set to 1"
-
-# DXGI Flip Model VRR contract
-$vrrTarget = $extendedTargets | Where-Object { $_.Path -match 'DirectX\\UserGpuPreferences' -and $_.Name -eq 'DirectXUserGlobalSettings' }
-Assert-Test ($null -ne $vrrTarget -and $vrrTarget.Value -match 'VRROptimizeEnable=1') "DXGI Flip Model VRR optimization: VRROptimizeEnable is set to 1"
+# Clean Display & Anti-Flicker Guard (MPO & FSE cleanup contract in Repair-DisplayPipeline)
+$repairDispDef = (Get-Command Repair-DisplayPipeline).Definition
+$cleansMpo = ($repairDispDef -match 'OverlayTestMode' -and $repairDispDef -match 'DisableOverlays' -and $repairDispDef -match 'GameDVR_FSEBehavior')
+Assert-Test ($cleansMpo) "Repair-DisplayPipeline clears harmful MPO & FSE overrides to prevent monitor flickering in Deadlock & CS2"
 
 # AMD Driver Class Power Latency Tweaks
 $aspm0Target = $extendedTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL0s' }

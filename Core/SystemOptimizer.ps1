@@ -391,6 +391,29 @@ function Repair-DisplayPipeline {
         }
     }
 
+    # 4. Clean up harmful MPO and Fullscreen Exclusive (FSE) overrides that cause monitor flickering/blinking in Deadlock & CS2
+    $dwmPath = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
+    if (Test-Path $dwmPath) {
+        Remove-ItemProperty -Path $dwmPath -Name "OverlayTestMode" -ErrorAction SilentlyContinue
+    }
+    $gfxDriversPath = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+    if (Test-Path $gfxDriversPath) {
+        Remove-ItemProperty -Path $gfxDriversPath -Name "DisableOverlays" -ErrorAction SilentlyContinue
+    }
+    $gcsPath = "HKCU:\System\GameConfigStore"
+    if (Test-Path $gcsPath) {
+        Remove-ItemProperty -Path $gcsPath -Name "GameDVR_FSEBehavior" -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $gcsPath -Name "GameDVR_HonorUserFSEBehaviorMode" -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $gcsPath -Name "GameDVR_DXGIHonorFSEWindowsCompatible" -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $gcsPath -Name "GameDVR_EFSEFeatureFlags" -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $gcsPath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
+    }
+    $dxUserPath = "HKCU:\Software\Microsoft\DirectX\UserGpuPreferences"
+    if (Test-Path $dxUserPath) {
+        Remove-ItemProperty -Path $dxUserPath -Name "DirectXUserGlobalSettings" -ErrorAction SilentlyContinue
+    }
+    Write-Host "  [+] MPO and Fullscreen Exclusive overrides cleared (eliminates Deadlock / CS2 screen flickering)." -ForegroundColor Green
+
     Write-Host "`n[SUCCESS] Display pipeline repaired. All DisplayPort ports reset to clean handshake." -ForegroundColor Green
     return $true
 }
@@ -2737,31 +2760,10 @@ function Get-ExtendedGamingTargets {
         $targets.Add(@{ Path = $Path; Name = $Name; Value = $Value; Kind = $Kind; Group = $Group })
     }
 
-    # 1. Fullscreen exclusive honor + DXGI flip model / VRR windowed optimizations + MPO suppression
-    $gcs = "HKCU:\System\GameConfigStore"
-    Add-T $gcs "GameDVR_FSEBehavior" 2 "DWord" "FSE"
-    Add-T $gcs "GameDVR_HonorUserFSEBehaviorMode" 1 "DWord" "FSE"
-    Add-T $gcs "GameDVR_DXGIHonorFSEWindowsCompatible" 1 "DWord" "FSE"
-    Add-T $gcs "GameDVR_EFSEFeatureFlags" 0 "DWord" "FSE"
-
-    $dxPath = "HKCU:\Software\Microsoft\DirectX\UserGpuPreferences"
-    $dxCurrent = (Get-ItemProperty -Path $dxPath -Name "DirectXUserGlobalSettings" -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
-    $dxPairs = [ordered]@{}
-    foreach ($pair in ([string]$dxCurrent -split ';')) {
-        if ($pair -match '^\s*([^=]+)=(.*)$') { $dxPairs[$Matches[1].Trim()] = $Matches[2].Trim() }
-    }
-    $dxPairs["SwapEffectUpgradeEnable"] = "1"
-    $dxPairs["VRROptimizeEnable"] = "1"
-    $dxValue = (($dxPairs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ';') + ';'
-    Add-T $dxPath "DirectXUserGlobalSettings" $dxValue "String" "DXGI"
-
-    Add-T "HKLM:\SOFTWARE\Microsoft\Windows\Dwm" "OverlayTestMode" 5 "DWord" "MPO"
-    Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "DisableOverlays" 1 "DWord" "MPO"
-
-    # 2. Windows Automatic Maintenance lockout (prevents 40+ maintenance tasks waking mid-match)
+    # 1. Windows Automatic Maintenance lockout (prevents 40+ maintenance tasks waking mid-match)
     Add-T "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance" "MaintenanceDisabled" 1 "DWord" "Maintenance"
 
-    # 3. ETW telemetry AutoLogger ring buffers (effective from next boot)
+    # 2. ETW telemetry AutoLogger ring buffers (effective from next boot)
     foreach ($logger in $Script:EtwTelemetryAutoLoggers) {
         $lp = "HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger\$logger"
         if (Test-Path -LiteralPath $lp) { Add-T $lp "Start" 0 "DWord" "ETW" }
