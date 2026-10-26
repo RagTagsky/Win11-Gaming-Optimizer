@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 REM ============================================================
-REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.7
+REM  Ultra Gaming Mode — Administrator Bootstrap Launcher  v2.8
 REM  Universal Hardware Adaptive Tuning & Failsafe Suite
 REM ============================================================
 
@@ -27,7 +27,7 @@ exit /b
 
 :start
 cd /d "%~dp0"
-title Ultra Gaming Mode Controller v2.7
+title Ultra Gaming Mode Controller v2.8
 
 set "UPDATE_NOTIFICATION="
 set "UPDATE_RELEASE_URL="
@@ -45,7 +45,7 @@ if !errorLevel! EQU 2 (
 :menu
 cls
 echo ============================================================
-echo            ULTRA GAMING MODE CONTROLLER  v2.7
+echo            ULTRA GAMING MODE CONTROLLER  v2.8
 if defined UPDATE_NOTIFICATION echo !UPDATE_NOTIFICATION!
 if defined UPDATE_RELEASE_URL echo !UPDATE_RELEASE_URL!
 echo             Universal Hardware Adaptive Suite
