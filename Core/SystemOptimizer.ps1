@@ -211,27 +211,35 @@ function Set-GamingMultimediaConfig {
     Write-Host "[*] Applying Safe Network & Multimedia Gaming Optimizations..." -ForegroundColor Cyan
 
     $sysProfilePath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
-    if (-not (Test-Path $sysProfilePath)) {
-        New-Item -Path $sysProfilePath -Force | Out-Null
+    try {
+        if (-not (Test-Path $sysProfilePath)) {
+            New-Item -Path $sysProfilePath -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+
+        # Disable network packet throttling (0xFFFFFFFF)
+        Set-ItemProperty -Path $sysProfilePath -Name "NetworkThrottlingIndex" -Value 4294967295 -Type DWord -Force -ErrorAction SilentlyContinue
+        # Set SystemResponsiveness to safe 10 (guarantees 90% CPU priority to games while reserving 10% for system drivers/DWM)
+        Set-ItemProperty -Path $sysProfilePath -Name "SystemResponsiveness"   -Value 10         -Type DWord -Force -ErrorAction SilentlyContinue
+        Write-Host "  [+] NetworkThrottlingIndex set to 0xFFFFFFFF (network packet throttling disabled)." -ForegroundColor Green
+        Write-Host "  [+] SystemResponsiveness set to safe 10 (preserves DWM and display driver stability)." -ForegroundColor Green
+
+        # Clean up and neutralize any corrupt Affinity = 0 or GPU Priority contention in Tasks\Games
+        $gamesTaskPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
+        if (Test-Path $gamesTaskPath) {
+            # CRITICAL: Remove Affinity = 0 (an affinity mask of 0 starves threads and crashes drivers)
+            Remove-ItemProperty -Path $gamesTaskPath -Name "Affinity" -ErrorAction SilentlyContinue
+            # MS Learn (MMCSS): Priority 1-8 orders tasks inside the same Scheduling Category. Stock Games=2 ranks below
+            # Playback(3)/Capture(5)/Window Manager(5); 6 puts game threads ahead of background multimedia while
+            # "Medium" category keeps DWM and audio safe. ("GPU Priority" / "SFIO Priority" are documented as unused.)
+            Set-ItemProperty -Path $gamesTaskPath -Name "Priority" -Value 6 -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $gamesTaskPath -Name "Scheduling Category" -Value "Medium" -Type String -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $gamesTaskPath -Name "SFIO Priority" -Value "Normal" -Type String -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Tasks\Games MMCSS Priority = 6 (Medium category; Affinity=0 eliminated; DWM protected)." -ForegroundColor Green
+        }
     }
-
-    # Disable network packet throttling (0xFFFFFFFF)
-    Set-ItemProperty -Path $sysProfilePath -Name "NetworkThrottlingIndex" -Value 4294967295 -Type DWord -Force
-    # Set SystemResponsiveness to safe 10 (guarantees 90% CPU priority to games while reserving 10% for system drivers/DWM)
-    Set-ItemProperty -Path $sysProfilePath -Name "SystemResponsiveness"   -Value 10         -Type DWord -Force
-    Write-Host "  [+] NetworkThrottlingIndex set to 0xFFFFFFFF (network packet throttling disabled)." -ForegroundColor Green
-    Write-Host "  [+] SystemResponsiveness set to safe 10 (preserves DWM and display driver stability)." -ForegroundColor Green
-
-    # Clean up and neutralize any corrupt Affinity = 0 or GPU Priority contention in Tasks\Games
-    $gamesTaskPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
-    if (Test-Path $gamesTaskPath) {
-        # CRITICAL: Remove Affinity = 0 (an affinity mask of 0 starves threads and crashes drivers)
-        Remove-ItemProperty -Path $gamesTaskPath -Name "Affinity" -ErrorAction SilentlyContinue
-        # Ensure GPU Priority does not conflict with DWM (leave at safe default 8 or 2)
-        Set-ItemProperty -Path $gamesTaskPath -Name "Priority" -Value 2 -Type DWord -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $gamesTaskPath -Name "Scheduling Category" -Value "Medium" -Type String -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $gamesTaskPath -Name "SFIO Priority" -Value "Normal" -Type String -Force -ErrorAction SilentlyContinue
-        Write-Host "  [+] Tasks\Games profile verified safe (Affinity=0 eliminated; DWM protected)." -ForegroundColor Green
+    catch {
+        Write-Warning "Failed to set Multimedia gaming configuration: $($_.Exception.Message)"
+        return $false
     }
 
     return $true
@@ -372,7 +380,7 @@ function Repair-DisplayPipeline {
     }
 
     # 3. Ensure Display Driver services are running
-    $dispServices = @("AMD External Events Utility", "amdfendrsr", "NVDisplay.ContainerLocalSystem", "DisplayEnhancementService", "GraphicsPerfSvc")
+    $dispServices = @("AMD External Events Utility", "NVDisplay.ContainerLocalSystem", "DisplayEnhancementService", "GraphicsPerfSvc")
     foreach ($ds in $dispServices) {
         $svc = Get-Service -Name $ds -ErrorAction SilentlyContinue
         if ($svc -and $svc.StartType -ne "Disabled") {
@@ -784,21 +792,10 @@ function Repair-CoreServices {
         }
     }
 
-    # 2. LanmanServer (Server service) - Required for Windows RPC session checks and file sharing
-    Write-Host "[*] Configuring Server service (LanmanServer)..." -ForegroundColor Cyan
-    Set-Service -Name "LanmanServer" -StartupType Automatic -ErrorAction SilentlyContinue
-    $srv = Get-Service -Name "LanmanServer" -ErrorAction SilentlyContinue
-    if ($srv) {
-        if ($srv.Status -ne "Running") {
-            Start-Service -Name "LanmanServer" -ErrorAction SilentlyContinue
-            Write-Host "  [+] Service 'LanmanServer' started successfully (RPC session unblocked)." -ForegroundColor Green
-        }
-        else {
-            Write-Host "  [+] Service 'LanmanServer' is already running." -ForegroundColor Green
-        }
-    }
+    # LanmanServer / bthserv / Rockstar Service are snapshotted blacklist targets now:
+    # Restore-SystemState returns them to their exact original state, so no forced overrides here.
 
-    # 3. Steam Client Service - Required for Steam launcher integrity and anti-cheat verification
+    # 2. Steam Client Service - Required for Steam launcher integrity and anti-cheat verification
     Write-Host "[*] Configuring Steam Client Service..." -ForegroundColor Cyan
     $steamSvc = Get-Service -Name "Steam Client Service" -ErrorAction SilentlyContinue
     if ($steamSvc) {
@@ -806,22 +803,7 @@ function Repair-CoreServices {
         Write-Host "  [+] Service 'Steam Client Service' set to Manual for clean first-launch." -ForegroundColor Green
     }
 
-    # 4. Bluetooth Support Service (bthserv) - Required for Bluetooth gamepads and wireless headsets
-    Write-Host "[*] Checking Bluetooth Services..." -ForegroundColor Cyan
-    $bth = Get-Service -Name "bthserv" -ErrorAction SilentlyContinue
-    if ($bth) {
-        Set-Service -Name "bthserv" -StartupType Manual -ErrorAction SilentlyContinue
-        Write-Host "  [+] Service 'bthserv' set to Manual for Bluetooth gamepads/audio." -ForegroundColor Green
-    }
-
-    # 5. Rockstar Game Library Service
-    $rockstar = Get-Service -Name "Rockstar Service" -ErrorAction SilentlyContinue
-    if ($rockstar) {
-        Set-Service -Name "Rockstar Service" -StartupType Manual -ErrorAction SilentlyContinue
-        Write-Host "  [+] Service 'Rockstar Service' set to Manual." -ForegroundColor Green
-    }
-
-    Write-Host "`n[SUCCESS] Microphone, Steam, LanmanServer, and peripheral services are fully unblocked!" -ForegroundColor Green
+    Write-Host "`n[SUCCESS] Microphone and Steam services are fully unblocked!" -ForegroundColor Green
     return $true
 }
 
@@ -2264,7 +2246,8 @@ function Restore-BcdeditTimerOptimizations {
         $origTsc  = if ($BcdeditConfig -is [hashtable]) { $BcdeditConfig["TscSyncPolicy"] } else { $BcdeditConfig.TscSyncPolicy }
 
         try {
-            if ($null -ne $origTick -and ([string]$origTick) -match '^(?i)(yes|no)$') {
+            # Never re-inflict the proven-harmful 'disabledynamictick yes' / 'tscsyncpolicy Enhanced' from old snapshots.
+            if ($null -ne $origTick -and ([string]$origTick) -match '^(?i)no$') {
                 $safeTick = ([string]$origTick).ToLowerInvariant()
                 $null = bcdedit /set disabledynamictick $safeTick 2>&1
                 Write-Host "  [+] BCDedit disabledynamictick restored to '$safeTick'." -ForegroundColor Green
@@ -2273,7 +2256,7 @@ function Restore-BcdeditTimerOptimizations {
                 Write-Host "  [+] BCDedit disabledynamictick removed (reverted to system default)." -ForegroundColor Green
             }
 
-            if ($null -ne $origTsc -and ([string]$origTsc) -match '^(?i)(Default|Legacy|Enhanced)$') {
+            if ($null -ne $origTsc -and ([string]$origTsc) -match '^(?i)(Default|Legacy)$') {
                 $safeTsc = [string]$origTsc
                 $null = bcdedit /set tscsyncpolicy $safeTsc 2>&1
                 Write-Host "  [+] BCDedit tscsyncpolicy restored to '$safeTsc'." -ForegroundColor Green
@@ -2509,7 +2492,15 @@ function Set-HagsGpuScheduling {
     # On AMD RDNA2 / Polaris, HAGS creates known frame pacing jitter, micro-stutters and frame drops in DX11 and Source 2 (CS2).
     # Only configure HAGS for NVIDIA GPUs where HAGS is mature and reduces CPU render submission latency.
     if ($GpuVendor -eq "AMD") {
-        Write-Host "  [*] HAGS setting: Preserved hardware default on AMD GPU (avoiding RDNA2 frame-pacing microstutter in CS2)." -ForegroundColor Yellow
+        # Actively clear a stale HwSchMode=2 left by older versions instead of silently keeping it.
+        $gfx = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
+        $cur = (Get-ItemProperty -Path $gfx -Name "HwSchMode" -ErrorAction SilentlyContinue).HwSchMode
+        if ($cur -eq 2) {
+            Set-ItemProperty -Path $gfx -Name "HwSchMode" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] HAGS: stale HwSchMode=2 on AMD GPU switched off (HwSchMode=1, RDNA2 frame pacing fix, after reboot)." -ForegroundColor Green
+        } else {
+            Write-Host "  [*] HAGS setting: kept off/default on AMD GPU (avoiding RDNA2 frame-pacing microstutter in CS2)." -ForegroundColor Yellow
+        }
         return $true
     }
 
@@ -2533,13 +2524,22 @@ function Restore-HagsGpuScheduling {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
-        [object]$HagsConfig
+        [object]$HagsConfig,
+
+        [Parameter(Mandatory = $false)]
+        [string]$GpuVendor = "Unknown"
     )
 
     if ($HagsConfig) {
         Write-Host "[*] Restoring Hardware-Accelerated GPU Scheduling (HAGS) setting..." -ForegroundColor Cyan
         $gfxPath = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
         $origMode = if ($HagsConfig -is [hashtable]) { $HagsConfig["HwSchMode"] } else { $HagsConfig.HwSchMode }
+        # Old snapshots (pre-82049b4) captured HwSchMode=2 that this tool itself forced on AMD - never re-inflict it.
+        if ($GpuVendor -eq "AMD" -and $origMode -eq 2) {
+            Set-ItemProperty -Path $gfxPath -Name "HwSchMode" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] HAGS kept off on AMD GPU (poisoned HwSchMode=2 snapshot ignored)." -ForegroundColor Green
+            return $true
+        }
         try {
             if ($null -ne $origMode) {
                 Set-ItemProperty -Path $gfxPath -Name "HwSchMode" -Value $origMode -Type DWord -Force -ErrorAction Stop
@@ -2559,3 +2559,472 @@ function Restore-HagsGpuScheduling {
 }
 
 
+
+# ── v2.8 Extended Gaming Optimizations (data-driven, fully reversible) ──────
+# Every registry tweak below is described as a target @{ Path; Name; Value; Kind }.
+# The same target list is snapshotted (Get-RegistryValueSnapshot), applied (Set-RegistryTargets)
+# and reverted (Restore-RegistryValueSnapshot). Value = $null means "delete value while gaming".
+
+$Script:GameIfeoExecutables = @(
+    "cs2.exe", "project8.exe", "AtomicHeart-Win64-Shipping.exe", "osu!.exe", "Cult Of The Lamb.exe",
+    "TS4_x64.exe", "hl2.exe", "dota2.exe", "r5apex.exe", "Valorant-Win64-Shipping.exe",
+    "FortniteClient-Win64-Shipping.exe", "RustClient.exe", "GTA5.exe", "RDR2.exe", "Cyberpunk2077.exe", "eldenring.exe"
+)
+
+$Script:EtwTelemetryAutoLoggers = @(
+    "AutoLogger-Diagtrack-Listener", "Diagtrack-Listener", "DiagLog", "SQMLogger", "WiFiSession", "RadioMgr"
+)
+
+$Script:PowerLatencySettings = @(
+    @{ Name = "USB Selective Suspend";      Sub = "2a737441-1930-4402-8d77-b2bebba308a3"; Setting = "48e6b7a6-50f5-4782-a5d4-53bb8f07e226"; Value = 0 },
+    @{ Name = "USB 3 Link Power Mgmt";      Sub = "2a737441-1930-4402-8d77-b2bebba308a3"; Setting = "d4e98f31-5ffe-4ce1-be31-1b38b384c009"; Value = 0 },
+    @{ Name = "NVMe Primary Idle Timeout";  Sub = "0012ee47-9041-4b5d-9b77-535fba8b1442"; Setting = "d639518a-e56d-4345-8af2-b9f32fb26109"; Value = 0 },
+    @{ Name = "NVMe Secondary Idle Timeout"; Sub = "0012ee47-9041-4b5d-9b77-535fba8b1442"; Setting = "d3d55efd-c1ff-424e-9dc3-441be7833010"; Value = 0 },
+    @{ Name = "Processor EPP";              Sub = "54533251-82be-4824-96c1-47b60b740d00"; Setting = "36687f9e-e3a5-4dbf-b1dc-15eb381c6863"; Value = 0 }
+)
+
+function ConvertTo-RegistryKeyParts {
+    param([string]$Path)
+    if ($Path -match '^(HKLM|HKCU):\\(.+)$') {
+        $root = if ($Matches[1] -eq "HKLM") { [Microsoft.Win32.Registry]::LocalMachine } else { [Microsoft.Win32.Registry]::CurrentUser }
+        return @($root, $Matches[2])
+    }
+    return @($null, $null)
+}
+
+function ConvertTo-RegistryTypedValue {
+    param($Value, [string]$Kind)
+    switch ($Kind) {
+        "DWord" {
+            $n = [int64]$Value
+            if ($n -gt [int]::MaxValue) { $n -= 4294967296 }
+            return [int]$n
+        }
+        "QWord"       { return [int64]$Value }
+        "Binary"      { return [byte[]]@($Value) }
+        "MultiString" { return [string[]]@($Value) }
+        default       { return [string]$Value }
+    }
+}
+
+function Get-RegistryValueSnapshot {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [array]$Targets = @())
+
+    $out = [System.Collections.Generic.List[object]]::new()
+    foreach ($t in $Targets) {
+        $root, $sub = ConvertTo-RegistryKeyParts $t.Path
+        if (-not $root) { continue }
+        $entry = @{ Path = $t.Path; Name = $t.Name; KeyExisted = $false; Exists = $false; Value = $null; Kind = $t.Kind }
+        try {
+            $key = $root.OpenSubKey($sub)
+            if ($key) {
+                $entry.KeyExisted = $true
+                if ($key.GetValueNames() -contains $t.Name) {
+                    $entry.Exists = $true
+                    $entry.Kind = $key.GetValueKind($t.Name).ToString()
+                    $entry.Value = $key.GetValue($t.Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                }
+                $key.Close()
+            }
+        } catch {
+            Write-Verbose "Registry snapshot notice for $($t.Path)\$($t.Name): $($_.Exception.Message)"
+        }
+        $out.Add($entry)
+    }
+    return $out.ToArray()
+}
+
+function Set-RegistryTargets {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [array]$Targets = @())
+
+    $applied = 0
+    foreach ($t in $Targets) {
+        $root, $sub = ConvertTo-RegistryKeyParts $t.Path
+        if (-not $root) { continue }
+        try {
+            if ($null -eq $t.Value) {
+                $key = $root.OpenSubKey($sub, $true)
+                if ($key) { $key.DeleteValue($t.Name, $false); $key.Close() }
+            } else {
+                $key = $root.CreateSubKey($sub)
+                $kind = [Microsoft.Win32.RegistryValueKind]$t.Kind
+                $key.SetValue($t.Name, (ConvertTo-RegistryTypedValue $t.Value $t.Kind), $kind)
+                $key.Close()
+            }
+            $applied++
+        } catch {
+            Write-Verbose "Registry apply notice for $($t.Path)\$($t.Name): $($_.Exception.Message)"
+        }
+    }
+    return $applied
+}
+
+function Restore-RegistryValueSnapshot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)] [array]$Snapshot = @(),
+        [Parameter(Mandatory = $false)] [ValidateSet("All", "HKLM", "HKCU")] [string]$Hive = "All"
+    )
+
+    $restored = 0
+    foreach ($e in @($Snapshot)) {
+        if (-not $e -or -not $e.Path) { continue }
+        if ($Hive -ne "All" -and -not ([string]$e.Path).StartsWith("$($Hive):")) { continue }
+        $root, $sub = ConvertTo-RegistryKeyParts $e.Path
+        if (-not $root) { continue }
+        try {
+            if ($e.Exists) {
+                $key = $root.CreateSubKey($sub)
+                $kind = [Microsoft.Win32.RegistryValueKind]$e.Kind
+                $key.SetValue($e.Name, (ConvertTo-RegistryTypedValue $e.Value $e.Kind), $kind)
+                $key.Close()
+            } else {
+                $key = $root.OpenSubKey($sub, $true)
+                if ($key) { $key.DeleteValue($e.Name, $false); $key.Close() }
+                # Remove keys we created ourselves (e.g. IFEO\cs2.exe\PerfOptions and its empty parent)
+                if (-not $e.KeyExisted) {
+                    $current = $sub
+                    for ($depth = 0; $depth -lt 2; $depth++) {
+                        $k = $root.OpenSubKey($current)
+                        if (-not $k) { break }
+                        $isEmpty = ($k.ValueCount -eq 0 -and $k.SubKeyCount -eq 0)
+                        $k.Close()
+                        if (-not $isEmpty) { break }
+                        $root.DeleteSubKey($current, $false)
+                        $current = Split-Path -Path $current -Parent
+                        if (-not $current -or $current -notmatch 'Image File Execution Options\\') { break }
+                    }
+                }
+            }
+            $restored++
+        } catch {
+            Write-Verbose "Registry restore notice for $($e.Path)\$($e.Name): $($_.Exception.Message)"
+        }
+    }
+    return $restored
+}
+
+function Test-AntiCheatRequiresVbs {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [string[]]$Whitelist = @())
+
+    # VBS/HVCI is kept ON when a protected (whitelisted) kernel anti-cheat that may depend on it is installed.
+    foreach ($ac in @("vgk", "vgc", "FACEIT", "FACEITService")) {
+        if (($Whitelist -contains $ac) -and (Get-Service -Name $ac -ErrorAction SilentlyContinue)) { return $true }
+    }
+    return $false
+}
+
+function Get-ExtendedGamingTargets {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)] [object]$HardwareProfile,
+        [Parameter(Mandatory = $false)] [string[]]$Whitelist
+    )
+
+    $hw = if ($HardwareProfile) { $HardwareProfile } else { Get-HardwareProfile }
+    if (-not $Whitelist) {
+        $wlFile = Join-Path $PSScriptRoot "..\Config\services_whitelist.json"
+        if (Test-Path -LiteralPath $wlFile) {
+            $Whitelist = @((Get-Content -LiteralPath $wlFile -Raw -Encoding UTF8 | ConvertFrom-Json).ProtectedServices)
+        }
+    }
+
+    $targets = [System.Collections.Generic.List[object]]::new()
+    function Add-T($Path, $Name, $Value, $Kind = "DWord", $Group = "") {
+        $targets.Add(@{ Path = $Path; Name = $Name; Value = $Value; Kind = $Kind; Group = $Group })
+    }
+
+    # 1. Fullscreen exclusive honor + DXGI flip model / VRR windowed optimizations + MPO suppression
+    $gcs = "HKCU:\System\GameConfigStore"
+    Add-T $gcs "GameDVR_FSEBehavior" 2 "DWord" "FSE"
+    Add-T $gcs "GameDVR_HonorUserFSEBehaviorMode" 1 "DWord" "FSE"
+    Add-T $gcs "GameDVR_DXGIHonorFSEWindowsCompatible" 1 "DWord" "FSE"
+    Add-T $gcs "GameDVR_EFSEFeatureFlags" 0 "DWord" "FSE"
+
+    $dxPath = "HKCU:\Software\Microsoft\DirectX\UserGpuPreferences"
+    $dxCurrent = (Get-ItemProperty -Path $dxPath -Name "DirectXUserGlobalSettings" -ErrorAction SilentlyContinue).DirectXUserGlobalSettings
+    $dxPairs = [ordered]@{}
+    foreach ($pair in ([string]$dxCurrent -split ';')) {
+        if ($pair -match '^\s*([^=]+)=(.*)$') { $dxPairs[$Matches[1].Trim()] = $Matches[2].Trim() }
+    }
+    $dxPairs["SwapEffectUpgradeEnable"] = "1"
+    $dxPairs["VRROptimizeEnable"] = "1"
+    $dxValue = (($dxPairs.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ';') + ';'
+    Add-T $dxPath "DirectXUserGlobalSettings" $dxValue "String" "DXGI"
+
+    Add-T "HKLM:\SOFTWARE\Microsoft\Windows\Dwm" "OverlayTestMode" 5 "DWord" "MPO"
+    Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "DisableOverlays" 1 "DWord" "MPO"
+
+    # 2. Windows Automatic Maintenance lockout (prevents 40+ maintenance tasks waking mid-match)
+    Add-T "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\Maintenance" "MaintenanceDisabled" 1 "DWord" "Maintenance"
+
+    # 3. ETW telemetry AutoLogger ring buffers (effective from next boot)
+    foreach ($logger in $Script:EtwTelemetryAutoLoggers) {
+        $lp = "HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger\$logger"
+        if (Test-Path -LiteralPath $lp) { Add-T $lp "Start" 0 "DWord" "ETW" }
+    }
+
+    # 4. VBS / HVCI off for the gaming boot (skipped if a protected anti-cheat may require it)
+    if (-not (Test-AntiCheatRequiresVbs -Whitelist $Whitelist)) {
+        Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard" "EnableVirtualizationBasedSecurity" 0 "DWord" "VBS"
+        Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity" "Enabled" 0 "DWord" "VBS"
+    }
+
+    # 5. Ring-0 game process boost (read by the kernel at process creation, before anti-cheat handle stripping)
+    $ifeoRoot = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options"
+    foreach ($exe in $Script:GameIfeoExecutables) {
+        $pp = "$ifeoRoot\$exe\PerfOptions"
+        Add-T $pp "CpuPriorityClass" 3 "DWord" "IFEO"
+        Add-T $pp "IoPriority" 3 "DWord" "IFEO"
+        Add-T $pp "PagePriority" 5 "DWord" "IFEO"
+    }
+
+    # 6. AMD RDNA/Polaris driver: PCIe link sleep off + shader cache Always On
+    if ($hw.GpuVendor -eq "AMD") {
+        foreach ($k in @(Get-AmdGpuDriverClassKeys)) {
+            $kp = if ($k -is [hashtable]) { $k["Path"] } else { $k.Path }
+            $props = Get-ItemProperty -Path $kp -ErrorAction SilentlyContinue
+            if ($props -and $null -ne $props.EnableAspmL0s) { Add-T $kp "EnableAspmL0s" 0 "DWord" "AMD" }
+            if ($props -and $null -ne $props.EnableAspmL1)  { Add-T $kp "EnableAspmL1" 0 "DWord" "AMD" }
+            if (Test-Path -LiteralPath "$kp\UMD") { Add-T "$kp\UMD" "ShaderCache" ([byte[]](0x32, 0x00)) "Binary" "AMD" }
+        }
+    }
+
+    # 7 & 8. Storage controller IRQ de-contention + USB HID idle-suspend suppression (single Enum walk)
+    $storageClasses = @("{4d36e97b-e325-11ce-bfc1-08002be10318}", "{4d36e96a-e325-11ce-bfc1-08002be10318}")
+    $enumRoot = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Enum")
+    if ($enumRoot) {
+        foreach ($bus in @("PCI", "USB")) {
+            $busKey = $enumRoot.OpenSubKey($bus)
+            if (-not $busKey) { continue }
+            foreach ($dev in $busKey.GetSubKeyNames()) {
+                $devKey = $busKey.OpenSubKey($dev)
+                if (-not $devKey) { continue }
+                foreach ($inst in $devKey.GetSubKeyNames()) {
+                    $ik = $devKey.OpenSubKey($inst)
+                    if (-not $ik) { continue }
+                    $instPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$bus\$dev\$inst\Device Parameters"
+                    if ($bus -eq "PCI" -and ($storageClasses -contains [string]$ik.GetValue("ClassGUID"))) {
+                        $ap = $ik.OpenSubKey("Device Parameters\Interrupt Management\Affinity Policy")
+                        if ($ap) {
+                            if ($ap.GetValue("DevicePriority") -eq 3) { Add-T "$instPath\Interrupt Management\Affinity Policy" "DevicePriority" 2 "DWord" "IRQ" }
+                            $ap.Close()
+                        }
+                    }
+                    elseif ($bus -eq "USB" -and [string]$ik.GetValue("Service") -eq "HidUsb") {
+                        $dp = $ik.OpenSubKey("Device Parameters")
+                        if ($dp) {
+                            if ($dp.GetValue("EnhancedPowerManagementEnabled") -eq 1) { Add-T $instPath "EnhancedPowerManagementEnabled" 0 "DWord" "USB" }
+                            if ($dp.GetValue("AllowIdleIrpInD3") -eq 1) { Add-T $instPath "AllowIdleIrpInD3" 0 "DWord" "USB" }
+                            $dp.Close()
+                        }
+                    }
+                    $ik.Close()
+                }
+                $devKey.Close()
+            }
+            $busKey.Close()
+        }
+        $enumRoot.Close()
+    }
+
+    return $targets.ToArray()
+}
+
+function Set-ExtendedGamingOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)] [object]$HardwareProfile,
+        [Parameter(Mandatory = $false)] [string[]]$Whitelist
+    )
+
+    Write-Host "[*] Applying v2.8 extended optimizations (FSE/VRR, MPO off, IFEO game boost, IRQ, USB HID, AMD ASPM, VBS, ETW, Maintenance)..." -ForegroundColor Cyan
+    $targets = @(Get-ExtendedGamingTargets -HardwareProfile $HardwareProfile -Whitelist $Whitelist)
+    $applied = Set-RegistryTargets -Targets $targets
+    $groups = ($targets | ForEach-Object { $_.Group } | Sort-Object -Unique) -join ", "
+    Write-Host "  [+] $applied/$($targets.Count) registry targets applied ($groups). Boot-time items take effect after restart." -ForegroundColor Green
+
+    # Stop running telemetry ETW sessions right now (AutoLogger Start=0 covers the next boot)
+    foreach ($logger in $Script:EtwTelemetryAutoLoggers) {
+        $null = logman stop $logger -ets 2>&1
+    }
+    return $applied
+}
+
+function Get-PowerAcSettingIndex {
+    [CmdletBinding()]
+    param([string]$SchemeGuid, [string]$Sub, [string]$Setting)
+
+    foreach ($p in @(
+        "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$SchemeGuid\$Sub\$Setting",
+        "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\$Sub\$Setting\DefaultPowerSchemeValues\$SchemeGuid"
+    )) {
+        $v = (Get-ItemProperty -Path $p -Name "ACSettingIndex" -ErrorAction SilentlyContinue).ACSettingIndex
+        if ($null -ne $v) { return [int]$v }
+    }
+    # Locale-independent fallback: AC index is always the second-to-last hex value (AC precedes DC)
+    $hex = [regex]::Matches((powercfg /q $SchemeGuid $Sub $Setting 2>&1 | Out-String), ':\s*0x([0-9a-fA-F]+)')
+    if ($hex.Count -ge 2) { return [Convert]::ToInt32($hex[$hex.Count - 2].Groups[1].Value, 16) }
+    return $null
+}
+
+function Get-PowerLatencyConfig {
+    [CmdletBinding()]
+    param()
+
+    $guid = Get-ActivePowerSchemeGuid
+    if (-not $guid) { return $null }
+    $settings = foreach ($s in $Script:PowerLatencySettings) {
+        @{ Name = $s.Name; Sub = $s.Sub; Setting = $s.Setting; Original = (Get-PowerAcSettingIndex -SchemeGuid $guid -Sub $s.Sub -Setting $s.Setting) }
+    }
+    return @{ SchemeGuid = $guid; Settings = @($settings) }
+}
+
+function Set-PowerLatencyOptimizations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [object]$Config)
+
+    if (-not $Config -or -not $Config.SchemeGuid) { return $false }
+    Write-Host "[*] Disabling USB selective suspend, USB3 LPM, NVMe APST idle and Ryzen/Intel EPP ramp-up delay..." -ForegroundColor Cyan
+    foreach ($s in @($Config.Settings)) {
+        if ($null -eq $s.Original) { continue }  # unknown original -> do not touch (cannot restore)
+        $target = ($Script:PowerLatencySettings | Where-Object { $_.Setting -eq $s.Setting } | Select-Object -First 1).Value
+        $null = powercfg /setacvalueindex $Config.SchemeGuid $s.Sub $s.Setting $target 2>&1
+        Write-Host "  [+] $($s.Name): $($s.Original) -> $target" -ForegroundColor Green
+    }
+    $null = powercfg /setactive SCHEME_CURRENT 2>&1
+    return $true
+}
+
+function Restore-PowerLatencyOptimizations {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [object]$Config)
+
+    if (-not $Config -or -not $Config.SchemeGuid) { return $true }
+    Write-Host "[*] Restoring USB / NVMe / EPP power latency settings..." -ForegroundColor Cyan
+    foreach ($s in @($Config.Settings)) {
+        if ($null -eq $s.Original) { continue }
+        $null = powercfg /setacvalueindex $Config.SchemeGuid $s.Sub $s.Setting ([int]$s.Original) 2>&1
+    }
+    $null = powercfg /setactive SCHEME_CURRENT 2>&1
+    Write-Host "  [+] Power latency settings restored." -ForegroundColor Green
+    return $true
+}
+
+function Get-MemoryCompressionConfig {
+    [CmdletBinding()]
+    param()
+    try {
+        $m = Get-MMAgent -ErrorAction Stop
+        return @{ MemoryCompression = [bool]$m.MemoryCompression; ApplicationPreLaunch = [bool]$m.ApplicationPreLaunch }
+    } catch {
+        return $null
+    }
+}
+
+function Set-MemoryCompressionGamingState {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [object]$HardwareProfile)
+
+    $hw = if ($HardwareProfile) { $HardwareProfile } else { Get-HardwareProfile }
+    if ($hw.LowRamProfile -or [double]$hw.TotalRamGB -lt 16) {
+        Write-Host "  [i] Memory compression retained (< 16 GB RAM: compression prevents pagefile thrashing)." -ForegroundColor Gray
+        return $false
+    }
+    foreach ($feature in @("MemoryCompression", "ApplicationPreLaunch")) {
+        try {
+            $splat = @{ $feature = $true; ErrorAction = "Stop" }
+            Disable-MMAgent @splat
+        } catch {
+            Write-Verbose "Disable-MMAgent $feature notice: $($_.Exception.Message)"
+        }
+    }
+    Write-Host "  [+] Memory compression & app prelaunch disabled ($($hw.TotalRamGB) GB RAM: frees CPU cycles and L3 cache)." -ForegroundColor Green
+    return $true
+}
+
+function Restore-MemoryCompressionConfig {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [object]$Config)
+
+    if (-not $Config) { return $true }
+    foreach ($feature in @("MemoryCompression", "ApplicationPreLaunch")) {
+        if ($Config.$feature) {
+            try {
+                $splat = @{ $feature = $true; ErrorAction = "Stop" }
+                Enable-MMAgent @splat
+            } catch {
+                Write-Verbose "Enable-MMAgent $feature notice: $($_.Exception.Message)"
+            }
+        }
+    }
+    Write-Host "  [+] Memory compression / prelaunch restored." -ForegroundColor Green
+    return $true
+}
+
+function Repair-LegacyOptimizerLeftovers {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Scanning for broken leftovers of third-party optimizers (IFEO priority inversion, orphaned tasks)..." -ForegroundColor Cyan
+    $fixed = 0
+    $systemExes = @("fontdrvhost.exe", "sihost.exe", "lsass.exe", "ctfmon.exe", "dwm.exe", "csrss.exe", "svchost.exe",
+                    "explorer.exe", "audiodg.exe", "winlogon.exe", "services.exe", "wininit.exe", "smss.exe")
+    try {
+        $ifeo = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options", $true)
+        if ($ifeo) {
+            foreach ($name in $ifeo.GetSubKeyNames()) {
+                if ($name -match "^'.+'$") {
+                    # Malformed quoted key names (e.g. 'AggregatorHost.exe') never match any image - pure junk
+                    $ifeo.DeleteSubKeyTree($name, $false)
+                    Write-Host "  [x] Removed malformed IFEO key: $name" -ForegroundColor Yellow
+                    $fixed++
+                    continue
+                }
+                if ($systemExes -notcontains $name) { continue }
+                $po = $ifeo.OpenSubKey("$name\PerfOptions")
+                if (-not $po) { continue }
+                $cpu = $po.GetValue("CpuPriorityClass"); $io = $po.GetValue("IoPriority"); $page = $po.GetValue("PagePriority")
+                $po.Close()
+                # Demoted system servers cause priority inversion (DWM/win32k/games block on them)
+                if (($null -ne $cpu -and $cpu -in @(1, 5)) -or ($null -ne $io -and $io -lt 2) -or ($null -ne $page -and $page -lt 5)) {
+                    $ifeo.DeleteSubKeyTree("$name\PerfOptions", $false)
+                    Write-Host "  [x] Removed priority-inversion PerfOptions on system process: $name" -ForegroundColor Yellow
+                    $fixed++
+                }
+            }
+            $ifeo.Close()
+        }
+    } catch {
+        Write-Verbose "IFEO cleanup notice: $($_.Exception.Message)"
+    }
+
+    # Lift already-running system servers stuck at Idle / BelowNormal
+    foreach ($p in @(Get-Process -Name "sihost", "fontdrvhost", "ctfmon" -ErrorAction SilentlyContinue)) {
+        try {
+            if ($p.PriorityClass -in @([System.Diagnostics.ProcessPriorityClass]::Idle, [System.Diagnostics.ProcessPriorityClass]::BelowNormal)) {
+                $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::Normal
+                Write-Host "  [+] $($p.ProcessName) (PID $($p.Id)) priority restored to Normal." -ForegroundColor Green
+                $fixed++
+            }
+        } catch {
+            Write-Verbose "Priority fix notice for $($p.ProcessName): $($_.Exception.Message)"
+        }
+    }
+
+    # Orphaned scheduled tasks whose executable no longer exists (e.g. uninstalled GameModeX)
+    foreach ($t in @(Get-ScheduledTask -TaskName "GameModeX" -ErrorAction SilentlyContinue)) {
+        $exe = [Environment]::ExpandEnvironmentVariables([string](@($t.Actions)[0].Execute)).Trim('"')
+        if (-not $exe -or -not (Test-Path -LiteralPath $exe)) {
+            Unregister-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -Confirm:$false -ErrorAction SilentlyContinue
+            Write-Host "  [x] Removed orphaned scheduled task: $($t.TaskPath)$($t.TaskName)" -ForegroundColor Yellow
+            $fixed++
+        }
+    }
+
+    if ($fixed -eq 0) { Write-Host "  [+] No broken optimizer leftovers found." -ForegroundColor Green }
+    return $fixed
+}

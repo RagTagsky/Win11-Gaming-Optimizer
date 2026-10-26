@@ -336,6 +336,9 @@ switch ($Action) {
                         Set-BcdeditTimerOptimizations | Out-Null
                         Set-TcpGamingStackOptimizations | Out-Null
                         Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
+                        Set-ExtendedGamingOptimizations -HardwareProfile $hw -Whitelist $whitelist | Out-Null
+                        Set-PowerLatencyOptimizations -Config $stateData.PowerLatencyConfig | Out-Null
+                        Set-MemoryCompressionGamingState -HardwareProfile $hw | Out-Null
 
                         # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
                         if ($hw.HddProfile) {
@@ -601,6 +604,13 @@ switch ($Action) {
         $activeBloatCount = 0
         foreach ($b in $blacklist) {
             $s = $svcMap[$b.Name]
+            if (-not $s) {
+                foreach ($cs in $allServices) {
+                    if ($cs.Name -like "$($b.Name)_*" -or $cs.Name -like "$($b.Name)[0-9]*") {
+                        $s = $cs; break
+                    }
+                }
+            }
             if ($s -and $s.Status -eq "Running") { $activeBloatCount++ }
         }
         Write-Host " Target Services: $($blacklist.Count) configured | $activeBloatCount currently running" -ForegroundColor White
@@ -911,7 +921,7 @@ switch ($Action) {
             $status = if ($acSvc) { "Installed ($($acSvc.Status))" } else { "Not installed" }
             Write-Host "  - Anti-Cheat '$ac': Protected = $isProt | Status: $status" -ForegroundColor Gray
         }
-        $dispSvc = @("AMD External Events Utility", "amdfendrsr", "AMDNoiseSuppression", "ProcessGovernor", "Apple Mobile Device Service")
+        $dispSvc = @("AMD External Events Utility", "DisplayEnhancementService", "AMDNoiseSuppression", "ProcessGovernor", "Apple Mobile Device Service")
         foreach ($ds in $dispSvc) {
             $isProt = ($whitelist -contains $ds)
             $s = Get-Service -Name $ds -ErrorAction SilentlyContinue
@@ -936,6 +946,13 @@ switch ($Action) {
 
         foreach ($item in $blacklist) {
             $svc = $svcMap[$item.Name]
+            if (-not $svc) {
+                foreach ($cs in $allServices) {
+                    if ($cs.Name -like "$($item.Name)_*" -or $cs.Name -like "$($item.Name)[0-9]*") {
+                        $svc = $cs; break
+                    }
+                }
+            }
             if ($svc) {
                 $installedBlacklist++
                 if ($svc.Status -eq "Running") { $runningBlacklist++ }

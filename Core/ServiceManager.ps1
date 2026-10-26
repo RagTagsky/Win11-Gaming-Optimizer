@@ -42,6 +42,12 @@ function Set-ServiceStateSafe {
         if (Test-Path $regPath) {
             try {
                 Set-ItemProperty -Path $regPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction Stop
+                if ($ServiceName -match '^(.+)_[0-9a-fA-F]+$') {
+                    $baseRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$($Matches[1])"
+                    if (Test-Path $baseRegPath) {
+                        Set-ItemProperty -Path $baseRegPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction SilentlyContinue
+                    }
+                }
                 Write-Host "  [+] Service '$ServiceName' configured via Direct Registry ($StartupType / Start=$startVal)." -ForegroundColor Green
                 $configured = $true
             }

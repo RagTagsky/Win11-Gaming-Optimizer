@@ -59,3 +59,5 @@ $RECYCLE.BIN/
 # ── PowerShell & Shell History ───────────────────────────────────────────────
 .history/
 *PowerShell_transcript.*
+PONYTAIL_AUDIT.md
+AUDIT_REPORT.md

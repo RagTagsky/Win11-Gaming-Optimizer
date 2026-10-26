@@ -437,12 +437,12 @@ Assert-Test ($null -eq $hardcodedChrome) "No hardcoded versioned Chrome updater 
 $baseChrome = $blContent.TargetServices | Where-Object { $_.Name -eq "GoogleUpdaterService" }
 Assert-Test ($null -ne $baseChrome) "Clean base 'GoogleUpdaterService' identifier present in services_blacklist.json"
 
-# 11.4 Startup Blacklist Cleanliness (SLOP-02)
+# 11.4 User Background Processes and Scripts Blacklist Coverage
 $stPath = Join-Path $repoRoot "Config\startup_apps.json"
 $stContent = Get-Content -Path $stPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$syntheticApps = @("TimeTracker", "ege-tracker-sync", "PulseSync", "GeminiAppLauncher")
-$foundSynthetic = @($stContent.BlacklistProcesses | Where-Object { $syntheticApps -contains $_ })
-Assert-Test ($foundSynthetic.Count -eq 0) "All synthetic AI placeholder processes removed from startup_apps.json (SLOP-02 resolved)"
+$userBloatApps = @("incy", "PulseSync", "GeminiAppLauncher", "updater", "pythonw", "wscript")
+$foundBloat = @($stContent.BlacklistProcesses | Where-Object { $userBloatApps -contains $_ })
+Assert-Test ($foundBloat.Count -eq $userBloatApps.Count) "All user background processes and scripts (incy, PulseSync, GeminiAppLauncher, updater, pythonw, wscript) are registered in startup_apps.json ($($foundBloat.Count)/$($userBloatApps.Count))"
 
 # 11.5 Adaptive Low-RAM Kernel DPC Guard (PERF-01)
 $cmdKernel = Get-Command Set-KernelDpcOptimizations
@@ -452,17 +452,33 @@ Assert-Test ($cmdKernel.Parameters.ContainsKey("IsLowRam")) "Set-KernelDpcOptimi
 $cmdInput = Get-Command Set-InputBufferOptimizations
 Assert-Test ($cmdInput.Parameters.ContainsKey("QueueSize")) "Set-InputBufferOptimizations exports -QueueSize parameter (default 32)"
 
-# 11.7 Bluetooth and Xbox Controller Whitelist Protection
+# 11.7 Custom Gaming Profile Whitelist & Blacklist Verification (/grill-me)
 $wlPath = Join-Path $repoRoot "Config\services_whitelist.json"
 $wlContent = Get-Content -Path $wlPath -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert-Test ($wlContent.ProtectedServices -contains "bthserv") "bthserv is present in services_whitelist.json"
-Assert-Test ($wlContent.ProtectedServices -contains "XboxGipSvc") "XboxGipSvc is present in services_whitelist.json"
+Assert-Test ($wlContent.ProtectedServices -contains "AMD External Events Utility") "AMD External Events Utility (FreeSync) is present in services_whitelist.json"
+Assert-Test ($wlContent.ProtectedServices -contains "Apple Mobile Device Service") "Apple Mobile Device Service (USB Tethering) is present in services_whitelist.json"
+Assert-Test ($wlContent.ProtectedServices -contains "ProcessGovernor") "ProcessGovernor (Process Lasso engine) is present in services_whitelist.json"
+Assert-Test ($wlContent.ProtectedServices -contains "camsvc") "camsvc (Microphone Capability Service) is protected in services_whitelist.json"
 
-$controllerBlacklisted = @($blContent.TargetServices | Where-Object { $_.Name -in @("bthserv", "BthAvctpSvc", "BTAGService", "XboxGipSvc", "BluetoothUserService") })
-Assert-Test ($controllerBlacklisted.Count -eq 0) "Bluetooth and Xbox controller services completely removed from services_blacklist.json"
+$allStrippedServices = @(
+    "Rockstar Service", "AMD Crash Defender Service", "midisrv", "WinHttpAutoProxySvc", "WpnUserService",
+    "bthserv", "BTAGService", "BthAvctpSvc", "BluetoothUserService", "WlanSvc", "LanmanServer",
+    "FACEIT", "FACEITService", "FrameServer", "FrameServerMonitor", "ZTHELPER", "ssh-agent",
+    "dot3svc", "TapiSrv", "ALG", "lltdsvc", "PerfHost", "KtmRm", "MSDTC", "swprv", "VSS",
+    "RasMan", "RasAuto", "SstpSvc", "SharedAccess", "defragsvc", "NcdAutoSetup", "wcncsvc",
+    "IpxlatCfgSvc", "NetTcpPortSharing", "LxpSvc", "NgcSvc", "AssignedAccessManagerSvc",
+    "XboxGipSvc", "wlidsvc", "EapHost", "NcaSvc", "WwanSvc", "CredentialEnrollmentManagerUserSvc"
+)
+$foundStrippedServices = @($blContent.TargetServices | Where-Object { $allStrippedServices -contains $_.Name })
+Assert-Test ($foundStrippedServices.Count -eq $allStrippedServices.Count) "All 44 user-selected bloat/unused services added to services_blacklist.json ($($foundStrippedServices.Count)/$($allStrippedServices.Count))"
+$stillWhitelisted = @($wlContent.ProtectedServices | Where-Object { $allStrippedServices -contains $_ })
+Assert-Test ($stillWhitelisted.Count -eq 0) "Stripped services completely removed from services_whitelist.json"
 
-# 11.8 Dead Configuration & AMD Overlay Whitelist Protection
-Assert-Test ($stContent.BlacklistProcesses -notcontains "amdow") "amdow overlay is strictly excluded from BlacklistProcesses"
+# 11.8 Dead Configuration & Process Blacklist Coverage
+$expectedBlacklistedProcs = @("SocialClubHelper", "Launcher", "RockstarService", "RadeonSoftware", "AMDRSSrcExt", "CPUMetricsServer", "amdow", "amdfendrsr", "happd", "logi_lamparray_service.AMD64", "MidiSrv", "SearchHost", "TextInputHost", "AggregatorHost", "ParkControl", "incy", "PulseSync", "GeminiAppLauncher", "updater", "pythonw", "wscript")
+$foundBlacklistedProcs = @($stContent.BlacklistProcesses | Where-Object { $expectedBlacklistedProcs -contains $_ })
+Assert-Test ($foundBlacklistedProcs.Count -eq $expectedBlacklistedProcs.Count) "All 21 user-selected background bloat processes present in startup_apps.json BlacklistProcesses ($($foundBlacklistedProcs.Count)/$($expectedBlacklistedProcs.Count))"
+Assert-Test ($stContent.BlacklistProcesses -notcontains "ProcessLasso") "ProcessLasso GUI is preserved per user preference"
 Assert-Test ($null -eq $stContent.StartupRegistryPaths) "Dead StartupRegistryPaths removed from startup_apps.json"
 Assert-Test ($null -eq $stContent.StartupFolders) "Dead StartupFolders removed from startup_apps.json"
 Assert-Test ($null -eq $stContent.TargetAppModelPackages) "Dead TargetAppModelPackages removed from startup_apps.json"
@@ -734,6 +750,65 @@ if ($existingActiveState) {
 # 13.7 End-to-End Status Execution Verification
 $statusOutput = & $ugmPath -Action Status -SkipUpdateCheck *>&1 | Out-String
 Assert-Test ($statusOutput -match 'ULTRA GAMING MODE STATUS') "UltraGamingMode.ps1 -Action Status executes cleanly without errors"
+
+# ── 14. Extended Gaming Engine, MMCSS, Power Latency & Memory Compression ────
+Write-Host "`n[Test Group 14] Extended Gaming Latency, MMCSS, Power & Memory Compression Engine:" -ForegroundColor Cyan
+
+# 14.1 Function Exports Verification
+Assert-Test (Get-Command Repair-LegacyOptimizerLeftovers -ErrorAction SilentlyContinue) "Repair-LegacyOptimizerLeftovers is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Get-ExtendedGamingTargets -ErrorAction SilentlyContinue) "Get-ExtendedGamingTargets is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Set-ExtendedGamingOptimizations -ErrorAction SilentlyContinue) "Set-ExtendedGamingOptimizations is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Get-PowerLatencyConfig -ErrorAction SilentlyContinue) "Get-PowerLatencyConfig is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Set-PowerLatencyOptimizations -ErrorAction SilentlyContinue) "Set-PowerLatencyOptimizations is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Restore-PowerLatencyOptimizations -ErrorAction SilentlyContinue) "Restore-PowerLatencyOptimizations is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Get-MemoryCompressionConfig -ErrorAction SilentlyContinue) "Get-MemoryCompressionConfig is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Set-MemoryCompressionGamingState -ErrorAction SilentlyContinue) "Set-MemoryCompressionGamingState is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Restore-MemoryCompressionConfig -ErrorAction SilentlyContinue) "Restore-MemoryCompressionConfig is exported from SystemOptimizer.ps1"
+Assert-Test (Get-Command Get-GamingScheduledTaskTargets -ErrorAction SilentlyContinue) "Get-GamingScheduledTaskTargets is exported from StateEngine.ps1"
+
+# 14.2 Extended Gaming Targets Integrity
+$extendedTargets = Get-ExtendedGamingTargets
+Assert-Test ($null -ne $extendedTargets -and $extendedTargets.Count -ge 20) "Get-ExtendedGamingTargets returns comprehensive target list ($($extendedTargets.Count) targets)"
+
+# MMCSS Games Priority contract (Priority = 6)
+$multimediaDef = (Get-Command Set-GamingMultimediaConfig).Definition
+$hasMmcssPriority6 = ($multimediaDef -match '\$gamesTaskPath' -and $multimediaDef -match '-Name\s*["'']Priority["'']\s*-Value\s*6')
+Assert-Test ($hasMmcssPriority6) "Set-GamingMultimediaConfig configures MMCSS Tasks\Games Priority to 6 (Medium) per Microsoft Multimedia Architecture"
+
+# Dual MPO Suppression contract (OverlayTestMode = 5 in Dwm, DisableOverlays = 1 in GraphicsDrivers)
+$mpoTestMode = $extendedTargets | Where-Object { $_.Path -match 'Windows\\Dwm' -and $_.Name -eq 'OverlayTestMode' }
+$mpoDisable = $extendedTargets | Where-Object { $_.Path -match 'GraphicsDrivers' -and $_.Name -eq 'DisableOverlays' }
+Assert-Test ($null -ne $mpoTestMode -and $mpoTestMode.Value -eq 5) "MPO suppression: OverlayTestMode is set to 5"
+Assert-Test ($null -ne $mpoDisable -and $mpoDisable.Value -eq 1) "MPO suppression: DisableOverlays is set to 1"
+
+# DXGI Flip Model VRR contract
+$vrrTarget = $extendedTargets | Where-Object { $_.Path -match 'DirectX\\UserGpuPreferences' -and $_.Name -eq 'DirectXUserGlobalSettings' }
+Assert-Test ($null -ne $vrrTarget -and $vrrTarget.Value -match 'VRROptimizeEnable=1') "DXGI Flip Model VRR optimization: VRROptimizeEnable is set to 1"
+
+# AMD Driver Class Power Latency Tweaks
+$aspm0Target = $extendedTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL0s' }
+$aspm1Target = $extendedTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL1' }
+Assert-Test ($null -ne $aspm0Target -and $aspm0Target.Value -eq 0) "AMD GPU driver class: EnableAspmL0s is set to 0 (prevents D3 PCIe drops)"
+Assert-Test ($null -ne $aspm1Target -and $aspm1Target.Value -eq 0) "AMD GPU driver class: EnableAspmL1 is set to 0"
+
+# IFEO Game Priority Class contract
+$cs2Ifeo = $extendedTargets | Where-Object { $_.Path -match 'cs2\.exe\\PerfOptions' -and $_.Name -eq 'CpuPriorityClass' }
+$deadlockIfeo = $extendedTargets | Where-Object { $_.Path -match 'project8\.exe\\PerfOptions' -and $_.Name -eq 'CpuPriorityClass' }
+Assert-Test ($null -ne $cs2Ifeo -and $cs2Ifeo.Value -eq 3) "IFEO PerfOptions: Counter-Strike 2 (cs2.exe) configured with CpuPriorityClass = 3 (High)"
+Assert-Test ($null -ne $deadlockIfeo -and $deadlockIfeo.Value -eq 3) "IFEO PerfOptions: Deadlock (project8.exe) configured with CpuPriorityClass = 3 (High)"
+
+# 14.3 Power Latency Config Snapshot & Contract
+$powerCfg = Get-PowerLatencyConfig
+Assert-Test ($null -ne $powerCfg -and $powerCfg.Settings.Count -ge 4) "Get-PowerLatencyConfig captures power latency settings ($($powerCfg.Settings.Count) items)"
+$usbSuspendItem = $powerCfg.Settings | Where-Object { $_.Setting -eq "48e6b7a6-50f5-4782-a5d4-53bb8f07e226" }
+Assert-Test ($null -ne $usbSuspendItem) "Get-PowerLatencyConfig targets USB Selective Suspend GUID"
+
+# 14.4 Scheduled Tasks Suppression List Contract
+$schedTasks = Get-GamingScheduledTaskTargets -HddProfile $true
+$hasConsolidator = @($schedTasks | Where-Object { $_.Name -eq "Consolidator" -and $_.Path -match "Customer Experience" }).Count -gt 0
+$hasDefrag = @($schedTasks | Where-Object { $_.Name -eq "ScheduledDefrag" }).Count -gt 0
+Assert-Test ($hasConsolidator) "Customer Experience Consolidator is targeted for gaming suppression"
+Assert-Test ($hasDefrag) "ScheduledDefrag is targeted for gaming suppression when HddProfile is true"
 
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta

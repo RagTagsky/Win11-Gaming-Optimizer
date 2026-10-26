@@ -110,6 +110,35 @@ if (-not (Get-Command Get-HardwareProfile -ErrorAction SilentlyContinue)) {
     . (Join-Path $PSScriptRoot "SystemOptimizer.ps1")
 }
 
+# Registry Run hives handled by snapshot / suppression / restore (Scope -> Path)
+$Script:RunHives = [ordered]@{
+    HKCU   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+    HKLM   = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
+    HKLM32 = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"
+}
+
+function Get-GamingScheduledTaskTargets {
+    [CmdletBinding()]
+    param([Parameter(Mandatory = $false)] [bool]$HddProfile = $false)
+
+    $list = @(
+        @{ Name = "Consolidator";             Path = "\Microsoft\Windows\Customer Experience Improvement Program\" },
+        @{ Name = "UsbCeip";                  Path = "\Microsoft\Windows\Customer Experience Improvement Program\" },
+        @{ Name = "MapsToastTask";            Path = "\Microsoft\Windows\Maps\" },
+        @{ Name = "ShowFeedbackToast";        Path = "\Microsoft\Windows\PerformanceTrace\" },
+        @{ Name = "WhesvcToast";              Path = "\Microsoft\Windows\PerformanceTrace\" },
+        @{ Name = "SustainabilityTelemetry";  Path = "\Microsoft\Windows\Sustainability\" },
+        @{ Name = "PowerGridForecastTask";    Path = "\Microsoft\Windows\Sustainability\" },
+        @{ Name = "AMDInstallLauncher";       Path = "\" },
+        @{ Name = "AMDRyzenMasterSDKTask";    Path = "\" },
+        @{ Name = "StartCN";                  Path = "\" },
+        @{ Name = "StartDVR";                 Path = "\" },
+        @{ Name = "ParkControl";              Path = "\" }
+    )
+    if ($HddProfile) { $list += @{ Name = "ScheduledDefrag"; Path = "\Microsoft\Windows\Defrag\" } }
+    return $list
+}
+
 function Stop-BlacklistedProcesses {
     [CmdletBinding()]
     param(
@@ -204,6 +233,9 @@ function New-SystemStateBackup {
         BcdeditConfig            = $null
         TcpStackConfig           = $null
         HagsConfig               = $null
+        ExtendedRegistryConfig   = @()
+        PowerLatencyConfig       = $null
+        MemoryCompressionConfig  = $null
     }
 
     # 1. Services Snapshot - shortcut: optimized for FPS & speed (batch CIM query instead of 173 individual calls)
@@ -219,6 +251,14 @@ function New-SystemStateBackup {
         if ($Whitelist -contains $sName) { continue }
 
         $wmiSvc = $serviceMap[$sName]
+        if (-not $wmiSvc) {
+            foreach ($cs in $cimServices) {
+                if ($cs.Name -like "$($sName)_*" -or $cs.Name -like "$($sName)[0-9]*") {
+                    $wmiSvc = $cs
+                    break
+                }
+            }
+        }
         if ($wmiSvc) {
             $servicesList.Add(@{
                 Name                = $sName
@@ -230,21 +270,18 @@ function New-SystemStateBackup {
     }
     $snapshot.Services = @($servicesList)
 
-    # 2. HKCU & HKLM Run Registry Items Snapshot
-    $runHives = @(
-        @{ Scope = "HKCU"; Path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" },
-        @{ Scope = "HKLM"; Path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" }
-    )
-    foreach ($hive in $runHives) {
-        if (Test-Path $hive.Path) {
-            $props = Get-ItemProperty -Path $hive.Path
+    # 2. HKCU / HKLM / HKLM-WOW64 Run Registry Items Snapshot
+    foreach ($scope in $Script:RunHives.Keys) {
+        $hivePath = $Script:RunHives[$scope]
+        if (Test-Path $hivePath) {
+            $props = Get-ItemProperty -Path $hivePath
             $props.PSObject.Properties | Where-Object {
                 $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
             } | ForEach-Object {
                 $snapshot.StartupItems += @{
                     Name  = $_.Name
                     Value = $_.Value
-                    Scope = $hive.Scope
+                    Scope = $scope
                 }
             }
         }
@@ -305,15 +342,8 @@ function New-SystemStateBackup {
         }
     }
 
-    # 5. Telemetry & Maintenance Scheduled Tasks Snapshot
-    $tasksToSnapshot = @(
-        @{ Name = "MapsToastTask"; Path = "\Microsoft\Windows\Maps\" },
-        @{ Name = "ShowFeedbackToast"; Path = "\Microsoft\Windows\Feedback\Siuf\" },
-        @{ Name = "SustainabilityTelemetry"; Path = "\Microsoft\Windows\Customer Experience Improvement Program\" }
-    )
-    if ($hwProfile.HddProfile) {
-        $tasksToSnapshot += @{ Name = "ScheduledDefrag"; Path = "\Microsoft\Windows\Defrag\" }
-    }
+    # 5. Telemetry, Maintenance & third-party autorun Scheduled Tasks Snapshot
+    $tasksToSnapshot = Get-GamingScheduledTaskTargets -HddProfile ([bool]$hwProfile.HddProfile)
     foreach ($tItem in $tasksToSnapshot) {
         $task = if ($tItem.Path) {
             Get-ScheduledTask -TaskPath $tItem.Path -TaskName $tItem.Name -ErrorAction SilentlyContinue
@@ -391,6 +421,11 @@ function New-SystemStateBackup {
     # 17. HAGS GPU Scheduling Snapshot
     $snapshot.HagsConfig = Get-HagsGpuSchedulingConfig
 
+    # 18-20. v2.8 extended registry tweaks, USB/NVMe/EPP power latency, memory compression
+    $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist))
+    $snapshot.PowerLatencyConfig      = Get-PowerLatencyConfig
+    $snapshot.MemoryCompressionConfig = Get-MemoryCompressionConfig
+
     # Write snapshot to disk atomically in pure UTF-8 without BOM
     Set-ActiveStateSafe -Path $Script:ActiveStateFile -Data $snapshot | Out-Null
     Write-Host "[+] Snapshot securely saved to '$Script:ActiveStateFile'." -ForegroundColor Green
@@ -408,12 +443,8 @@ function Disable-UserStateAggressive {
 
     $protectedStartup = $StartupConfig.ProtectedStartupNames
 
-    # 1. Suppress HKCU / HKLM Run items (preserving only protected items like ctfmon, AMDNoiseSuppression)
-    $runHives = @(
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
-        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
-    )
-    foreach ($regPath in $runHives) {
+    # 1. Suppress HKCU / HKLM / HKLM-WOW64 Run items (preserving only protected items like ctfmon, AMDNoiseSuppression)
+    foreach ($regPath in $Script:RunHives.Values) {
         if (-not (Test-Path $regPath)) { continue }
         $props = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
         if (-not $props) { continue }
@@ -496,16 +527,9 @@ function Disable-UserStateAggressive {
         Write-Host "  [+] Window animation latency disabled." -ForegroundColor Green
     }
 
-    # 5. Disable Telemetry & Scheduled Maintenance Tasks (suspend defrag on HDD)
+    # 5. Disable Telemetry, Maintenance & third-party autorun Scheduled Tasks (suspend defrag on HDD)
     $hw = Get-HardwareProfile
-    $tasksToDisable = @(
-        @{ Name = "MapsToastTask"; Path = "\Microsoft\Windows\Maps\" },
-        @{ Name = "ShowFeedbackToast"; Path = "\Microsoft\Windows\Feedback\Siuf\" },
-        @{ Name = "SustainabilityTelemetry"; Path = "\Microsoft\Windows\Customer Experience Improvement Program\" }
-    )
-    if ($hw.HddProfile) {
-        $tasksToDisable += @{ Name = "ScheduledDefrag"; Path = "\Microsoft\Windows\Defrag\" }
-    }
+    $tasksToDisable = Get-GamingScheduledTaskTargets -HddProfile ([bool]$hw.HddProfile)
     foreach ($t in $tasksToDisable) {
         $task = if ($t.Path) {
             Get-ScheduledTask -TaskPath $t.Path -TaskName $t.Name -ErrorAction SilentlyContinue
@@ -574,6 +598,22 @@ function Disable-UserStateAggressive {
     Set-InputBufferOptimizations -QueueSize 100 | Out-Null
     Set-BcdeditTimerOptimizations | Out-Null
     Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
+
+    # 11. Repair legacy optimizer leftovers (priority inversion on fontdrvhost/sihost/lsass/ctfmon, orphaned tasks)
+    Repair-LegacyOptimizerLeftovers | Out-Null
+
+    # 12. Apply v2.8 Extended Gaming Optimizations (FSE/VRR, MPO off, IFEO game boost, IRQ, USB HID, AMD ASPM, VBS, ETW, Maintenance)
+    $wlFile = Join-Path $Script:ProjectRoot "Config\services_whitelist.json"
+    $wlList = if (Test-Path -LiteralPath $wlFile) { @((Get-Content -LiteralPath $wlFile -Raw -Encoding UTF8 | ConvertFrom-Json).ProtectedServices) } else { @() }
+    Set-ExtendedGamingOptimizations -HardwareProfile $hw -Whitelist $wlList | Out-Null
+
+    # 13. Apply Power Latency Optimizations (USB selective suspend, USB3 LPM, NVMe APST, Ryzen EPP)
+    $activeState = Get-ActiveStateSafe
+    $pwrCfg = if ($activeState -and $activeState.PowerLatencyConfig) { $activeState.PowerLatencyConfig } else { Get-PowerLatencyConfig }
+    Set-PowerLatencyOptimizations -Config $pwrCfg | Out-Null
+
+    # 14. Apply Memory Compression Gaming State (Disable on >= 16 GB RAM)
+    Set-MemoryCompressionGamingState -HardwareProfile $hw | Out-Null
 
     Write-Host "[+] User startup environment completely stripped and optimized for gaming." -ForegroundColor Green
 }
@@ -795,6 +835,12 @@ function Restore-UserProfileState {
         Write-Host "  [+] GameDVR user registry parameters restored." -ForegroundColor Green
     }
 
+    # 7. Restore HKCU Extended Registry Tweaks (FSE/VRR/DXGI)
+    if ($StateData -and $StateData.ExtendedRegistryConfig) {
+        Restore-RegistryValueSnapshot -Snapshot $StateData.ExtendedRegistryConfig -Hive "HKCU" | Out-Null
+        Write-Host "  [+] User DirectX / FSE registry parameters restored." -ForegroundColor Green
+    }
+
     # Update active state file: mark UserRestored = $true atomically with latest state from disk
     $latest = Get-ActiveStateSafe
     if ($latest) {
@@ -862,7 +908,12 @@ function Restore-SystemState {
             if ($result) {
                 $restoredCount++
                 if ($svcEntry.OriginalStatus -eq "Running") {
-                    Start-Service -Name $sName -ErrorAction SilentlyContinue
+                    $targetSvcName = $sName
+                    if (-not (Get-Service -Name $targetSvcName -ErrorAction SilentlyContinue)) {
+                        $matching = @(Get-Service -Name "$($sName)*" -ErrorAction SilentlyContinue)
+                        if ($matching.Count -gt 0) { $targetSvcName = $matching[0].Name }
+                    }
+                    Start-Service -Name $targetSvcName -ErrorAction SilentlyContinue
                 }
             }
             else {
@@ -871,16 +922,14 @@ function Restore-SystemState {
         }
     }
 
-    # Restore HKLM Run items
+    # Restore HKLM & HKLM-WOW64 Run items
     if ($stateData -and $stateData.StartupItems) {
         Write-Host "`n[*] Restoring system registry startup items (HKLM)..." -ForegroundColor Cyan
         foreach ($item in $stateData.StartupItems) {
-            if ($item.Scope -eq "HKLM") {
-                $hive = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
-                if (Test-Path -LiteralPath $hive) {
-                    Set-ItemProperty -Path $hive -Name $item.Name -Value $item.Value -Force -ErrorAction SilentlyContinue
-                    Write-Host "  [+] Restored startup entry: $($item.Name) [HKLM]" -ForegroundColor Green
-                }
+            $hive = $Script:RunHives[$item.Scope]
+            if ($hive -and (Test-Path -LiteralPath $hive)) {
+                Set-ItemProperty -Path $hive -Name $item.Name -Value $item.Value -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored startup entry: $($item.Name) [$($item.Scope)]" -ForegroundColor Green
             }
         }
     }
@@ -1003,7 +1052,24 @@ function Restore-SystemState {
 
     # Restore HAGS GPU Scheduling
     if ($stateData -and ($null -ne $stateData.HagsConfig)) {
-        Restore-HagsGpuScheduling -HagsConfig $stateData.HagsConfig | Out-Null
+        $gpuVendor = if ($stateData.HardwareProfile) { $stateData.HardwareProfile.GpuVendor } else { "Unknown" }
+        Restore-HagsGpuScheduling -HagsConfig $stateData.HagsConfig -GpuVendor $gpuVendor | Out-Null
+    }
+
+    # Restore Extended Registry Settings (MPO, Maintenance, VBS, IFEO Game Boost, IRQ, USB HID, AMD ASPM, ETW)
+    if ($stateData -and $stateData.ExtendedRegistryConfig) {
+        Restore-RegistryValueSnapshot -Snapshot $stateData.ExtendedRegistryConfig -Hive "HKLM" | Out-Null
+        Write-Host "  [+] Extended system registry optimizations restored." -ForegroundColor Green
+    }
+
+    # Restore Power Latency Settings (USB selective suspend, USB3 LPM, NVMe APST, Ryzen EPP)
+    if ($stateData -and $stateData.PowerLatencyConfig) {
+        Restore-PowerLatencyOptimizations -Config $stateData.PowerLatencyConfig | Out-Null
+    }
+
+    # Restore Memory Compression
+    if ($stateData -and $stateData.MemoryCompressionConfig) {
+        Restore-MemoryCompressionConfig -Config $stateData.MemoryCompressionConfig | Out-Null
     }
 
     # Guarantee Microphone, Steam, LanmanServer, and peripheral services are unblocked

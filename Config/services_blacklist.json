@@ -672,6 +672,182 @@
                            {
                                "Name":  "IsolationSession",
                                "Reason":  "Isolation Session Service"
+                           },
+                           {
+                               "Name":  "Rockstar Service",
+                               "Reason":  "Rockstar Game Library Service (~631 MB background launcher helper stack)"
+                           },
+                           {
+                               "Name":  "AMD Crash Defender Service",
+                               "Reason":  "AMD Crash Defender Telemetry and Dump Service"
+                           },
+                           {
+                               "Name":  "midisrv",
+                               "Reason":  "Windows MIDI Synthesizer Service (30+ MB RAM overhead)"
+                           },
+                           {
+                               "Name":  "WinHttpAutoProxySvc",
+                               "Reason":  "WinHTTP Web Proxy Auto-Discovery Service (WPAD)"
+                           },
+                           {
+                               "Name":  "WpnUserService",
+                               "Reason":  "Windows Push Notifications User Service"
+                           },
+                           {
+                               "Name":  "bthserv",
+                               "Reason":  "Bluetooth Support Service"
+                           },
+                           {
+                               "Name":  "BTAGService",
+                               "Reason":  "Bluetooth Audio Gateway Service"
+                           },
+                           {
+                               "Name":  "BthAvctpSvc",
+                               "Reason":  "Bluetooth Audio Video Control Transport Protocol Service"
+                           },
+                           {
+                               "Name":  "BluetoothUserService",
+                               "Reason":  "Bluetooth User Support Service"
+                           },
+                           {
+                               "Name":  "WlanSvc",
+                               "Reason":  "WLAN AutoConfig Wi-Fi Service (Wired/USB Tethering used)"
+                           },
+                           {
+                               "Name":  "LanmanServer",
+                               "Reason":  "SMB Server File and Print Sharing Service"
+                           },
+                           {
+                               "Name":  "FACEIT",
+                               "Reason":  "FACEIT Anti-Cheat Service"
+                           },
+                           {
+                               "Name":  "FACEITService",
+                               "Reason":  "FACEIT Client Service"
+                           },
+                           {
+                               "Name":  "FrameServer",
+                               "Reason":  "Windows Camera Frame Server"
+                           },
+                           {
+                               "Name":  "FrameServerMonitor",
+                               "Reason":  "Windows Camera Frame Server Monitor"
+                           },
+                           {
+                               "Name":  "ZTHELPER",
+                               "Reason":  "ZeroTier One Helper Service"
+                           },
+                           {
+                               "Name":  "ssh-agent",
+                               "Reason":  "OpenSSH Authentication Agent"
+                           },
+                           {
+                               "Name":  "dot3svc",
+                               "Reason":  "Wired AutoConfig 802.1X Service"
+                           },
+                           {
+                               "Name":  "TapiSrv",
+                               "Reason":  "Telephony Service"
+                           },
+                           {
+                               "Name":  "ALG",
+                               "Reason":  "Application Layer Gateway Service"
+                           },
+                           {
+                               "Name":  "lltdsvc",
+                               "Reason":  "Link-Layer Topology Discovery Mapper"
+                           },
+                           {
+                               "Name":  "PerfHost",
+                               "Reason":  "Performance Counter DLL Host"
+                           },
+                           {
+                               "Name":  "KtmRm",
+                               "Reason":  "KtmRm for Transaction Coordinator"
+                           },
+                           {
+                               "Name":  "MSDTC",
+                               "Reason":  "Distributed Transaction Coordinator"
+                           },
+                           {
+                               "Name":  "swprv",
+                               "Reason":  "Microsoft Software Shadow Copy Provider"
+                           },
+                           {
+                               "Name":  "VSS",
+                               "Reason":  "Volume Shadow Copy Service"
+                           },
+                           {
+                               "Name":  "RasMan",
+                               "Reason":  "Remote Access Connection Manager"
+                           },
+                           {
+                               "Name":  "RasAuto",
+                               "Reason":  "Remote Access Auto Connection Manager"
+                           },
+                           {
+                               "Name":  "SstpSvc",
+                               "Reason":  "Secure Socket Tunneling Protocol Service"
+                           },
+                           {
+                               "Name":  "SharedAccess",
+                               "Reason":  "Internet Connection Sharing (ICS)"
+                           },
+                           {
+                               "Name":  "defragsvc",
+                               "Reason":  "Optimize Drives Defrag Service"
+                           },
+                           {
+                               "Name":  "NcdAutoSetup",
+                               "Reason":  "Network Connected Devices Auto-Setup"
+                           },
+                           {
+                               "Name":  "wcncsvc",
+                               "Reason":  "Windows Connect Now Service"
+                           },
+                           {
+                               "Name":  "IpxlatCfgSvc",
+                               "Reason":  "IP Translation Configuration Service"
+                           },
+                           {
+                               "Name":  "NetTcpPortSharing",
+                               "Reason":  "Net.Tcp Port Sharing Service"
+                           },
+                           {
+                               "Name":  "LxpSvc",
+                               "Reason":  "Language Experience Service"
+                           },
+                           {
+                               "Name":  "NgcSvc",
+                               "Reason":  "NGC Windows Hello Credential Service"
+                           },
+                           {
+                               "Name":  "AssignedAccessManagerSvc",
+                               "Reason":  "Assigned Access Manager Service"
+                           },
+                           {
+                               "Name":  "XboxGipSvc",
+                               "Reason":  "Xbox Accessory Management Service"
+                           },
+                           {
+                               "Name":  "wlidsvc",
+                               "Reason":  "Microsoft Account Sign-in Assistant"
+                           },
+                           {
+                               "Name":  "EapHost",
+                               "Reason":  "Extensible Authentication Protocol Host"
+                           },
+                           {
+                               "Name":  "NcaSvc",
+                               "Reason":  "Network Connectivity Assistant"
+                           },
+                           {
+                               "Name":  "WwanSvc",
+                               "Reason":  "WWAN AutoConfig Cellular Service"
+                           },
+                           {
+                               "Name":  "CredentialEnrollmentManagerUserSvc",
+                               "Reason":  "Credential Enrollment Manager User Service"
                            }
                        ]
 }
