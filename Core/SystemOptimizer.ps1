@@ -817,7 +817,14 @@ function Set-DeepGameDVROptimizations {
     $configStorePath = "HKCU:\System\GameConfigStore"
     if (-not (Test-Path $configStorePath)) { New-Item -Path $configStorePath -Force | Out-Null }
     Set-ItemProperty -Path $configStorePath -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-    Remove-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
+    # Classic exclusive-fullscreen behaviour (present in every release up to v2.7). Switch: Config\tuning.json
+    $tuningFile = Join-Path $PSScriptRoot "..\Config\tuning.json"
+    $tuning = if (Test-Path -LiteralPath $tuningFile) { Get-Content -LiteralPath $tuningFile -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
+    if ($null -eq $tuning -or $tuning.DisableFullscreenOptimizations -ne $false) {
+        Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value 2 -Type DWord -Force -ErrorAction SilentlyContinue
+    } else {
+        Remove-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
+    }
 
     $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
     if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
@@ -3066,7 +3073,7 @@ function Repair-LegacyOptimizerLeftovers {
     try {
         $gcs = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("System\GameConfigStore", $true)
         if ($gcs) {
-            foreach ($vName in @("GameDVR_FSEBehavior", "GameDVR_HonorUserFSEBehaviorMode", "GameDVR_DXGIHonorFSEWindowsCompatible", "GameDVR_EFSEFeatureFlags", "GameDVR_FSEBehaviorMode")) {
+            foreach ($vName in @("GameDVR_FSEBehavior", "GameDVR_HonorUserFSEBehaviorMode", "GameDVR_DXGIHonorFSEWindowsCompatible", "GameDVR_EFSEFeatureFlags")) {
                 if ($null -ne $gcs.GetValue($vName)) {
                     $gcs.DeleteValue($vName, $false)
                     Write-Host "  [x] Removed harmful FSE override key: HKCU:\System\GameConfigStore\$vName" -ForegroundColor Yellow

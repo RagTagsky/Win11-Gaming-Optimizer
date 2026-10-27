@@ -782,8 +782,10 @@ Assert-Test ($cleansMpo) "Repair-DisplayPipeline clears harmful MPO & FSE overri
 
 # Anti-Flicker Regression Guard in Set-DeepGameDVROptimizations & Repair-LegacyOptimizerLeftovers
 $gameDvrDef = (Get-Command Set-DeepGameDVROptimizations).Definition
-$neverForcesFse = ($gameDvrDef -notmatch 'GameDVR_FSEBehaviorMode["'']\s*-Value\s*2')
-Assert-Test ($neverForcesFse) "Set-DeepGameDVROptimizations never forces GameDVR_FSEBehaviorMode = 2 (preserves Windows 11 Flip Model & VRR)"
+$fseGated = ($gameDvrDef -match 'DisableFullscreenOptimizations' -and $gameDvrDef -match 'GameDVR_FSEBehaviorMode')
+Assert-Test ($fseGated) "Set-DeepGameDVROptimizations applies classic FSE (GameDVR_FSEBehaviorMode = 2) only behind the Config\tuning.json switch"
+$tuningCfg = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\Config\tuning.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+Assert-Test ($tuningCfg.DisableFullscreenOptimizations -is [bool]) "Config\tuning.json declares boolean DisableFullscreenOptimizations switch"
 
 $legacyRepairDef = (Get-Command Repair-LegacyOptimizerLeftovers).Definition
 $cleansMpoInLegacy = ($legacyRepairDef -match 'OverlayTestMode' -and $legacyRepairDef -match 'DisableOverlays' -and $legacyRepairDef -match 'RDR2\.exe')
