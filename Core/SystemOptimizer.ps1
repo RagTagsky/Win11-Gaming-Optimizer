@@ -908,9 +908,33 @@ function Repair-CoreServices {
     if (Test-Path $searchUserPath) {
         Set-ItemProperty -Path $searchUserPath -Name "BingSearchEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         Set-ItemProperty -Path $searchUserPath -Name "CortanaConsent" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $searchUserPath -Name "SearchboxTaskbarMode" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        # SearchboxTaskbarMode = 0: Hide taskbar search icon (user accesses search via Win key keyboard typing)
+        Set-ItemProperty -Path $searchUserPath -Name "SearchboxTaskbarMode" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $searchUserPath -Name "BackgroundAppGlobalToggle" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
     }
-    # Restart SearchHost if running to reload indexer RPC binding
+    $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+    if (Test-Path $advPath) {
+        Set-ItemProperty -Path $advPath -Name "SearchboxTaskbarMode" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+    }
+    $bgAppsPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications"
+    if (Test-Path $bgAppsPath) {
+        Set-ItemProperty -Path $bgAppsPath -Name "GlobalUserDisabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+    }
+    # Unblock background IPC for modern search apps if blocked by AppPrivacy Group Policy
+    $appPrivPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy"
+    if (Test-Path $appPrivPath) {
+        $curVal = (Get-ItemProperty -Path $appPrivPath -Name "LetAppsRunInBackground" -ErrorAction SilentlyContinue).LetAppsRunInBackground
+        if ($curVal -eq 2) {
+            Remove-ItemProperty -Path $appPrivPath -Name "LetAppsRunInBackground" -ErrorAction SilentlyContinue
+        }
+    }
+    # Ensure Text Services Framework (ctfmon) is active for Win Key typing redirection
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "ctfmon" -Value "C:\Windows\System32\ctfmon.exe" -Type String -Force -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "ctfmon" -Value "C:\Windows\System32\ctfmon.exe" -Type String -Force -ErrorAction SilentlyContinue
+    if (-not (Get-Process -Name "ctfmon" -ErrorAction SilentlyContinue)) {
+        Start-Process "C:\Windows\System32\ctfmon.exe" -ErrorAction SilentlyContinue
+    }
+    # Restart SearchHost if running to reload indexer RPC binding and apply input routing
     Stop-Process -Name "SearchHost", "StartMenuExperienceHost" -Force -ErrorAction SilentlyContinue
 
     # 4. Core System Services (SysMain, Spooler)
@@ -1031,7 +1055,9 @@ function Set-WindowsWidgetsAndSearchGamingState {
         if (Test-Path $searchPath) {
             Set-ItemProperty -Path $searchPath -Name "BingSearchEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
             Set-ItemProperty -Path $searchPath -Name "CortanaConsent" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $searchPath -Name "SearchboxTaskbarMode" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            # Keep SearchboxTaskbarMode = 0: Hide taskbar search icon (user accesses search via Win key keyboard typing)
+            Set-ItemProperty -Path $searchPath -Name "SearchboxTaskbarMode" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $searchPath -Name "BackgroundAppGlobalToggle" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         }
         $expPol = "HKCU:\Software\Policies\Microsoft\Windows\Explorer"
         if (Test-Path $expPol) {
@@ -1043,7 +1069,7 @@ function Set-WindowsWidgetsAndSearchGamingState {
         }
         $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         if (Test-Path $advPath) {
-            Set-ItemProperty -Path $advPath -Name "TaskbarDa" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $advPath -Name "SearchboxTaskbarMode" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
         }
         $dshPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
         if (Test-Path $dshPath) {

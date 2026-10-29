@@ -4,6 +4,7 @@ version = "3.0.0"
 description = "Ultra Gaming Mode v3.0 Native Desktop Application"
 authors = ["Ultra Gaming Mode Team"]
 edition = "2021"
+build = "build.rs"
 
 [lib]
 name = "ultra_gaming_mode_lib"

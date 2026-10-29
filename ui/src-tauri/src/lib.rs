@@ -98,12 +98,14 @@ async fn execute_mode_action(action: String, _profile: String) -> Result<ActionR
         .current_dir(&root)
         .args([
             "-NoProfile",
+            "-NonInteractive",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
             script_path.to_str().unwrap_or("UltraGamingMode.ps1"),
             "-Action",
             &action,
+            "-SkipUpdateCheck",
         ])
         .output()
         .map_err(|e| format!("Не удалось запустить PowerShell: {}", e))?;
@@ -119,12 +121,20 @@ async fn execute_mode_action(action: String, _profile: String) -> Result<ActionR
             stdout
         }
     } else {
+        let mut err = String::new();
         if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
+            err.push_str(&stderr);
+        }
+        if !stdout.is_empty() {
+            if !err.is_empty() {
+                err.push_str("\n");
+            }
+            err.push_str(&stdout);
+        }
+        if err.is_empty() {
             format!("Процесс завершился с кодом ошибки {:?}", output.status.code())
+        } else {
+            err
         }
     };
 
@@ -137,9 +147,18 @@ async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, S
     let script_path = root.join("UltraGamingMode.ps1");
 
     let (args, script_to_run): (Vec<String>, PathBuf) = match repair_type.as_str() {
-        "display" => (vec!["-Action".into(), "RepairDisplay".into()], script_path),
-        "services" => (vec!["-Action".into(), "RepairServices".into()], script_path),
-        "shaders" => (vec!["-Action".into(), "FlushShaderCache".into()], script_path),
+        "display" => (
+            vec!["-Action".into(), "RepairDisplay".into(), "-SkipUpdateCheck".into()],
+            script_path,
+        ),
+        "services" => (
+            vec!["-Action".into(), "RepairServices".into(), "-SkipUpdateCheck".into()],
+            script_path,
+        ),
+        "shaders" => (
+            vec!["-Action".into(), "FlushShaderCache".into(), "-SkipUpdateCheck".into()],
+            script_path,
+        ),
         "verify" => (vec![], root.join("Tests").join("Verify-UniversalEngine.ps1")),
         _ => return Err("Неизвестный тип ремонта".into()),
     };
@@ -148,6 +167,7 @@ async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, S
     cmd.current_dir(&root)
         .args([
             "-NoProfile",
+            "-NonInteractive",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
@@ -182,10 +202,20 @@ async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, S
                 .join(" | ")
         }
     } else {
+        let mut err = String::new();
         if !stderr.is_empty() {
-            stderr
+            err.push_str(&stderr);
+        }
+        if !stdout.is_empty() {
+            if !err.is_empty() {
+                err.push_str("\n");
+            }
+            err.push_str(&stdout);
+        }
+        if err.is_empty() {
+            format!("Ошибка выполнения (код {:?})", output.status.code())
         } else {
-            stdout
+            err
         }
     };
 

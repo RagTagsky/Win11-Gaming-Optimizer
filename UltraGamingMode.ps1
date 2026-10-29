@@ -683,7 +683,8 @@ switch ($Action) {
     }
 
     "FlushShaderCache" {
-        Clear-GpuShaderCache | Out-Null
+        $freedMb = Clear-GpuShaderCache
+        Write-Host "`n[SUCCESS] Shader cache purge complete ($freedMb MB freed)." -ForegroundColor Green
     }
 
     "ToggleVBS" {
