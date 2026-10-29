@@ -57,8 +57,9 @@ Temporarily strips background bloat, halts real-time disk scanning, auto-detects
   - [18. Hardware-Accelerated GPU Scheduling (HAGS)](#18-hardware-accelerated-gpu-scheduling-hags)
   - [19. Competitive Frame Pacing, Ring-0 IFEO & IRQ De-Contention (v3.0)](#19-competitive-frame-pacing-ring-0-ifeo--irq-de-contention-v28)
 - [Quick Start Guide](#quick-start-guide)
-  - [Option A: Interactive Menu (Recommended)](#option-a-interactive-menu-recommended)
-  - [Option B: PowerShell CLI Usage](#option-b-powershell-cli-usage)
+  - [Option A: Native Desktop GUI App (v3.0 - Recommended)](#option-a-native-desktop-gui-app-v30---recommended)
+  - [Option B: Interactive TUI Menu](#option-b-interactive-tui-menu)
+  - [Option C: PowerShell CLI Usage](#option-c-powershell-cli-usage)
 - [Menu Overview & CLI Reference](#menu-overview-cli-reference)
 - [Directory Structure](#directory-structure)
 - [System Requirements & Compatibility](#system-requirements-compatibility)
@@ -361,7 +362,25 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ## 🚀 Quick Start Guide
 
-### Option A: Interactive Menu (Recommended)
+### Option A: Native Desktop GUI App (v3.0 - Recommended)
+
+Ultra Gaming Mode v3.0 introduces a modern Windows 11 Native Desktop application built on **Tauri v2 (Rust)** and **Svelte 5** with strict dark graphite Fluent Mica aesthetic:
+
+1. Launch **`UltraGamingMode.exe`** from the root folder (it requests Administrator UAC elevation automatically).
+2. **Dashboard Tab**:
+   - Displays real-time hardware status, CPU/GPU architecture, active display refresh rate, and low-latency metrics.
+   - Select your optimization profile (`Competitive`, `Extreme`, or `Balanced`).
+   - Click **"Активировать Ultra Gaming Mode"** (Arms state and optimizes user startup environment).
+   - Restart your PC to enter full stripped mode.
+3. **Emergency Repair Tab (One-Click Fixes)**:
+   - **Display & MPO Repair**: Restores DWM compositor layers, eliminates Deadlock/RDR2 display flicker, and recalibrates FreeSync 180Hz.
+   - **Services & Windows Search Repair**: Unblocks Windows Search (`Win` key typing redirection), Text Services Framework (`ctfmon`), Print Spooler, and microphone permissions.
+   - **GPU Shader Cache Purge**: Cleans corrupt DirectX / Vulkan / AMD driver caches with live megabyte counter.
+   - **Engine Verification**: Runs 260 unit tests in one click.
+
+---
+
+### Option B: Interactive TUI Menu
 
 1. Clone or download this repository:
    ```cmd
@@ -409,7 +428,7 @@ Choosing **`[5]`** opens the Advanced Tools & Emergency Repairs submenu:
 
 ---
 
-### Option B: PowerShell CLI Usage
+### Option C: PowerShell CLI Usage
 
 Open PowerShell as Administrator:
 
@@ -481,11 +500,16 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
+├── UltraGamingMode.exe              # Native Windows 11 Mica GUI application (v3.0, Tauri v2)
 ├── UltraGamingMode.bat              # Elevated interactive TUI launcher
 ├── UltraGamingMode.ps1              # Core PowerShell CLI controller & orchestrator
 ├── README.md                        # English documentation & benchmarks
 ├── README.ru.md                     # Russian documentation & benchmarks
 ├── LICENSE                          # MIT License
+│
+├── ui/                              # Native Desktop frontend & Tauri Rust backend
+│   ├── src/                         # Svelte 5 (Runes) + Tailwind CSS + Lucide Icons
+│   └── src-tauri/                   # Rust application core with native window-vibrancy Mica
 │
 ├── Config/
 │   ├── services_blacklist.json      # 212 target non-essential Windows services
@@ -498,7 +522,7 @@ Win11-Gaming-Optimizer/
 │   └── SystemOptimizer.ps1          # Power, MMCSS, Network, Memory, and Defender tuning
 │
 ├── Tests/
-│   └── Verify-UniversalEngine.ps1   # 246 automated unit tests & hardware simulation suite
+│   └── Verify-UniversalEngine.ps1   # 260 automated unit tests & hardware simulation suite
 │
 └── Backups/
     └── active_state.json            # Dynamic active session snapshot (auto-generated)
