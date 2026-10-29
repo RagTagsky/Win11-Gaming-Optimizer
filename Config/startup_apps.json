@@ -39,8 +39,6 @@
     "srvstub",
     "logi_lamparray_service.AMD64",
     "MidiSrv",
-    "SearchHost",
-    "TextInputHost",
     "AggregatorHost",
     "ParkControl",
     "incy",

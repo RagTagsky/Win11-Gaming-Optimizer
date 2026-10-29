@@ -245,6 +245,26 @@ function New-SystemStateBackup {
         $serviceMap[$cs.Name] = $cs
     }
 
+    $defaultServiceModes = @{
+        "WSearch"          = "Automatic"
+        "SysMain"          = "Automatic"
+        "Spooler"          = "Automatic"
+        "defragsvc"        = "Manual"
+        "cbdhsvc"          = "Automatic"
+        "XboxGipSvc"       = "Manual"
+        "swprv"            = "Manual"
+        "VSS"              = "Manual"
+        "NgcSvc"           = "Manual"
+        "NgcCtnrSvc"       = "Manual"
+        "CDPSvc"           = "Automatic"
+        "LanmanServer"     = "Automatic"
+        "bthserv"          = "Manual"
+        "BthHFSrv"         = "Manual"
+        "Audiosrv"         = "Automatic"
+        "AudioEndpointBldr"= "Automatic"
+        "camsvc"           = "Manual"
+    }
+
     $servicesList = [System.Collections.Generic.List[object]]::new()
     foreach ($item in $BlacklistConfig) {
         $sName = $item.Name
@@ -260,10 +280,15 @@ function New-SystemStateBackup {
             }
         }
         if ($wmiSvc) {
+            $startMode = $wmiSvc.StartMode
+            # Standard Windows services should never be snapshotted as Disabled if taken while gaming mode was active
+            if ($startMode -eq "Disabled" -and $defaultServiceModes.ContainsKey($sName)) {
+                $startMode = $defaultServiceModes[$sName]
+            }
             $servicesList.Add(@{
                 Name                = $sName
                 DisplayName         = $wmiSvc.DisplayName
-                OriginalStartupType = $wmiSvc.StartMode
+                OriginalStartupType = $startMode
                 OriginalStatus      = $wmiSvc.State
             })
         }
@@ -851,6 +876,11 @@ function Restore-UserProfileState {
         Write-Host "  [+] User DirectX / FSE registry parameters restored." -ForegroundColor Green
     }
 
+    # 8. Restore Windows Search & Widgets in User Profile (must run in user context)
+    Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
+    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
+    Write-Host "  [+] User Windows Search, Start menu and Widgets restored." -ForegroundColor Green
+
     # Update active state file: mark UserRestored = $true atomically with latest state from disk
     $latest = Get-ActiveStateSafe
     if ($latest) {
@@ -901,6 +931,28 @@ function Restore-SystemState {
     $restoredCount = 0
     $failedCount = 0
 
+    # Standard Windows core services that must never be left Disabled upon restore,
+    # even if a previously poisoned active_state.json captured them as Disabled:
+    $defaultServiceModes = @{
+        "WSearch"          = "Automatic"
+        "SysMain"          = "Automatic"
+        "Spooler"          = "Automatic"
+        "defragsvc"        = "Manual"
+        "cbdhsvc"          = "Automatic"
+        "XboxGipSvc"       = "Manual"
+        "swprv"            = "Manual"
+        "VSS"              = "Manual"
+        "NgcSvc"           = "Manual"
+        "NgcCtnrSvc"       = "Manual"
+        "CDPSvc"           = "Automatic"
+        "LanmanServer"     = "Automatic"
+        "bthserv"          = "Manual"
+        "BthHFSrv"         = "Manual"
+        "Audiosrv"         = "Automatic"
+        "AudioEndpointBldr"= "Automatic"
+        "camsvc"           = "Manual"
+    }
+
     if ($stateData -and $stateData.Services) {
         foreach ($svcEntry in $stateData.Services) {
             $sName = $svcEntry.Name
@@ -912,12 +964,18 @@ function Restore-SystemState {
                 default     { "Manual" }
             }
 
+            # Safety fallback: standard Windows services must never remain Disabled due to a poisoned snapshot
+            if ($origMode -eq "Disabled" -and $defaultServiceModes.ContainsKey($sName)) {
+                $origMode = $defaultServiceModes[$sName]
+            }
+
             Write-Host "  [*] Restoring '$sName' -> $origMode..." -ForegroundColor Gray
             $result = Set-ServiceStateSafe -ServiceName $sName -StartupType $origMode -Whitelist $Whitelist -IsRestoring
 
             if ($result) {
                 $restoredCount++
-                if ($svcEntry.OriginalStatus -eq "Running") {
+                $shouldStart = ($svcEntry.OriginalStatus -eq "Running") -or ($origMode -eq "Automatic" -and $defaultServiceModes.ContainsKey($sName))
+                if ($shouldStart) {
                     $targetSvcName = $sName
                     if (-not (Get-Service -Name $targetSvcName -ErrorAction SilentlyContinue)) {
                         $matching = @(Get-Service -Name "$($sName)*" -ErrorAction SilentlyContinue)

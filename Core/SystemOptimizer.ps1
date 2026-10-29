@@ -495,23 +495,42 @@ function Test-IsSameBootSession {
         [string]$SavedBootTime
     )
 
+    # 1. Primary authority: Hardware/kernel boot timestamp (LastBootUpTime / TickCount64)
+    # When SysMain is disabled in gaming mode, registry PrefetchParameters\BootId does NOT increment
+    # on the first reboot, causing false-positive same-boot detections if BootId is checked alone.
+    if (-not [string]::IsNullOrWhiteSpace($SavedBootTime)) {
+        $currentBootTime = Get-ResilientBootTimestamp
+        if ($currentBootTime) {
+            try {
+                $dtSaved = [DateTime]::Parse($SavedBootTime)
+                $dtCurrent = [DateTime]::Parse($currentBootTime)
+                # If boot time differs by 30 seconds or more, this is conclusively a new boot session.
+                if ([Math]::Abs(($dtCurrent - $dtSaved).TotalSeconds) -ge 30) {
+                    return $false
+                }
+                # Within the same 30s window: if BootId is also present and changed, consider it new
+                if ($null -ne $SavedBootId) {
+                    $currentBootId = Get-SystemBootId
+                    if ($null -ne $currentBootId -and $currentBootId -ne $SavedBootId) {
+                        return $false
+                    }
+                }
+                return $true
+            } catch {
+                if ($currentBootTime -ne $SavedBootTime) {
+                    return $false
+                }
+            }
+        }
+    }
+
+    # 2. Secondary fallback: BootId alone if no SavedBootTime was recorded
     $currentBootId = Get-SystemBootId
     if ($null -ne $currentBootId -and $null -ne $SavedBootId) {
         return ($currentBootId -eq $SavedBootId)
     }
 
-    if ([string]::IsNullOrWhiteSpace($SavedBootTime)) {
-        return $false
-    }
-
-    $currentBootTime = Get-ResilientBootTimestamp
-    try {
-        $dtSaved = [DateTime]::Parse($SavedBootTime)
-        $dtCurrent = [DateTime]::Parse($currentBootTime)
-        return ([Math]::Abs(($dtCurrent - $dtSaved).TotalSeconds) -lt 120)
-    } catch {
-        return ($currentBootTime -eq $SavedBootTime)
-    }
+    return $false
 }
 
 function Test-IsLowRamSystem {
@@ -867,7 +886,44 @@ function Repair-CoreServices {
         Write-Host "  [+] Service 'Steam Client Service' set to Manual for clean first-launch." -ForegroundColor Green
     }
 
-    Write-Host "`n[SUCCESS] Microphone and Steam services are fully unblocked!" -ForegroundColor Green
+    # 3. Windows Search (WSearch) & Start Menu Search
+    Write-Host "[*] Configuring Windows Search & Start Menu Search Engine..." -ForegroundColor Cyan
+    Set-Service -Name "WSearch" -StartupType Automatic -ErrorAction SilentlyContinue
+    $wsearch = Get-Service -Name "WSearch" -ErrorAction SilentlyContinue
+    if ($wsearch) {
+        if ($wsearch.Status -ne "Running") {
+            Start-Service -Name "WSearch" -ErrorAction SilentlyContinue
+            Write-Host "  [+] Service 'WSearch' started successfully (Start menu search unblocked)." -ForegroundColor Green
+        } else {
+            Write-Host "  [+] Service 'WSearch' is already running." -ForegroundColor Green
+        }
+    }
+    # Clear any blocking policies in HKLM and HKCU
+    foreach ($p in @("HKCU:\Software\Policies\Microsoft\Windows\Explorer", "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer")) {
+        if (Test-Path $p) {
+            Remove-ItemProperty -Path $p -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue
+        }
+    }
+    $searchUserPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search"
+    if (Test-Path $searchUserPath) {
+        Set-ItemProperty -Path $searchUserPath -Name "BingSearchEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $searchUserPath -Name "CortanaConsent" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $searchUserPath -Name "SearchboxTaskbarMode" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+    }
+    # Restart SearchHost if running to reload indexer RPC binding
+    Stop-Process -Name "SearchHost", "StartMenuExperienceHost" -Force -ErrorAction SilentlyContinue
+
+    # 4. Core System Services (SysMain, Spooler)
+    Write-Host "[*] Configuring Prefetcher and Print Spooler..." -ForegroundColor Cyan
+    Set-Service -Name "SysMain" -StartupType Automatic -ErrorAction SilentlyContinue
+    $sysmain = Get-Service -Name "SysMain" -ErrorAction SilentlyContinue
+    if ($sysmain -and $sysmain.Status -ne "Running") { Start-Service -Name "SysMain" -ErrorAction SilentlyContinue }
+
+    Set-Service -Name "Spooler" -StartupType Automatic -ErrorAction SilentlyContinue
+    $spooler = Get-Service -Name "Spooler" -ErrorAction SilentlyContinue
+    if ($spooler -and $spooler.Status -ne "Running") { Start-Service -Name "Spooler" -ErrorAction SilentlyContinue }
+
+    Write-Host "`n[SUCCESS] Microphone, Windows Search, Steam and Core System services are fully unblocked!" -ForegroundColor Green
     return $true
 }
 
@@ -974,10 +1030,16 @@ function Set-WindowsWidgetsAndSearchGamingState {
         $searchPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search"
         if (Test-Path $searchPath) {
             Set-ItemProperty -Path $searchPath -Name "BingSearchEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $searchPath -Name "CortanaConsent" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $searchPath -Name "SearchboxTaskbarMode" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         }
         $expPol = "HKCU:\Software\Policies\Microsoft\Windows\Explorer"
         if (Test-Path $expPol) {
             Remove-ItemProperty -Path $expPol -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue
+        }
+        $expPolMachine = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer"
+        if (Test-Path $expPolMachine) {
+            Remove-ItemProperty -Path $expPolMachine -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue
         }
         $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         if (Test-Path $advPath) {
@@ -987,7 +1049,11 @@ function Set-WindowsWidgetsAndSearchGamingState {
         if (Test-Path $dshPath) {
             Remove-ItemProperty -Path $dshPath -Name "AllowNewsAndInterests" -ErrorAction SilentlyContinue
         }
-        Write-Host "  [+] Widgets and Start search settings restored." -ForegroundColor Green
+        # Ensure WSearch service is restored to Automatic and started
+        Set-Service -Name "WSearch" -StartupType Automatic -ErrorAction SilentlyContinue
+        $ws = Get-Service -Name "WSearch" -ErrorAction SilentlyContinue
+        if ($ws -and $ws.Status -ne "Running") { Start-Service -Name "WSearch" -ErrorAction SilentlyContinue }
+        Write-Host "  [+] Widgets, Windows Search and Start search settings restored." -ForegroundColor Green
     }
     return $true
 }

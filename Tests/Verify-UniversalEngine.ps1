@@ -475,9 +475,11 @@ $stillWhitelisted = @($wlContent.ProtectedServices | Where-Object { $allStripped
 Assert-Test ($stillWhitelisted.Count -eq 0) "Stripped services completely removed from services_whitelist.json"
 
 # 11.8 Dead Configuration & Process Blacklist Coverage
-$expectedBlacklistedProcs = @("SocialClubHelper", "Launcher", "RockstarService", "RadeonSoftware", "AMDRSSrcExt", "CPUMetricsServer", "amdow", "amdfendrsr", "happd", "logi_lamparray_service.AMD64", "MidiSrv", "SearchHost", "TextInputHost", "AggregatorHost", "ParkControl", "incy", "PulseSync", "GeminiAppLauncher", "updater", "pythonw", "wscript")
+# SearchHost and TextInputHost are explicitly preserved to protect Windows 11 Start menu search
+$expectedBlacklistedProcs = @("SocialClubHelper", "Launcher", "RockstarService", "RadeonSoftware", "AMDRSSrcExt", "CPUMetricsServer", "amdow", "amdfendrsr", "happd", "logi_lamparray_service.AMD64", "MidiSrv", "AggregatorHost", "ParkControl", "incy", "PulseSync", "GeminiAppLauncher", "updater", "pythonw", "wscript")
 $foundBlacklistedProcs = @($stContent.BlacklistProcesses | Where-Object { $expectedBlacklistedProcs -contains $_ })
-Assert-Test ($foundBlacklistedProcs.Count -eq $expectedBlacklistedProcs.Count) "All 21 user-selected background bloat processes present in startup_apps.json BlacklistProcesses ($($foundBlacklistedProcs.Count)/$($expectedBlacklistedProcs.Count))"
+Assert-Test ($foundBlacklistedProcs.Count -eq $expectedBlacklistedProcs.Count) "All 19 user-selected background bloat processes present in startup_apps.json BlacklistProcesses ($($foundBlacklistedProcs.Count)/$($expectedBlacklistedProcs.Count))"
+Assert-Test ($stContent.BlacklistProcesses -notcontains "SearchHost" -and $stContent.BlacklistProcesses -notcontains "TextInputHost") "Start menu search hosts (SearchHost, TextInputHost) are excluded from BlacklistProcesses"
 Assert-Test ($stContent.BlacklistProcesses -notcontains "ProcessLasso") "ProcessLasso GUI is preserved per user preference"
 Assert-Test ($null -eq $stContent.StartupRegistryPaths) "Dead StartupRegistryPaths removed from startup_apps.json"
 Assert-Test ($null -eq $stContent.StartupFolders) "Dead StartupFolders removed from startup_apps.json"
@@ -817,6 +819,22 @@ $hasConsolidator = @($schedTasks | Where-Object { $_.Name -eq "Consolidator" -an
 $hasDefrag = @($schedTasks | Where-Object { $_.Name -eq "ScheduledDefrag" }).Count -gt 0
 Assert-Test ($hasConsolidator) "Customer Experience Consolidator is targeted for gaming suppression"
 Assert-Test ($hasDefrag) "ScheduledDefrag is targeted for gaming suppression when HddProfile is true"
+
+# 14.5 Boot Session Watchdog & Resilience Tests
+$tOld = (Get-Date).AddMinutes(-10).ToString("o")
+$sameBootResult = Test-IsSameBootSession -SavedBootId (Get-SystemBootId) -SavedBootTime $tOld
+Assert-Test ($sameBootResult -eq $false) "Test-IsSameBootSession returns false when boot timestamp is older than 30s, even if BootId matches (prevents 2-reboot delay)"
+
+# 14.6 Windows Search & Shell Host Protection Contract
+$startupCfgFile = Join-Path $PSScriptRoot "..\Config\startup_apps.json"
+$startupCfgJson = Get-Content -LiteralPath $startupCfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
+$searchBlacklisted = ($startupCfgJson.BlacklistProcesses -contains "SearchHost" -or $startupCfgJson.BlacklistProcesses -contains "TextInputHost")
+Assert-Test ($searchBlacklisted -eq $false) "Config\startup_apps.json does not blacklist SearchHost or TextInputHost (preserves Start menu search)"
+
+# 14.7 Core Services & Windows Search Repair Contract in Repair-CoreServices
+$repairDef = (Get-Command Repair-CoreServices).Definition
+$repairsSearch = ($repairDef -match 'WSearch' -and $repairDef -match 'SysMain' -and $repairDef -match 'DisableSearchBoxSuggestions')
+Assert-Test ($repairsSearch) "Repair-CoreServices restores WSearch, SysMain, Spooler and removes search blocking policies"
 
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta

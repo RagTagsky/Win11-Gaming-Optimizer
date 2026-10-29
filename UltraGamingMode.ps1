@@ -485,9 +485,11 @@ switch ($Action) {
         if ($effectiveScope -eq "All" -or $bothRestored) {
             # Both scopes complete: full cleanup of all tasks and RunOnce entries
             Unregister-BootTasks
+            Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
         } elseif ($effectiveScope -eq "User") {
             # User scope complete: remove user RunOnce
+            Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
             if ($isAdmin -and $latestState -and $latestState.SystemRestored) {
                 Unregister-BootTasks
