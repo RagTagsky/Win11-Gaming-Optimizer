@@ -61,3 +61,10 @@ $RECYCLE.BIN/
 *PowerShell_transcript.*
 PONYTAIL_AUDIT.md
 AUDIT_REPORT.md
+
+# ── Build Artifacts & Binaries (v3.0) ────────────────────────────────────────
+*.exe
+ui/node_modules/
+ui/dist/
+ui/src-tauri/target/
+
