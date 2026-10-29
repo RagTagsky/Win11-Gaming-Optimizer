@@ -27,22 +27,32 @@ pub struct SystemStatus {
     pub active_since: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct RepairResult {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ActionResult {
     pub success: bool,
     pub message: String,
 }
 
 fn get_workspace_root() -> PathBuf {
-    // Current working directory or parent of src-tauri
-    if let Ok(cwd) = std::env::current_dir() {
-        if cwd.join("UltraGamingMode.ps1").exists() {
-            return cwd;
-        }
-        if let Some(parent) = cwd.parent() {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
             if parent.join("UltraGamingMode.ps1").exists() {
                 return parent.to_path_buf();
             }
+            if let Some(grandparent) = parent.parent() {
+                if let Some(great) = grandparent.parent() {
+                    if let Some(root) = great.parent() {
+                        if root.join("UltraGamingMode.ps1").exists() {
+                            return root.to_path_buf();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        if cwd.join("UltraGamingMode.ps1").exists() {
+            return cwd;
         }
     }
     PathBuf::from(r"C:\Users\ragtagsky\Documents\Workstation\E.Mode")
@@ -80,7 +90,7 @@ fn get_system_status() -> Result<SystemStatus, String> {
 }
 
 #[tauri::command]
-async fn execute_mode_action(action: String, _profile: String) -> Result<bool, String> {
+async fn execute_mode_action(action: String, _profile: String) -> Result<ActionResult, String> {
     let root = get_workspace_root();
     let script_path = root.join("UltraGamingMode.ps1");
 
@@ -96,40 +106,90 @@ async fn execute_mode_action(action: String, _profile: String) -> Result<bool, S
             &action,
         ])
         .output()
-        .map_err(|e| format!("Failed to spawn PowerShell: {}", e))?;
+        .map_err(|e| format!("Не удалось запустить PowerShell: {}", e))?;
 
-    Ok(output.status.success())
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let success = output.status.success();
+
+    let message = if success {
+        if stdout.is_empty() {
+            format!("Действие [{}] выполнено успешно.", action)
+        } else {
+            stdout
+        }
+    } else {
+        if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("Процесс завершился с кодом ошибки {:?}", output.status.code())
+        }
+    };
+
+    Ok(ActionResult { success, message })
 }
 
 #[tauri::command]
-async fn execute_emergency_repair(repair_type: String) -> Result<RepairResult, String> {
+async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, String> {
     let root = get_workspace_root();
+    let script_path = root.join("UltraGamingMode.ps1");
 
-    let cmd = match repair_type.as_str() {
-        "display" => "Import-Module ./Modules/SystemOptimizer.ps1; Repair-DisplayPipeline; Stop-Process -Name dwm -Force -ErrorAction SilentlyContinue",
-        "services" => "Import-Module ./Modules/SystemOptimizer.ps1; Repair-CoreServices",
-        "shaders" => "Import-Module ./Modules/SystemOptimizer.ps1; Clear-AmdShaderCache",
-        "verify" => "powershell.exe -ExecutionPolicy Bypass -NoProfile -File ./Tests/Verify-UniversalEngine.ps1",
+    let (args, script_to_run): (Vec<String>, PathBuf) = match repair_type.as_str() {
+        "display" => (vec!["-Action".into(), "RepairDisplay".into()], script_path),
+        "services" => (vec!["-Action".into(), "RepairServices".into()], script_path),
+        "shaders" => (vec!["-Action".into(), "FlushShaderCache".into()], script_path),
+        "verify" => (vec![], root.join("Tests").join("Verify-UniversalEngine.ps1")),
         _ => return Err("Неизвестный тип ремонта".into()),
     };
 
-    let output = Command::new("powershell.exe")
-        .current_dir(&root)
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd])
+    let mut cmd = Command::new("powershell.exe");
+    cmd.current_dir(&root)
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            script_to_run.to_str().unwrap_or(""),
+        ]);
+
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd
         .output()
-        .map_err(|e| format!("Failed to execute command: {}", e))?;
+        .map_err(|e| format!("Не удалось выполнить команду: {}", e))?;
 
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     let success = output.status.success();
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
-    Ok(RepairResult {
-        success,
-        message: if success {
+    let message = if success {
+        if stdout.is_empty() {
             format!("Операция [{}] выполнена успешно.", repair_type)
         } else {
-            format!("Операция завершилась с кодом ошибки: {}", stdout)
-        },
-    })
+            stdout
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" | ")
+        }
+    } else {
+        if !stderr.is_empty() {
+            stderr
+        } else {
+            stdout
+        }
+    };
+
+    Ok(ActionResult { success, message })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -141,7 +201,6 @@ pub fn run() {
 
             #[cfg(target_os = "windows")]
             {
-                // Apply Windows 11 Mica backdrop effect
                 let _ = apply_mica(&window, Some(true));
             }
 

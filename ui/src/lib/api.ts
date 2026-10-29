@@ -1,7 +1,11 @@
-import type { HardwareInfo, LogEntry, ModeState, OptimizationProfile, ServiceItem, TweakSetting } from './types';
+import type { HardwareInfo, ModeState, OptimizationProfile } from './types';
 
-// Check if running inside Tauri webview
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+export interface ActionResult {
+  success: boolean;
+  message: string;
+}
 
 export async function fetchSystemStatus(): Promise<{
   mode: ModeState;
@@ -14,11 +18,10 @@ export async function fetchSystemStatus(): Promise<{
       const { invoke } = await import('@tauri-apps/api/core');
       return await invoke('get_system_status');
     } catch (e) {
-      console.warn('Tauri invoke failed, falling back to mock:', e);
+      console.warn('Tauri invoke get_system_status failed:', e);
     }
   }
 
-  // Fallback mock representation for dev preview
   return {
     mode: 'Normal',
     profile: 'competitive',
@@ -33,22 +36,20 @@ export async function fetchSystemStatus(): Promise<{
   };
 }
 
-export async function executeModeAction(action: 'Enable' | 'Restore', profile: OptimizationProfile = 'competitive'): Promise<boolean> {
+export async function executeModeAction(action: 'Enable' | 'Restore', profile: OptimizationProfile = 'competitive'): Promise<ActionResult> {
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     return await invoke('execute_mode_action', { action, profile });
   }
 
-  console.log(`[DevMode] Action executed: ${action} with profile: ${profile}`);
-  return true;
+  return { success: true, message: `[DevMode] Действие [${action}] сымитировано.` };
 }
 
-export async function executeEmergencyRepair(repairType: 'display' | 'services' | 'shaders' | 'verify'): Promise<{ success: boolean; message: string }> {
+export async function executeEmergencyRepair(repairType: 'display' | 'services' | 'shaders' | 'verify'): Promise<ActionResult> {
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     return await invoke('execute_emergency_repair', { repairType });
   }
 
-  console.log(`[DevMode] Emergency repair executed: ${repairType}`);
-  return { success: true, message: `Ремонт [${repairType}] успешно выполнен.` };
+  return { success: true, message: `[DevMode] Ремонт [${repairType}] сымитирован.` };
 }

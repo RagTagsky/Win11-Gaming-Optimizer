@@ -81,22 +81,19 @@
     addLog('info', `Запуск действия [${nextAction}] с профилем [${profile}]...`);
 
     try {
-      const success = await executeModeAction(nextAction, profile);
-      if (success) {
+      const res = await executeModeAction(nextAction, profile);
+      if (res.success) {
         mode = nextAction === 'Enable' ? 'Gaming' : 'Normal';
-        addLog(
-          'success',
-          nextAction === 'Enable'
-            ? 'Ultra Gaming Mode успешно активирован! Фоновый шум подавлен.'
-            : 'Штатный режим Windows полностью восстановлен (WSearch, Spooler, SysMain активны).'
-        );
+        addLog('success', res.message || (nextAction === 'Enable'
+          ? 'Ultra Gaming Mode успешно активирован! Фоновый шум подавлен.'
+          : 'Штатный режим Windows полностью восстановлен.'));
       } else {
         mode = 'Normal';
-        addLog('error', `Действие [${nextAction}] завершилось с ошибкой.`);
+        addLog('error', `Действие [${nextAction}] завершилось ошибкой: ${res.message}`);
       }
     } catch (e: any) {
       mode = 'Normal';
-      addLog('error', `Сбой выполнения: ${e?.message || e}`);
+      addLog('error', `Сбой вызова: ${e?.message || e}`);
     }
   }
 
