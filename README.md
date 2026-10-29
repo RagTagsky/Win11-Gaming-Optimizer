@@ -1,14 +1,14 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode for Windows 11
-### *Competitive Low-Latency & Universal Hardware Edition (v2.8)*
+### *Competitive Low-Latency & Universal Hardware Edition (v3.0)*
 
 **A zero-risk, high-precision latency, frame pacing, and universal hardware optimizer for Windows 10/11.**  
 Temporarily strips background bloat, halts real-time disk scanning, auto-detects and adapts to ANY PC hardware (Intel/AMD CPUs, NVIDIA/AMD/Intel GPUs, 8GB Low-RAM Guard, HDD 100% Thrash Protection), activates GPU MSI Mode, bypasses kernel DPC queuing, cuts peripheral input buffer latency, synchronizes system timers, activates HAGS, and guarantees 100% automated failsafe recovery on next boot.
 
 [![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
 [![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Version](https://img.shields.io/badge/Version-v2.8--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
+[![Version](https://img.shields.io/badge/Version-v3.0--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-success.svg?style=for-the-badge)](LICENSE)
 [![Zero-Risk Watchdog](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#the-zero-risk-watchdog-guarantee)
 [![Universal Hardware](https://img.shields.io/badge/Hardware-Intel%20%2B%20AMD%20%7C%20NVIDIA-ED1C24?style=for-the-badge)](#universal-hardware-auto-detection-engine)
@@ -55,7 +55,7 @@ Temporarily strips background bloat, halts real-time disk scanning, auto-detects
   - [16. BCDedit System Timer Synchronization](#16-bcdedit-system-timer-synchronization)
   - [17. High-Performance TCP Gaming Stack](#17-high-performance-tcp-gaming-stack)
   - [18. Hardware-Accelerated GPU Scheduling (HAGS)](#18-hardware-accelerated-gpu-scheduling-hags)
-  - [19. Competitive Frame Pacing, Ring-0 IFEO & IRQ De-Contention (v2.8)](#19-competitive-frame-pacing-ring-0-ifeo--irq-de-contention-v28)
+  - [19. Competitive Frame Pacing, Ring-0 IFEO & IRQ De-Contention (v3.0)](#19-competitive-frame-pacing-ring-0-ifeo--irq-de-contention-v28)
 - [Quick Start Guide](#quick-start-guide)
   - [Option A: Interactive Menu (Recommended)](#option-a-interactive-menu-recommended)
   - [Option B: PowerShell CLI Usage](#option-b-powershell-cli-usage)
@@ -75,7 +75,7 @@ Modern Windows 11 is packed with hundreds of background processes, telemetry col
 - **Micro-Freezes on Frame Boundaries:** Secondary threads stealing CPU cycles from game render loops.
 - **1% Low FPS Drops:** Jitter in frame pacing even when average FPS remains high.
 
-**Ultra Gaming Mode v2.8** solves this without permanently mangling your operating system. Unlike brittle "debloater" scripts that break Windows Update, brick microphone privacy permissions, or cause black screens on DisplayPort monitors, Ultra Gaming Mode utilizes a **non-destructive, snapshot-driven lifecycle**:
+**Ultra Gaming Mode v3.0** solves this without permanently mangling your operating system. Unlike brittle "debloater" scripts that break Windows Update, brick microphone privacy permissions, or cause black screens on DisplayPort monitors, Ultra Gaming Mode utilizes a **non-destructive, snapshot-driven lifecycle**:
 
 ```
 [Normal Windows] ──(Arm Mode)──> [System Snapshot] ──(Reboot)──> [Stripped Ultra Gaming Mode]
@@ -88,7 +88,7 @@ Modern Windows 11 is packed with hundreds of background processes, telemetry col
 
 ## 🛠️ Universal Hardware Auto-Detection Engine
 
-Ultra Gaming Mode v2.8 features an autonomous hardware discovery engine (`Get-HardwareProfile`) that inspects your machine's physical architecture during diagnostic checks, arming, and boot stages. Rather than applying blunt, one-size-fits-all tweaks, the optimizer detects exact CPU topologies, GPU bus interfaces, physical memory limits, and storage media types to dynamically tailor kernel and driver optimizations to your exact PC.
+Ultra Gaming Mode v3.0 features an autonomous hardware discovery engine (`Get-HardwareProfile`) that inspects your machine's physical architecture during diagnostic checks, arming, and boot stages. Rather than applying blunt, one-size-fits-all tweaks, the optimizer detects exact CPU topologies, GPU bus interfaces, physical memory limits, and storage media types to dynamically tailor kernel and driver optimizations to your exact PC.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -169,7 +169,7 @@ On budget hardware like the **Intel Core i3-2100 + RX 570 + 8GB RAM + 1TB HDD** 
 | **Client Rendering (P95 Render Spikes)** | **4.80 ms** | **3.40 ms** | **-1.40 ms (-29.2%)** | **29.2% smoother draw call pipeline and frame submission** |
 | **Present_RenderDevice (P95 Input Queue)** | **2.48 ms** | **2.19 ms** | **-0.29 ms (-11.7%)** | **11.7% lower display swapchain input latency** |
 | **Server Simulation (P95 Local Tickrate)** | **3.25 ms** | **3.11 ms** | **-0.14 ms (-4.3%)** | More consistent local sub-tick prediction processing |
-| **Server Game (P95 Game Logic)** | **2.84 ms** | **2.70 ms** | **-0.14 ms (-4.9%)** | Cleaner execution thread for physics and entity collision |
+| **Server Game (P95 Game Logic)** | **3.04 ms** | **2.70 ms** | **-0.14 ms (-4.9%)** | Cleaner execution thread for physics and entity collision |
 | **Panorama UI (P99 UI Latency)** | **0.46 ms** | **0.14 ms** | **-0.32 ms (3.3x faster / -69.5%)** | Instant HUD updates, zero radar/killfeed lag |
 
 ### Key Takeaways
@@ -348,7 +348,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 - Automatically disabled on AMD RDNA2/Polaris cards (`HwSchMode = 1`) to eliminate known Source 2 engine (CS2) frame-pacing micro-stutter.
 - Fully snapshot-backed and restored cleanly in `active_state.json`.
 
-### 19. Competitive Frame Pacing, Ring-0 IFEO & IRQ De-Contention (v2.8)
+### 19. Competitive Frame Pacing, Ring-0 IFEO & IRQ De-Contention (v3.0)
 - **Third-Party Optimizer Leftovers Remediation:** Scans for and fixes priority inversion caused by uninstalled third-party optimizers (e.g., `GameModeX`). Restores system-critical services (`fontdrvhost.exe`, `sihost.exe`, `lsass.exe`, `ctfmon.exe`) stuck at Idle (4) or Low I/O priorities back to Normal, eliminating text rendering freezes and frame pacing spikes.
 - **Ring-0 IFEO Execution Options for 16 Esports Games:** Pre-registers kernel image execution options (`CpuPriorityClass = 3` [High], `IoPriority = 3` [High], `PagePriority = 5`) for games such as *Counter-Strike 2* (`cs2.exe`), *Deadlock* (`project8.exe`), *Dota 2* (`dota2.exe`), *Fortnite*, *Apex Legends*, *Rust*, *Cyberpunk 2077*, and *Elden Ring*. Because the Windows NT kernel assigns these at process initialization, priorities take effect before user-mode anti-cheat systems strip process handle access rights.
 - **Storage Controller IRQ De-Contention:** Reconfigures NVMe and SATA storage controllers from High (`DevicePriority = 3`) to Normal (`DevicePriority = 2`), reserving High IRQ Priority exclusively for the primary gaming GPU (`DevicePriority = 3`). Prevents heavy disk I/O interrupts from preempting frame rendering on the PCIe bus.
@@ -375,7 +375,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ```
 ============================================================
-           ULTRA GAMING MODE CONTROLLER  v2.8
+           ULTRA GAMING MODE CONTROLLER  v3.0
             Universal Hardware Adaptive Suite
 ============================================================
 
