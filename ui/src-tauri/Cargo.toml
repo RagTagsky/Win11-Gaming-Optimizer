@@ -6,6 +6,10 @@ authors = ["Ultra Gaming Mode Team"]
 edition = "2021"
 build = "build.rs"
 
+[[bin]]
+name = "UltraGamingMode"
+path = "src/main.rs"
+
 [lib]
 name = "ultra_gaming_mode_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

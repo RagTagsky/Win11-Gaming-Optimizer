@@ -50,7 +50,7 @@
       id: '3',
       timestamp: new Date().toLocaleTimeString(),
       level: 'info',
-      message: 'Службы Windows Search и Spooler проверены: снимок консистентен.',
+      message: 'Службы Windows Search, «Ножницы» (PrtSc) и Spooler проверены: защищены.',
     },
   ]);
 
@@ -103,20 +103,21 @@
   }
 </script>
 
-<div class="min-h-screen bg-[#0e0f12] text-zinc-200 flex flex-col font-sans select-none antialiased">
+<div class="min-h-screen bg-[#0c0d10] text-zinc-200 flex flex-col font-sans select-none antialiased border border-[#1f2027]">
   <!-- Windows 11 Native Mica TitleBar -->
   <TitleBar title="Ultra Gaming Mode v3.0 • Fluent On-Demand" />
 
   <!-- Main Container -->
   <main class="flex-1 max-w-5xl w-full mx-auto px-6 pt-14 pb-4 flex flex-col space-y-4">
     <!-- Navigation Tabs Header -->
-    <header class="flex items-center justify-between border-b border-[#1f2027] pb-3">
+    <header class="flex items-center justify-between border-b border-[#1b1c22] pb-3">
       <!-- Tabs -->
-      <nav class="flex items-center gap-1.5 p-1 bg-[#121317] rounded-lg border border-[#202127]">
+      <nav class="flex items-center gap-1.5 p-1 bg-[#121317] rounded-xl border border-[#1e2026]">
         <button
+          type="button"
           onclick={() => (currentTab = 'dashboard')}
-          class="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all {currentTab === 'dashboard'
-            ? 'bg-[#1e2027] text-white shadow-sm'
+          class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer {currentTab === 'dashboard'
+            ? 'bg-[#1e2028] text-white shadow-sm ring-1 ring-[#2c2f3b]'
             : 'text-zinc-400 hover:text-zinc-200'}"
         >
           <LayoutDashboard class="w-3.5 h-3.5 {currentTab === 'dashboard' ? 'text-emerald-400' : 'text-zinc-500'}" />
@@ -124,9 +125,10 @@
         </button>
 
         <button
+          type="button"
           onclick={() => (currentTab = 'services')}
-          class="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all {currentTab === 'services'
-            ? 'bg-[#1e2027] text-white shadow-sm'
+          class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer {currentTab === 'services'
+            ? 'bg-[#1e2028] text-white shadow-sm ring-1 ring-[#2c2f3b]'
             : 'text-zinc-400 hover:text-zinc-200'}"
         >
           <Layers class="w-3.5 h-3.5 {currentTab === 'services' ? 'text-emerald-400' : 'text-zinc-500'}" />
@@ -134,9 +136,10 @@
         </button>
 
         <button
+          type="button"
           onclick={() => (currentTab = 'tweaks')}
-          class="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all {currentTab === 'tweaks'
-            ? 'bg-[#1e2027] text-white shadow-sm'
+          class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer {currentTab === 'tweaks'
+            ? 'bg-[#1e2028] text-white shadow-sm ring-1 ring-[#2c2f3b]'
             : 'text-zinc-400 hover:text-zinc-200'}"
         >
           <Sliders class="w-3.5 h-3.5 {currentTab === 'tweaks' ? 'text-emerald-400' : 'text-zinc-500'}" />
@@ -144,9 +147,10 @@
         </button>
 
         <button
+          type="button"
           onclick={() => (currentTab = 'repair')}
-          class="flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all {currentTab === 'repair'
-            ? 'bg-[#1e2027] text-white shadow-sm'
+          class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer {currentTab === 'repair'
+            ? 'bg-[#1e2028] text-white shadow-sm ring-1 ring-[#2c2f3b]'
             : 'text-zinc-400 hover:text-zinc-200'}"
         >
           <Wrench class="w-3.5 h-3.5 {currentTab === 'repair' ? 'text-amber-400' : 'text-zinc-500'}" />
@@ -156,10 +160,10 @@
 
       <!-- Top Right Status Badge -->
       <div class="flex items-center gap-3">
-        <div class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#131418] border border-[#22242b] text-[11px]">
-          <span class="w-1.5 h-1.5 rounded-full {mode === 'Gaming' ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}"></span>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#121317] border border-[#1e2026] text-xs">
+          <span class="w-2 h-2 rounded-full {mode === 'Gaming' ? 'bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/50' : 'bg-zinc-500'}"></span>
           <span class="text-zinc-400">Статус:</span>
-          <span class="font-medium text-zinc-200">{mode === 'Gaming' ? 'Игровой' : 'Штатный'}</span>
+          <span class="font-bold text-zinc-100">{mode === 'Gaming' ? 'Игровой' : 'Штатный'}</span>
         </div>
       </div>
     </header>
@@ -193,7 +197,7 @@
       />
       <div class="flex items-center justify-between text-[11px] text-zinc-500 pt-2 px-1">
         <span>Ultra Gaming Mode v3.0 • Pure On-Demand Engine</span>
-        <span>Тестов пройдено: 260 / 260 (0 ошибок)</span>
+        <span class="font-mono">Тестов пройдено: 260 / 260 (0 ошибок)</span>
       </div>
     </footer>
   </main>

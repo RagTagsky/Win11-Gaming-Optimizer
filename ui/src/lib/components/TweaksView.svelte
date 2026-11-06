@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Check, Sliders, Sparkles } from '@lucide/svelte';
+  import { Sliders } from '@lucide/svelte';
   import type { TweakSetting } from '../types';
 
   let tweaks: TweakSetting[] = $state([
@@ -38,7 +38,7 @@
     {
       id: 'mmcss',
       title: 'Отключение сетевого троттлинга MMCSS',
-      description: 'Снятие ограничения сетевых пакетов Windows при загрузке процессора для стабильного пинга.',
+      description: 'Снятие ограничения сетевых пакетов Windows при нагрузке на процессор для минимального пинга.',
       category: 'network',
       enabled: true,
       recommended: true,
@@ -46,7 +46,7 @@
     {
       id: 'gpu_priority',
       title: 'Высокий системный приоритет GPU Scheduler',
-      description: 'Приоритет потоков графического драйвера над системными фоновыми задачами.',
+      description: 'Приоритет потоков графического драйвера над системными фоновыми процессами.',
       category: 'latency',
       enabled: true,
       recommended: true,
@@ -62,13 +62,13 @@
 </script>
 
 <div class="space-y-4">
-  <div class="flex items-center justify-between p-3.5 rounded-lg bg-[#14151a] border border-[#22242c]">
-    <div class="flex items-center gap-2.5">
-      <div class="w-8 h-8 rounded-md bg-[#1e2027] flex items-center justify-center border border-[#2c2e38]">
+  <div class="flex items-center justify-between p-4 rounded-xl bg-[#131419] border border-[#20222a]">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
         <Sliders class="w-4 h-4 text-zinc-300" />
       </div>
       <div>
-        <p class="text-xs font-semibold text-zinc-200">Тонкие системные твики задержки и рендеринга</p>
+        <p class="text-xs font-bold text-zinc-100">Тонкие системные твики задержки и рендеринга</p>
         <p class="text-[11px] text-zinc-400">
           Все параметры подобраны с учетом архитектуры Zen 3 (Ryzen 5600X) и RDNA 2 (Radeon RX 6600).
         </p>
@@ -79,15 +79,15 @@
   <div class="grid grid-cols-2 gap-3">
     {#each tweaks as tweak}
       <div
-        class="p-4 rounded-lg border transition-all flex flex-col justify-between {tweak.enabled
-          ? 'bg-[#15161c] border-[#292b36]'
-          : 'bg-[#121317] border-[#1d1e24] opacity-75'}"
+        class="p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between {tweak.enabled
+          ? 'bg-[#14151b] border-[#252834]'
+          : 'bg-[#111215] border-[#1c1d22] opacity-75'}"
       >
         <div class="space-y-1.5 mb-3">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-semibold text-zinc-200">{tweak.title}</span>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-zinc-200">{tweak.title}</span>
             {#if tweak.recommended}
-              <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-900/50">
+              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-800/60 shrink-0">
                 REC
               </span>
             {/if}
@@ -95,9 +95,10 @@
           <p class="text-[11px] text-zinc-400 leading-relaxed">{tweak.description}</p>
         </div>
 
-        <div class="flex items-center justify-between pt-2 border-t border-[#1e2027]">
-          <span class="text-[11px] text-zinc-500 capitalize">{tweak.category}</span>
+        <div class="flex items-center justify-between pt-2.5 border-t border-[#1e2027]">
+          <span class="text-[11px] font-mono uppercase text-zinc-500">{tweak.category}</span>
           <button
+            type="button"
             onclick={() => toggleTweak(tweak.id)}
             class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none {tweak.enabled
               ? 'bg-emerald-600'

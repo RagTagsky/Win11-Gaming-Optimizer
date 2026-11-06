@@ -273,6 +273,32 @@ async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, S
     Ok(ActionResult { success, message })
 }
 
+#[tauri::command]
+fn close_window(window: tauri::WebviewWindow) {
+    let _ = window.close();
+}
+
+#[tauri::command]
+fn minimize_window(window: tauri::WebviewWindow) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+fn toggle_maximize_window(window: tauri::WebviewWindow) {
+    if let Ok(is_max) = window.is_maximized() {
+        if is_max {
+            let _ = window.unmaximize();
+        } else {
+            let _ = window.maximize();
+        }
+    }
+}
+
+#[tauri::command]
+fn start_dragging(window: tauri::WebviewWindow) {
+    let _ = window.start_dragging();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -290,7 +316,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_system_status,
             execute_mode_action,
-            execute_emergency_repair
+            execute_emergency_repair,
+            close_window,
+            minimize_window,
+            toggle_maximize_window,
+            start_dragging
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
