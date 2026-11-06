@@ -48,9 +48,9 @@
         <ShieldCheck class="w-4 h-4 text-emerald-400" />
       </div>
       <div>
-        <p class="text-xs font-semibold text-zinc-200">212 системных служб под контролем ядра</p>
+        <p class="text-xs font-semibold text-zinc-200">207 системных служб под контролем ядра</p>
         <p class="text-[11px] text-zinc-400">
-          Критические службы защищены: аудио, дисплей, сеть, EasyAntiCheat, BattlEye и Vanguard никогда не затрагиваются.
+          Критические службы защищены: аудио, дисплей, сеть, Ножницы (PrtSc / CaptureService / cbdhsvc), EasyAntiCheat, BattlEye и Vanguard.
         </p>
       </div>
     </div>

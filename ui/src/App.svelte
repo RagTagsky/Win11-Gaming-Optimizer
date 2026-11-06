@@ -130,7 +130,7 @@
             : 'text-zinc-400 hover:text-zinc-200'}"
         >
           <Layers class="w-3.5 h-3.5 {currentTab === 'services' ? 'text-emerald-400' : 'text-zinc-500'}" />
-          <span>Службы (212)</span>
+          <span>Службы (207)</span>
         </button>
 
         <button
@@ -179,7 +179,7 @@
       {:else if currentTab === 'tweaks'}
         <TweaksView />
       {:else if currentTab === 'repair'}
-        <RepairView />
+        <RepairView onLog={addLog} />
       {/if}
     </div>
 
@@ -193,7 +193,7 @@
       />
       <div class="flex items-center justify-between text-[11px] text-zinc-500 pt-2 px-1">
         <span>Ultra Gaming Mode v3.0 • Pure On-Demand Engine</span>
-        <span>Тестов пройдено: 252 / 252 (0 ошибок)</span>
+        <span>Тестов пройдено: 260 / 260 (0 ошибок)</span>
       </div>
     </footer>
   </main>

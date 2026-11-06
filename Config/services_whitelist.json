@@ -85,6 +85,11 @@
                               "MsKeyboardFilter",
                               "wscsvc",
                               "IsoEnvBroker",
-                              "DevQueryBroker"
+                              "DevQueryBroker",
+                              "CaptureService",
+                              "cbdhsvc",
+                              "CDPUserSvc",
+                              "ConsentUxUserSvc",
+                              "UdkUserSvc"
                           ]
 }

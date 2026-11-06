@@ -10,6 +10,13 @@
     Wrench,
   } from '@lucide/svelte';
   import { executeEmergencyRepair } from '../api';
+  import type { LogEntry } from '../types';
+
+  interface Props {
+    onLog?: (level: LogEntry['level'], message: string) => void;
+  }
+
+  let { onLog }: Props = $props();
 
   let runningRepair = $state<string | null>(null);
   let statusMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -17,6 +24,7 @@
   async function triggerRepair(repairType: 'display' | 'services' | 'shaders' | 'verify') {
     runningRepair = repairType;
     statusMessage = null;
+    onLog?.('info', `Запуск аварийного ремонта [${repairType}]...`);
 
     try {
       const res = await executeEmergencyRepair(repairType);
@@ -24,11 +32,14 @@
         type: res.success ? 'success' : 'error',
         text: res.message,
       };
+      onLog?.(res.success ? 'success' : 'error', res.message);
     } catch (e: any) {
+      const msg = `Ошибка выполнения: ${e?.message || e}`;
       statusMessage = {
         type: 'error',
-        text: `Ошибка выполнения: ${e?.message || e}`,
+        text: msg,
       };
+      onLog?.('error', msg);
     } finally {
       runningRepair = null;
     }
@@ -105,10 +116,10 @@
       <div class="space-y-1.5">
         <div class="flex items-center gap-2">
           <Search class="w-4 h-4 text-sky-400" />
-          <span class="text-xs font-semibold text-zinc-200">Ремонт поиска и служб Windows</span>
+          <span class="text-xs font-semibold text-zinc-200">Ремонт поиска, скриншотов и служб</span>
         </div>
         <p class="text-[11px] text-zinc-400 leading-relaxed">
-          Проверяет и принудительно восстанавливает Windows Search (кнопка Win), диспетчер печати и SysMain в рабочий режим.
+          Восстанавливает Windows Search (Win), «Ножницы» (PrtSc / CaptureService / cbdhsvc), права AppContainer, диспетчер печати и SysMain.
         </p>
       </div>
       <button
@@ -155,7 +166,7 @@
       <div class="space-y-1.5">
         <div class="flex items-center gap-2">
           <ShieldAlert class="w-4 h-4 text-indigo-400" />
-          <span class="text-xs font-semibold text-zinc-200">Верификация ядра (252 теста)</span>
+          <span class="text-xs font-semibold text-zinc-200">Верификация ядра (260 тестов)</span>
         </div>
         <p class="text-[11px] text-zinc-400 leading-relaxed">
           Автоматический запуск Verify-UniversalEngine.ps1 для мгновенной валидации всех реестров и модулей.
@@ -168,7 +179,7 @@
       >
         {#if runningRepair === 'verify'}
           <RefreshCw class="w-3.5 h-3.5 animate-spin" />
-          <span>Прогон 252 тестов...</span>
+          <span>Прогон 260 тестов...</span>
         {:else}
           <span>Запустить тест движка</span>
         {/if}

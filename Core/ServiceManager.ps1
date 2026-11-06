@@ -8,10 +8,16 @@ function Set-ServiceStateSafe {
         [switch]$IsRestoring
     )
 
+    $baseInputName = $ServiceName -replace '_[0-9a-fA-F]+$', ''
+    if (-not $IsRestoring -and $Whitelist -and (($Whitelist -contains $ServiceName) -or ($Whitelist -contains $baseInputName))) {
+        Write-Warning "Service '$ServiceName' is protected by the Whitelist. Skipping modification."
+        return $false
+    }
+
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if (-not $service) {
-        # Fallback: check for versioned/suffixed services (e.g. GoogleUpdaterService157.0.8089.0)
-        $matching = @(Get-Service -Name "$($ServiceName)*" -ErrorAction SilentlyContinue)
+        # Fallback: check for per-user (_LUID) or versioned ([0-9]*) services (e.g. GoogleUpdaterService157.0.8089.0)
+        $matching = @(Get-Service -Name "$($ServiceName)_*", "$($ServiceName)[0-9]*" -ErrorAction SilentlyContinue)
         if ($matching.Count -gt 0) {
             $service = $matching[0]
             $ServiceName = $service.Name
@@ -20,7 +26,8 @@ function Set-ServiceStateSafe {
         }
     }
 
-    if (-not $IsRestoring -and $Whitelist -and ($Whitelist -contains $ServiceName)) {
+    $resolvedBaseName = $ServiceName -replace '_[0-9a-fA-F]+$', ''
+    if (-not $IsRestoring -and $Whitelist -and (($Whitelist -contains $ServiceName) -or ($Whitelist -contains $resolvedBaseName))) {
         Write-Warning "Service '$ServiceName' is protected by the Whitelist. Skipping modification."
         return $false
     }
@@ -46,6 +53,11 @@ function Set-ServiceStateSafe {
                     $baseRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$($Matches[1])"
                     if (Test-Path $baseRegPath) {
                         Set-ItemProperty -Path $baseRegPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction SilentlyContinue
+                    }
+                } else {
+                    $instanceRegPaths = Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$($ServiceName)_*" -ErrorAction SilentlyContinue
+                    foreach ($instReg in $instanceRegPaths) {
+                        Set-ItemProperty -Path $instReg.PSPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction SilentlyContinue
                     }
                 }
                 Write-Host "  [+] Service '$ServiceName' configured via Direct Registry ($StartupType / Start=$startVal)." -ForegroundColor Green

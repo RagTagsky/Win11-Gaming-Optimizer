@@ -898,10 +898,11 @@ function Repair-CoreServices {
             Write-Host "  [+] Service 'WSearch' is already running." -ForegroundColor Green
         }
     }
-    # Clear any blocking policies in HKLM and HKCU
+    # Clear any blocking policies in HKLM and HKCU (Search & Notification Center / Win+Shift+S Toast Handler)
     foreach ($p in @("HKCU:\Software\Policies\Microsoft\Windows\Explorer", "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer")) {
         if (Test-Path $p) {
             Remove-ItemProperty -Path $p -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $p -Name "DisableNotificationCenter" -ErrorAction SilentlyContinue
         }
     }
     $searchUserPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search"
@@ -929,13 +930,91 @@ function Repair-CoreServices {
         }
     }
     # Ensure Text Services Framework (ctfmon) is active for Win Key typing redirection
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "ctfmon" -Value "C:\Windows\System32\ctfmon.exe" -Type String -Force -ErrorAction SilentlyContinue
+    $isSystem = $false
+    try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "ctfmon" -Value "C:\Windows\System32\ctfmon.exe" -Type String -Force -ErrorAction SilentlyContinue
-    if (-not (Get-Process -Name "ctfmon" -ErrorAction SilentlyContinue)) {
-        Start-Process "C:\Windows\System32\ctfmon.exe" -ErrorAction SilentlyContinue
+    if (-not $isSystem) {
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "ctfmon" -Value "C:\Windows\System32\ctfmon.exe" -Type String -Force -ErrorAction SilentlyContinue
+        if (-not (Get-Process -Name "ctfmon" -ErrorAction SilentlyContinue)) {
+            Start-Process "C:\Windows\System32\ctfmon.exe" -ErrorAction SilentlyContinue
+        }
     }
     # Restart SearchHost if running to reload indexer RPC binding and apply input routing
     Stop-Process -Name "SearchHost", "StartMenuExperienceHost" -Force -ErrorAction SilentlyContinue
+
+    # 3b. Snipping Tool (PrtSc / Win+Shift+S), Clipboard & UWP AppContainer Access
+    Write-Host "[*] Restoring Snipping Tool (PrtSc), Clipboard & UWP AppContainer Services..." -ForegroundColor Cyan
+    $kbdCtrlPath = "HKCU:\Control Panel\Keyboard"
+    if (-not (Test-Path $kbdCtrlPath)) {
+        New-Item -Path $kbdCtrlPath -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    Set-ItemProperty -Path $kbdCtrlPath -Name "PrintScreenKeyForSnippingEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+    foreach ($tabletPolicy in @("HKCU:\Software\Policies\Microsoft\TabletPC", "HKLM:\SOFTWARE\Policies\Microsoft\Windows\TabletPC")) {
+        if (Test-Path $tabletPolicy) {
+            Remove-ItemProperty -Path $tabletPolicy -Name "DisableSnippingTool" -ErrorAction SilentlyContinue
+        }
+    }
+
+    # CaptureService -> Manual (Demand = 3), cbdhsvc -> Automatic (2), CDPUserSvc / ConsentUxUserSvc / UdkUserSvc -> Manual (3)
+    $perUserRepairs = @(
+        @{ Name = "CaptureService";   StartupType = "Manual";    StartVal = 3; StartNow = $false },
+        @{ Name = "cbdhsvc";          StartupType = "Automatic"; StartVal = 2; StartNow = $true  },
+        @{ Name = "CDPUserSvc";       StartupType = "Manual";    StartVal = 3; StartNow = $false },
+        @{ Name = "ConsentUxUserSvc"; StartupType = "Manual";    StartVal = 3; StartNow = $false },
+        @{ Name = "UdkUserSvc";       StartupType = "Manual";    StartVal = 3; StartNow = $false }
+    )
+    foreach ($svcFix in $perUserRepairs) {
+        $sName = $svcFix.Name
+        $sType = $svcFix.StartupType
+        $sVal  = $svcFix.StartVal
+        Set-Service -Name $sName -StartupType $sType -ErrorAction SilentlyContinue
+        $baseReg = "HKLM:\SYSTEM\CurrentControlSet\Services\$sName"
+        if (Test-Path $baseReg) {
+            Set-ItemProperty -Path $baseReg -Name "Start" -Value $sVal -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        $instRegs = Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$($sName)_*" -ErrorAction SilentlyContinue
+        foreach ($ir in $instRegs) {
+            Set-ItemProperty -Path $ir.PSPath -Name "Start" -Value $sVal -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($svcFix.StartNow) {
+            Start-Service -Name $sName -ErrorAction SilentlyContinue
+            $userInsts = Get-Service -Name "$($sName)_*" -ErrorAction SilentlyContinue
+            foreach ($uInst in $userInsts) {
+                if ($uInst.Status -ne "Running") {
+                    Start-Service -Name $uInst.Name -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+    Write-Host "  [+] CaptureService (Manual) & cbdhsvc (Automatic) unblocked; PrintScreenKeyForSnippingEnabled = 1." -ForegroundColor Green
+
+    # Repair AppContainer ACLs on %LOCALAPPDATA%\Packages for ALL APPLICATION PACKAGES (S-1-15-2-1)
+    # and ALL RESTRICTED APPLICATION PACKAGES (S-1-15-2-2) to fix 0x80070005 UWP/AppX crashes
+    $packageDirs = New-Object System.Collections.Generic.List[string]
+    if ($env:LOCALAPPDATA) {
+        $localPkg = Join-Path $env:LOCALAPPDATA "Packages"
+        if (Test-Path -LiteralPath $localPkg) { $packageDirs.Add($localPkg) }
+    }
+    foreach ($pkgDir in $packageDirs) {
+        try {
+            $acl = Get-Acl -LiteralPath $pkgDir -ErrorAction Stop
+            foreach ($sidStr in @("S-1-15-2-1", "S-1-15-2-2")) {
+                $sid = New-Object System.Security.Principal.SecurityIdentifier($sidStr)
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                    $sid,
+                    [System.Security.AccessControl.FileSystemRights]::ReadAndExecute,
+                    ([System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit),
+                    [System.Security.AccessControl.PropagationFlags]::None,
+                    [System.Security.AccessControl.AccessControlType]::Allow
+                )
+                $acl.AddAccessRule($rule)
+            }
+            Set-Acl -LiteralPath $pkgDir -AclObject $acl -ErrorAction SilentlyContinue
+        } catch {
+            Write-Verbose "AppContainer ACL notice on ${pkgDir}: $($_.Exception.Message)"
+        }
+    }
+    Write-Host "  [+] AppContainer ACLs (S-1-15-2-1 / S-1-15-2-2) verified on %LOCALAPPDATA%\Packages." -ForegroundColor Green
 
     # 4. Core System Services (SysMain, Spooler)
     Write-Host "[*] Configuring Prefetcher and Print Spooler..." -ForegroundColor Cyan
@@ -947,7 +1026,7 @@ function Repair-CoreServices {
     $spooler = Get-Service -Name "Spooler" -ErrorAction SilentlyContinue
     if ($spooler -and $spooler.Status -ne "Running") { Start-Service -Name "Spooler" -ErrorAction SilentlyContinue }
 
-    Write-Host "`n[SUCCESS] Microphone, Windows Search, Steam and Core System services are fully unblocked!" -ForegroundColor Green
+    Write-Host "`n[SUCCESS] Microphone, Windows Search, Snipping Tool, Steam and Core System services are fully unblocked!" -ForegroundColor Green
     return $true
 }
 
@@ -2344,7 +2423,10 @@ function Get-BcdeditTimerConfig {
 
     try {
         $raw = if ($BcdOutput) { $BcdOutput } else {
-            $lines = bcdedit /enum osloader 2>&1
+            $lines = bcdedit /enum "{current}" 2>&1
+            if ($LASTEXITCODE -ne 0 -or -not $lines) {
+                $lines = bcdedit /enum osloader 2>&1
+            }
             if ($LASTEXITCODE -ne 0 -or -not $lines) {
                 $lines = bcdedit /enum 2>&1
             }
@@ -2447,19 +2529,29 @@ function Get-TcpStackConfig {
         $raw = netsh int tcp show global 2>&1
         if ($raw) {
             foreach ($line in $raw) {
-                if ($line -match 'RFC 1323 Timestamps\s*:\s*(\w+)') {
-                    $result.Timestamps = $matches[1].Trim()
+                if ($line -match '(?:RFC 1323 Timestamps|RFC 1323)\s*:\s*(\S+)') {
+                    $v = $matches[1].Trim().ToLowerInvariant()
+                    $result.Timestamps = if ($v -match '^(enabled|включено)$') { "enabled" } elseif ($v -match '^(disabled|отключено)$') { "disabled" } elseif ($v -match '^(default|по)$') { "default" } else { $v }
                 }
-                elseif ($line -match 'ECN Capability\s*:\s*(\w+)') {
-                    $result.ECN = $matches[1].Trim()
+                elseif ($line -match '(?:ECN Capability|ECN)\s*:\s*(\S+)') {
+                    $v = $matches[1].Trim().ToLowerInvariant()
+                    $result.ECN = if ($v -match '^(enabled|включено)$') { "enabled" } elseif ($v -match '^(disabled|отключено)$') { "disabled" } elseif ($v -match '^(default|по)$') { "default" } else { $v }
                 }
-                elseif ($line -match 'Receive-Side Scaling State\s*:\s*(\w+)') {
-                    $result.RSS = $matches[1].Trim()
+                elseif ($line -match '(?:Receive-Side Scaling State|масштабирования стороны приема)\s*:\s*(\S+)') {
+                    $v = $matches[1].Trim().ToLowerInvariant()
+                    $result.RSS = if ($v -match '^(enabled|включено)$') { "enabled" } elseif ($v -match '^(disabled|отключено)$') { "disabled" } elseif ($v -match '^(default|по)$') { "default" } else { $v }
                 }
             }
         }
     } catch {
         Write-Verbose "Netsh tcp parsing notice: $($_.Exception.Message)"
+    }
+    # Locale-independent fallback if netsh output was localized in another language
+    if (-not $result.Timestamps) {
+        $tcp1323 = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" -Name "Tcp1323Opts" -ErrorAction SilentlyContinue).Tcp1323Opts
+        if ($null -ne $tcp1323) {
+            $result.Timestamps = if (([int]$tcp1323 -band 2) -ne 0) { "enabled" } else { "disabled" }
+        }
     }
 
     $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
@@ -2921,49 +3013,62 @@ function Get-ExtendedGamingTargets {
     if ($hw.GpuVendor -eq "AMD") {
         foreach ($k in @(Get-AmdGpuDriverClassKeys)) {
             $kp = if ($k -is [hashtable]) { $k["Path"] } else { $k.Path }
-            $props = Get-ItemProperty -Path $kp -ErrorAction SilentlyContinue
-            if ($props -and $null -ne $props.EnableAspmL0s) { Add-T $kp "EnableAspmL0s" 0 "DWord" "AMD" }
-            if ($props -and $null -ne $props.EnableAspmL1)  { Add-T $kp "EnableAspmL1" 0 "DWord" "AMD" }
-            if (Test-Path -LiteralPath "$kp\UMD") { Add-T "$kp\UMD" "ShaderCache" ([byte[]](0x32, 0x00)) "Binary" "AMD" }
+            if ($kp) {
+                Add-T $kp "EnableAspmL0s" 0 "DWord" "AMD"
+                Add-T $kp "EnableAspmL1" 0 "DWord" "AMD"
+                if (Test-Path -LiteralPath "$kp\UMD") { Add-T "$kp\UMD" "ShaderCache" ([byte[]](0x32, 0x00)) "Binary" "AMD" }
+            }
         }
     }
 
     # 7 & 8. Storage controller IRQ de-contention + USB HID idle-suspend suppression (single Enum walk)
     $storageClasses = @("{4d36e97b-e325-11ce-bfc1-08002be10318}", "{4d36e96a-e325-11ce-bfc1-08002be10318}")
-    $enumRoot = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Enum")
-    if ($enumRoot) {
-        foreach ($bus in @("PCI", "USB")) {
-            $busKey = $enumRoot.OpenSubKey($bus)
-            if (-not $busKey) { continue }
-            foreach ($dev in $busKey.GetSubKeyNames()) {
-                $devKey = $busKey.OpenSubKey($dev)
-                if (-not $devKey) { continue }
-                foreach ($inst in $devKey.GetSubKeyNames()) {
-                    $ik = $devKey.OpenSubKey($inst)
-                    if (-not $ik) { continue }
-                    $instPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$bus\$dev\$inst\Device Parameters"
-                    if ($bus -eq "PCI" -and ($storageClasses -contains [string]$ik.GetValue("ClassGUID"))) {
-                        $ap = $ik.OpenSubKey("Device Parameters\Interrupt Management\Affinity Policy")
-                        if ($ap) {
-                            if ($ap.GetValue("DevicePriority") -eq 3) { Add-T "$instPath\Interrupt Management\Affinity Policy" "DevicePriority" 2 "DWord" "IRQ" }
-                            $ap.Close()
+    try {
+        $enumRoot = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Enum")
+        if ($enumRoot) {
+            foreach ($bus in @("PCI", "USB")) {
+                $busKey = $enumRoot.OpenSubKey($bus)
+                if (-not $busKey) { continue }
+                foreach ($dev in $busKey.GetSubKeyNames()) {
+                    try {
+                        $devKey = $busKey.OpenSubKey($dev)
+                        if (-not $devKey) { continue }
+                        foreach ($inst in $devKey.GetSubKeyNames()) {
+                            try {
+                                $ik = $devKey.OpenSubKey($inst)
+                                if (-not $ik) { continue }
+                                $instPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$bus\$dev\$inst\Device Parameters"
+                                if ($bus -eq "PCI" -and ($storageClasses -contains [string]$ik.GetValue("ClassGUID"))) {
+                                    $ap = $ik.OpenSubKey("Device Parameters\Interrupt Management\Affinity Policy")
+                                    if ($ap) {
+                                        if ($ap.GetValue("DevicePriority") -eq 3) { Add-T "$instPath\Interrupt Management\Affinity Policy" "DevicePriority" 2 "DWord" "IRQ" }
+                                        $ap.Close()
+                                    }
+                                }
+                                elseif ($bus -eq "USB" -and [string]$ik.GetValue("Service") -eq "HidUsb") {
+                                    $dp = $ik.OpenSubKey("Device Parameters")
+                                    if ($dp) {
+                                        if ($dp.GetValue("EnhancedPowerManagementEnabled") -eq 1) { Add-T $instPath "EnhancedPowerManagementEnabled" 0 "DWord" "USB" }
+                                        if ($dp.GetValue("AllowIdleIrpInD3") -eq 1) { Add-T $instPath "AllowIdleIrpInD3" 0 "DWord" "USB" }
+                                        $dp.Close()
+                                    }
+                                }
+                                $ik.Close()
+                            } catch {
+                                Write-Verbose "Enum instance access notice ($bus\$dev\$inst): $($_.Exception.Message)"
+                            }
                         }
+                        $devKey.Close()
+                    } catch {
+                        Write-Verbose "Enum device access notice ($bus\$dev): $($_.Exception.Message)"
                     }
-                    elseif ($bus -eq "USB" -and [string]$ik.GetValue("Service") -eq "HidUsb") {
-                        $dp = $ik.OpenSubKey("Device Parameters")
-                        if ($dp) {
-                            if ($dp.GetValue("EnhancedPowerManagementEnabled") -eq 1) { Add-T $instPath "EnhancedPowerManagementEnabled" 0 "DWord" "USB" }
-                            if ($dp.GetValue("AllowIdleIrpInD3") -eq 1) { Add-T $instPath "AllowIdleIrpInD3" 0 "DWord" "USB" }
-                            $dp.Close()
-                        }
-                    }
-                    $ik.Close()
                 }
-                $devKey.Close()
+                $busKey.Close()
             }
-            $busKey.Close()
+            $enumRoot.Close()
         }
-        $enumRoot.Close()
+    } catch {
+        Write-Verbose "Enum root access notice: $($_.Exception.Message)"
     }
 
     return $targets.ToArray()
@@ -3028,6 +3133,7 @@ function Set-PowerLatencyOptimizations {
         if ($null -eq $s.Original) { continue }  # unknown original -> do not touch (cannot restore)
         $target = ($Script:PowerLatencySettings | Where-Object { $_.Setting -eq $s.Setting } | Select-Object -First 1).Value
         $null = powercfg /setacvalueindex $Config.SchemeGuid $s.Sub $s.Setting $target 2>&1
+        $null = powercfg /setacvalueindex SCHEME_CURRENT $s.Sub $s.Setting $target 2>&1
         Write-Host "  [+] $($s.Name): $($s.Original) -> $target" -ForegroundColor Green
     }
     $null = powercfg /setactive SCHEME_CURRENT 2>&1

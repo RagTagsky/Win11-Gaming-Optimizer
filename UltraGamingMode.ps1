@@ -339,6 +339,7 @@ switch ($Action) {
                         Set-ExtendedGamingOptimizations -HardwareProfile $hw -Whitelist $whitelist | Out-Null
                         Set-PowerLatencyOptimizations -Config $stateData.PowerLatencyConfig | Out-Null
                         Set-MemoryCompressionGamingState -HardwareProfile $hw | Out-Null
+                        Set-DefenderGamingState -Disable $true | Out-Null
 
                         # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
                         if ($hw.HddProfile) {

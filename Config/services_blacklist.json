@@ -530,14 +530,6 @@
                                "Reason":  "ActiveX Installer Service"
                            },
                            {
-                               "Name":  "CDPUserSvc",
-                               "Reason":  "Connected Devices Platform User Service"
-                           },
-                           {
-                               "Name":  "CaptureService",
-                               "Reason":  "Windows Screen Capture \u0026 DVR Service"
-                           },
-                           {
                                "Name":  "BcastDVRUserService",
                                "Reason":  "Game DVR and Broadcast User Service"
                            },
@@ -584,18 +576,6 @@
                            {
                                "Name":  "PimIndexMaintenanceSvc",
                                "Reason":  "Contact Data Indexing Service"
-                           },
-                           {
-                               "Name":  "ConsentUxUserSvc",
-                               "Reason":  "ConsentUX User Service"
-                           },
-                           {
-                               "Name":  "UdkUserSvc",
-                               "Reason":  "UDK User Service"
-                           },
-                           {
-                               "Name":  "cbdhsvc",
-                               "Reason":  "Clipboard User Service (Cloud clipboard sync)"
                            },
                            {
                                "Name":  "NPSMSvc",

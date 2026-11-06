@@ -24,7 +24,7 @@ Write-Host "=====================================================" -ForegroundCo
 # ── 1. PowerShell Syntax / AST Parse Check ──────────────────────────────────
 Write-Host "`n[Test Group 1] AST Language Parser Validation across all scripts:" -ForegroundColor Cyan
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$scripts = Get-ChildItem -Path $repoRoot -Recurse -Filter "*.ps1"
+$scripts = Get-ChildItem -Path $repoRoot -Recurse -Filter "*.ps1" | Where-Object { $_.FullName -notmatch '[\\/](node_modules|target|\.git)[\\/]' }
 foreach ($s in $scripts) {
     $errs = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($s.FullName, [ref]$null, [ref]$errs)
@@ -579,7 +579,7 @@ Assert-Test ($ugmContent -match '\$stateData\.State -eq ["'']Armed["'']') "Ultra
 Assert-Test ($ugmContent -notmatch 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce.*-Action RestoreUser -Watchdog') "UltraGamingMode.ps1 does not arm premature user RunOnce during Enable action"
 
 # 11.14 Pure UTF-8 without BOM Encoding Check (Source & Config Files)
-$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/]Backups[\\/]' }
+$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/](Backups|node_modules|target|\.git)[\\/]' }
 $hasBom = $false
 foreach ($f in $allConfigFiles) {
     $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
@@ -598,7 +598,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "2.8") "Get-AppCurrentVersion returns expected suite version '2.8'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.0") "Get-AppCurrentVersion returns expected suite version '3.0'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -650,7 +650,10 @@ try {
         Assert-Test ($infoContent -match 'UPDATE_AVAILABLE=1') "update_info.cmd declares UPDATE_AVAILABLE=1"
         Assert-Test ($infoContent -match 'RELEASE_URL=') "update_info.cmd exports RELEASE_URL"
     } else {
-        Assert-Test ($true) "Simulated update skipped (offline/rate-limited environment)"
+        $wfDef = (Get-Command Invoke-AppUpdateWorkflow).Definition
+        Assert-Test ($simUpdateCode -eq 0) "Invoke-AppUpdateWorkflow returns exit code 0 when offline/rate-limited"
+        Assert-Test ($wfDef -match 'UPDATE_AVAILABLE=1') "Invoke-AppUpdateWorkflow template declares UPDATE_AVAILABLE=1"
+        Assert-Test ($wfDef -match 'RELEASE_URL=') "Invoke-AppUpdateWorkflow template exports RELEASE_URL"
     }
 } finally {
     if (Test-Path -LiteralPath $infoFile) { Remove-Item -LiteralPath $infoFile -Force }
@@ -747,6 +750,18 @@ if ($existingActiveState) {
     $activeHasBom = ($activeBytes.Length -ge 3 -and $activeBytes[0] -eq 0xEF -and $activeBytes[1] -eq 0xBB -and $activeBytes[2] -eq 0xBF)
     Assert-Test (-not $activeHasBom) "Backups\active_state.json is saved as pure UTF-8 without BOM"
     Assert-Test ($null -ne $existingActiveState.PSObject.Properties["GamingBootId"]) "Backups\active_state.json contains normalized GamingBootId property"
+} else {
+    $tmpActiveFile = Join-Path $env:TEMP ("UGM_NormActive_" + [System.Guid]::NewGuid().ToString("N") + ".json")
+    try {
+        Set-ActiveStateSafe -Path $tmpActiveFile -Data ([PSCustomObject]@{ State = "Restored" }) | Out-Null
+        $normActive = Get-ActiveStateSafe -Path $tmpActiveFile
+        $activeBytes = [System.IO.File]::ReadAllBytes($tmpActiveFile)
+        $activeHasBom = ($activeBytes.Length -ge 3 -and $activeBytes[0] -eq 0xEF -and $activeBytes[1] -eq 0xBB -and $activeBytes[2] -eq 0xBF)
+        Assert-Test (-not $activeHasBom) "Set-ActiveStateSafe writes pure UTF-8 without BOM"
+        Assert-Test ($null -ne $normActive.PSObject.Properties["GamingBootId"]) "Get-ActiveStateSafe normalizes GamingBootId property"
+    } finally {
+        Remove-Item -LiteralPath $tmpActiveFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # 13.7 End-to-End Status Execution Verification
@@ -794,10 +809,18 @@ $cleansMpoInLegacy = ($legacyRepairDef -match 'OverlayTestMode' -and $legacyRepa
 Assert-Test ($cleansMpoInLegacy) "Repair-LegacyOptimizerLeftovers cleans MPO overrides and RDR2 IFEO priority on every boot and boost"
 
 # AMD Driver Class Power Latency Tweaks
-$aspm0Target = $extendedTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL0s' }
-$aspm1Target = $extendedTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL1' }
-Assert-Test ($null -ne $aspm0Target -and $aspm0Target.Value -eq 0) "AMD GPU driver class: EnableAspmL0s is set to 0 (prevents D3 PCIe drops)"
-Assert-Test ($null -ne $aspm1Target -and $aspm1Target.Value -eq 0) "AMD GPU driver class: EnableAspmL1 is set to 0"
+$amdClassKeys = @(Get-AmdGpuDriverClassKeys)
+if ($amdClassKeys.Count -gt 0) {
+    $amdTargets = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ GpuVendor = "AMD" })
+    $aspm0Target = $amdTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL0s' }
+    $aspm1Target = $amdTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL1' }
+    Assert-Test ($null -ne $aspm0Target -and $aspm0Target.Value -eq 0) "AMD GPU driver class: EnableAspmL0s is set to 0 (prevents D3 PCIe drops)"
+    Assert-Test ($null -ne $aspm1Target -and $aspm1Target.Value -eq 0) "AMD GPU driver class: EnableAspmL1 is set to 0"
+} else {
+    $extTargetsDef = (Get-Command Get-ExtendedGamingTargets).Definition
+    Assert-Test ($extTargetsDef -match 'EnableAspmL0s') "AMD GPU driver class: EnableAspmL0s target is defined in Get-ExtendedGamingTargets"
+    Assert-Test ($extTargetsDef -match 'EnableAspmL1') "AMD GPU driver class: EnableAspmL1 target is defined in Get-ExtendedGamingTargets"
+}
 
 # IFEO Game Priority Class contract
 $cs2Ifeo = $extendedTargets | Where-Object { $_.Path -match 'cs2\.exe\\PerfOptions' -and $_.Name -eq 'CpuPriorityClass' }
@@ -835,6 +858,26 @@ Assert-Test ($searchBlacklisted -eq $false) "Config\startup_apps.json does not b
 $repairDef = (Get-Command Repair-CoreServices).Definition
 $repairsSearch = ($repairDef -match 'WSearch' -and $repairDef -match 'SysMain' -and $repairDef -match 'DisableSearchBoxSuggestions')
 Assert-Test ($repairsSearch) "Repair-CoreServices restores WSearch, SysMain, Spooler and removes search blocking policies"
+
+# 14.8 Snipping Tool (PrtSc), Clipboard & AppContainer Protection Contracts
+$wlConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\Config\services_whitelist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$blConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\Config\services_blacklist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$blNames = @($blConfig.TargetServices | ForEach-Object { $_.Name })
+
+Assert-Test (($wlConfig.ProtectedServices -contains "CaptureService") -and ($wlConfig.ProtectedServices -contains "cbdhsvc")) "Config\services_whitelist.json protects CaptureService and cbdhsvc for Snipping Tool & Clipboard"
+Assert-Test (($wlConfig.ProtectedServices -contains "CDPUserSvc") -and ($wlConfig.ProtectedServices -contains "ConsentUxUserSvc") -and ($wlConfig.ProtectedServices -contains "UdkUserSvc")) "Config\services_whitelist.json protects CDPUserSvc, ConsentUxUserSvc, and UdkUserSvc"
+$snipInBlacklist = ($blNames -contains "CaptureService" -or $blNames -contains "cbdhsvc" -or $blNames -contains "CDPUserSvc" -or $blNames -contains "ConsentUxUserSvc" -or $blNames -contains "UdkUserSvc")
+Assert-Test (-not $snipInBlacklist) "Config\services_blacklist.json excludes CaptureService, cbdhsvc, CDPUserSvc, ConsentUxUserSvc, and UdkUserSvc"
+
+$svcMgrDef = (Get-Command Set-ServiceStateSafe).Definition
+Assert-Test ($svcMgrDef -match '_\[0-9a-fA-F\]\+\$' -and $svcMgrDef -match '\$Whitelist -contains \$baseInputName') "Set-ServiceStateSafe enforces Whitelist protection on per-user suffixed service instances"
+Assert-Test ($repairDef -match 'PrintScreenKeyForSnippingEnabled') "Repair-CoreServices enables PrintScreenKeyForSnippingEnabled = 1 in HKCU:\Control Panel\Keyboard"
+Assert-Test ($repairDef -match 'DisableNotificationCenter') "Repair-CoreServices removes harmful DisableNotificationCenter policy from Explorer"
+Assert-Test ($repairDef -match 'CaptureService' -and $repairDef -match 'cbdhsvc') "Repair-CoreServices configures CaptureService (Manual) and cbdhsvc (Automatic)"
+Assert-Test ($repairDef -match 'S-1-15-2-1' -and $repairDef -match 'S-1-15-2-2') "Repair-CoreServices repairs AppContainer ACLs (S-1-15-2-1 and S-1-15-2-2) on %LOCALAPPDATA%\Packages"
+Assert-Test ($systemStateDef -match '\$item\.Scope -notin @\("HKLM",\s*"HKLM32"\)') "Restore-SystemState filters StartupItems to HKLM/HKLM32 so HKCU items are not written to .DEFAULT under SYSTEM"
+$tcpDef = (Get-Command Get-TcpStackConfig).Definition
+Assert-Test ($tcpDef -match 'включено' -and $tcpDef -match 'Tcp1323Opts') "Get-TcpStackConfig supports localized Russian netsh output and Tcp1323Opts registry fallback"
 
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta

@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "2.8"
+$Script:APP_VERSION = "3.0"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -246,23 +246,34 @@ function New-SystemStateBackup {
     }
 
     $defaultServiceModes = @{
-        "WSearch"          = "Automatic"
-        "SysMain"          = "Automatic"
-        "Spooler"          = "Automatic"
-        "defragsvc"        = "Manual"
-        "cbdhsvc"          = "Automatic"
-        "XboxGipSvc"       = "Manual"
-        "swprv"            = "Manual"
-        "VSS"              = "Manual"
-        "NgcSvc"           = "Manual"
-        "NgcCtnrSvc"       = "Manual"
-        "CDPSvc"           = "Automatic"
-        "LanmanServer"     = "Automatic"
-        "bthserv"          = "Manual"
-        "BthHFSrv"         = "Manual"
-        "Audiosrv"         = "Automatic"
-        "AudioEndpointBldr"= "Automatic"
-        "camsvc"           = "Manual"
+        "WSearch"              = "Automatic"
+        "SysMain"              = "Automatic"
+        "Spooler"              = "Automatic"
+        "defragsvc"            = "Manual"
+        "cbdhsvc"              = "Automatic"
+        "CaptureService"       = "Manual"
+        "CDPUserSvc"           = "Manual"
+        "ConsentUxUserSvc"     = "Manual"
+        "UdkUserSvc"           = "Manual"
+        "BcastDVRUserService"  = "Manual"
+        "AppXSvc"              = "Manual"
+        "ClipSVC"              = "Manual"
+        "LicenseManager"       = "Manual"
+        "WpnService"           = "Automatic"
+        "WpnUserService"       = "Automatic"
+        "XboxGipSvc"           = "Manual"
+        "swprv"                = "Manual"
+        "VSS"                  = "Manual"
+        "NgcSvc"               = "Manual"
+        "NgcCtnrSvc"           = "Manual"
+        "CDPSvc"               = "Automatic"
+        "LanmanServer"         = "Automatic"
+        "bthserv"              = "Manual"
+        "BthHFSrv"             = "Manual"
+        "Audiosrv"             = "Automatic"
+        "AudioEndpointBuilder" = "Automatic"
+        "AudioEndpointBldr"    = "Automatic"
+        "camsvc"               = "Manual"
     }
 
     $servicesList = [System.Collections.Generic.List[object]]::new()
@@ -876,10 +887,21 @@ function Restore-UserProfileState {
         Write-Host "  [+] User DirectX / FSE registry parameters restored." -ForegroundColor Green
     }
 
-    # 8. Restore Windows Search & Widgets in User Profile (must run in user context)
+    # 8. Restore Windows Search, Snipping Tool (PrtSc) & Widgets in User Profile (must run in user context)
+    $kbdCtrlPath = "HKCU:\Control Panel\Keyboard"
+    if (-not (Test-Path -LiteralPath $kbdCtrlPath)) {
+        New-Item -Path $kbdCtrlPath -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    Set-ItemProperty -Path $kbdCtrlPath -Name "PrintScreenKeyForSnippingEnabled" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath "HKCU:\Software\Policies\Microsoft\Windows\Explorer") {
+        Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableNotificationCenter" -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath "HKCU:\Software\Policies\Microsoft\TabletPC") {
+        Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\TabletPC" -Name "DisableSnippingTool" -ErrorAction SilentlyContinue
+    }
     Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
     Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
-    Write-Host "  [+] User Windows Search, Start menu and Widgets restored." -ForegroundColor Green
+    Write-Host "  [+] User Windows Search, Snipping Tool (PrtSc), Start menu and Widgets restored." -ForegroundColor Green
 
     # Update active state file: mark UserRestored = $true atomically with latest state from disk
     $latest = Get-ActiveStateSafe
@@ -934,23 +956,34 @@ function Restore-SystemState {
     # Standard Windows core services that must never be left Disabled upon restore,
     # even if a previously poisoned active_state.json captured them as Disabled:
     $defaultServiceModes = @{
-        "WSearch"          = "Automatic"
-        "SysMain"          = "Automatic"
-        "Spooler"          = "Automatic"
-        "defragsvc"        = "Manual"
-        "cbdhsvc"          = "Automatic"
-        "XboxGipSvc"       = "Manual"
-        "swprv"            = "Manual"
-        "VSS"              = "Manual"
-        "NgcSvc"           = "Manual"
-        "NgcCtnrSvc"       = "Manual"
-        "CDPSvc"           = "Automatic"
-        "LanmanServer"     = "Automatic"
-        "bthserv"          = "Manual"
-        "BthHFSrv"         = "Manual"
-        "Audiosrv"         = "Automatic"
-        "AudioEndpointBldr"= "Automatic"
-        "camsvc"           = "Manual"
+        "WSearch"              = "Automatic"
+        "SysMain"              = "Automatic"
+        "Spooler"              = "Automatic"
+        "defragsvc"            = "Manual"
+        "cbdhsvc"              = "Automatic"
+        "CaptureService"       = "Manual"
+        "CDPUserSvc"           = "Manual"
+        "ConsentUxUserSvc"     = "Manual"
+        "UdkUserSvc"           = "Manual"
+        "BcastDVRUserService"  = "Manual"
+        "AppXSvc"              = "Manual"
+        "ClipSVC"              = "Manual"
+        "LicenseManager"       = "Manual"
+        "WpnService"           = "Automatic"
+        "WpnUserService"       = "Automatic"
+        "XboxGipSvc"           = "Manual"
+        "swprv"                = "Manual"
+        "VSS"                  = "Manual"
+        "NgcSvc"               = "Manual"
+        "NgcCtnrSvc"           = "Manual"
+        "CDPSvc"               = "Automatic"
+        "LanmanServer"         = "Automatic"
+        "bthserv"              = "Manual"
+        "BthHFSrv"             = "Manual"
+        "Audiosrv"             = "Automatic"
+        "AudioEndpointBuilder" = "Automatic"
+        "AudioEndpointBldr"    = "Automatic"
+        "camsvc"               = "Manual"
     }
 
     if ($stateData -and $stateData.Services) {
@@ -978,7 +1011,7 @@ function Restore-SystemState {
                 if ($shouldStart) {
                     $targetSvcName = $sName
                     if (-not (Get-Service -Name $targetSvcName -ErrorAction SilentlyContinue)) {
-                        $matching = @(Get-Service -Name "$($sName)*" -ErrorAction SilentlyContinue)
+                        $matching = @(Get-Service -Name "$($sName)_*", "$($sName)[0-9]*" -ErrorAction SilentlyContinue)
                         if ($matching.Count -gt 0) { $targetSvcName = $matching[0].Name }
                     }
                     Start-Service -Name $targetSvcName -ErrorAction SilentlyContinue
@@ -994,6 +1027,7 @@ function Restore-SystemState {
     if ($stateData -and $stateData.StartupItems) {
         Write-Host "`n[*] Restoring system registry startup items (HKLM)..." -ForegroundColor Cyan
         foreach ($item in $stateData.StartupItems) {
+            if ($item.Scope -notin @("HKLM", "HKLM32")) { continue }
             $hive = $Script:RunHives[$item.Scope]
             if ($hive -and (Test-Path -LiteralPath $hive)) {
                 Set-ItemProperty -Path $hive -Name $item.Name -Value $item.Value -Force -ErrorAction SilentlyContinue
@@ -1145,8 +1179,10 @@ function Restore-SystemState {
 
     # Restore Windows Defender, Widgets & Focus Assist
     Set-DefenderGamingState -Disable $false | Out-Null
-    Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
-    Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
+    if (-not $isSystem) {
+        Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
+        Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
+    }
 
     # Mark system state as restored atomically with latest state from disk
     $latest = Get-ActiveStateSafe
@@ -1277,7 +1313,9 @@ function Check-AppUpdate {
     }
 
     # Never perform outbound network update checks under NT AUTHORITY\SYSTEM
-    if ([Security.Principal.WindowsIdentity]::GetCurrent().IsSystem) {
+    $isSystem = $false
+    try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
+    if ($isSystem) {
         $result.Error = "Skipped under NT AUTHORITY\SYSTEM"
         return $result
     }
@@ -1412,7 +1450,9 @@ function Invoke-AppUpdateWorkflow {
         [int]$TimeoutSeconds = 3
     )
 
-    if ([Security.Principal.WindowsIdentity]::GetCurrent().IsSystem) {
+    $isSystem = $false
+    try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
+    if ($isSystem) {
         return 0
     }
 
