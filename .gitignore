@@ -26,6 +26,7 @@
 *.so
 *.dylib
 *.bin
+!/.bin/
 *.iso
 *.img
 
@@ -48,6 +49,10 @@
 *.wixbin
 releases/
 release/
+.bin/*
+!.bin/.gitkeep
+bin/*
+!bin/.gitkeep
 
 # ── Rust & Tauri Build System ─────────────────────────────────────────────────
 # Cargo build tree (all profiles: debug, release)

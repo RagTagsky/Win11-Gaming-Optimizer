@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "release": "tauri build && powershell -NoProfile -ExecutionPolicy Bypass -File ../Build-Release.ps1 -SkipBuild"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

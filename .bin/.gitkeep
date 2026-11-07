@@ -1,0 +1,6 @@
+# Ultra Gaming Mode release staging directory (.bin/)
+# Staging area for:
+# - UltraGamingMode.exe (Portable Standalone)
+# - UltraGamingMode-Setup.exe (NSIS Installer)
+# - UltraGamingMode.msi (WIX / Windows Installer Package)
+# - SHA256SUMS.txt (Cryptographic Checksums)
