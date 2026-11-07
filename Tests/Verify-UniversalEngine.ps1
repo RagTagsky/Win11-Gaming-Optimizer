@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Unit and integration verification suite for Universal Hardware Auto-Detection Engine.
 #>

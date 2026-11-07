@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Advanced Windows gaming optimizations: Power schemes, MMCSS/Network registry tweaks, and RAM cleaning.
 .DESCRIPTION
@@ -142,7 +142,7 @@ function Enable-UltimatePerformance {
     $list = powercfg /list 2>&1
     $targetGuid = $null
 
-    $existingUltLine = ($list -split "[\r\n]+") | Where-Object { $_ -match "(?i)Ultimate|Максимальная" } | Select-Object -First 1
+    $existingUltLine = ($list -split "[\r\n]+") | Where-Object { $_ -match "(?i)Ultimate|\u041c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u0430\u044f" } | Select-Object -First 1
     if ($existingUltLine -and $existingUltLine -match "([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})") {
         $targetGuid = $matches[1]
     }
@@ -552,7 +552,7 @@ function Test-IsHighPerformanceScheme {
         [string]$RawOutput = ""
     )
     return ($SchemeGuid -in @("e9a42b02-d5df-448d-aa00-03f14749eb61", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c")) -or
-           ($RawOutput -match "(?i)Bitsum|Ultimate|Revision|High [P|p]erformance|Max|Высокая производительность|Максимальная производительность")
+           ($RawOutput -match "(?i)Bitsum|Ultimate|Revision|High [P|p]erformance|Max|\u0412\u044b\u0441\u043e\u043a\u0430\u044f\s+\u043f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c|\u041c\u0430\u043a\u0441\u0438\u043c\u0430\u043b\u044c\u043d\u0430\u044f\s+\u043f\u0440\u043e\u0438\u0437\u0432\u043e\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e\u0441\u0442\u044c")
 }
 
 function Select-PrimaryGamingGpu {
@@ -1604,10 +1604,10 @@ function Get-ProcessorIdleMinCores {
 
         # 2. Locale-aware command line parsing fallback
         $raw = powercfg /q SCHEME_CURRENT SUB_PROCESSOR CPMINCORES 2>&1 | Out-String
-        if ($raw -match "(?im)(?:AC|сети|secteur|wechselstrom|ca)[^:\r\n]*:\s*0x([0-9a-fA-F]+)") {
+        if ($raw -match "(?im)(?:AC|\u0441\u0435\u0442\u0438|secteur|wechselstrom|ca)[^:\r\n]*:\s*0x([0-9a-fA-F]+)") {
             return [Convert]::ToInt32($matches[1], 16)
         }
-        $currentLines = ($raw -split "[\r\n]+") | Where-Object { $_ -match "(?i)(?:current|текущий)" -and $_ -match ":\s*0x([0-9a-fA-F]+)" }
+        $currentLines = ($raw -split "[\r\n]+") | Where-Object { $_ -match "(?i)(?:current|\u0442\u0435\u043a\u0443\u0449\u0438\u0439)" -and $_ -match ":\s*0x([0-9a-fA-F]+)" }
         if ($currentLines.Count -gt 0 -and $currentLines[0] -match ":\s*0x([0-9a-fA-F]+)") {
             return [Convert]::ToInt32($matches[1], 16)
         }
@@ -1711,7 +1711,7 @@ function Get-ProcessorThrottleMin {
         }
 
         $raw = powercfg /q SCHEME_CURRENT SUB_PROCESSOR PROCTHROTTLEMIN 2>&1 | Out-String
-        if ($raw -match "(?im)(?:AC|сети|secteur|wechselstrom|ca)[^:\r\n]*:\s*0x([0-9a-fA-F]+)") {
+        if ($raw -match "(?im)(?:AC|\u0441\u0435\u0442\u0438|secteur|wechselstrom|ca)[^:\r\n]*:\s*0x([0-9a-fA-F]+)") {
             return [Convert]::ToInt32($matches[1], 16)
         }
         return $null
@@ -2531,15 +2531,24 @@ function Get-TcpStackConfig {
             foreach ($line in $raw) {
                 if ($line -match '(?:RFC 1323 Timestamps|RFC 1323)\s*:\s*(\S+)') {
                     $v = $matches[1].Trim().ToLowerInvariant()
-                    $result.Timestamps = if ($v -match '^(enabled|включено)$') { "enabled" } elseif ($v -match '^(disabled|отключено)$') { "disabled" } elseif ($v -match '^(default|по)$') { "default" } else { $v }
+                    if ($v -match '^(enabled|включено)$') { $result.Timestamps = "enabled" }
+                    elseif ($v -match "^(disabled|\u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e)$") { $result.Timestamps = "disabled" }
+                    elseif ($v -match "^(default|\u043f\u043e)$") { $result.Timestamps = "default" }
+                    else { $result.Timestamps = $v }
                 }
                 elseif ($line -match '(?:ECN Capability|ECN)\s*:\s*(\S+)') {
                     $v = $matches[1].Trim().ToLowerInvariant()
-                    $result.ECN = if ($v -match '^(enabled|включено)$') { "enabled" } elseif ($v -match '^(disabled|отключено)$') { "disabled" } elseif ($v -match '^(default|по)$') { "default" } else { $v }
+                    if ($v -match '^(enabled|включено)$') { $result.ECN = "enabled" }
+                    elseif ($v -match "^(disabled|\u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e)$") { $result.ECN = "disabled" }
+                    elseif ($v -match "^(default|\u043f\u043e)$") { $result.ECN = "default" }
+                    else { $result.ECN = $v }
                 }
-                elseif ($line -match '(?:Receive-Side Scaling State|масштабирования стороны приема)\s*:\s*(\S+)') {
+                elseif ($line -match "(?:Receive-Side Scaling State|\u043c\u0430\u0441\u0448\u0442\u0430\u0431\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f\s+\u0441\u0442\u043e\u0440\u043e\u043d\u044b\s+\u043f\u0440\u0438\u0435\u043c\u0430)\s*:\s*(\S+)") {
                     $v = $matches[1].Trim().ToLowerInvariant()
-                    $result.RSS = if ($v -match '^(enabled|включено)$') { "enabled" } elseif ($v -match '^(disabled|отключено)$') { "disabled" } elseif ($v -match '^(default|по)$') { "default" } else { $v }
+                    if ($v -match '^(enabled|включено)$') { $result.RSS = "enabled" }
+                    elseif ($v -match "^(disabled|\u043e\u0442\u043a\u043b\u044e\u0447\u0435\u043d\u043e)$") { $result.RSS = "disabled" }
+                    elseif ($v -match "^(default|\u043f\u043e)$") { $result.RSS = "default" }
+                    else { $result.RSS = $v }
                 }
             }
         }
