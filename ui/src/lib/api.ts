@@ -32,6 +32,7 @@ export async function fetchSystemStatus(): Promise<{
       display: '1920x1080 @ 180Hz (FreeSync / MPO Protected)',
       dpcLatency: '34 µs (Sub-millisecond Realtime)',
       mpoStatus: 'Protected (Overlay Flickering Suppressed)',
+      timerResolution: '0.500 ms (Locked via ntdll)',
     },
   };
 }
@@ -45,11 +46,22 @@ export async function executeModeAction(action: 'Enable' | 'Restore', profile: O
   return { success: true, message: `[DevMode] Действие [${action}] сымитировано.` };
 }
 
-export async function executeEmergencyRepair(repairType: 'display' | 'services' | 'shaders' | 'verify'): Promise<ActionResult> {
+export async function executeEmergencyRepair(
+  repairType: 'display' | 'services' | 'shaders' | 'verify' | 'memory' | 'debloat' | 'restore_debloat'
+): Promise<ActionResult> {
   if (isTauri) {
     const { invoke } = await import('@tauri-apps/api/core');
     return await invoke('execute_emergency_repair', { repairType });
   }
 
   return { success: true, message: `[DevMode] Ремонт [${repairType}] сымитирован.` };
+}
+
+export async function lockTimerResolution(): Promise<ActionResult> {
+  if (isTauri) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return await invoke('lock_timer_resolution');
+  }
+
+  return { success: true, message: '[DevMode] Таймер ядра 0.500 мс сымитирован.' };
 }

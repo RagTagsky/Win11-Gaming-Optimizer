@@ -9,6 +9,7 @@ export interface HardwareInfo {
   display: string;
   dpcLatency: string;
   mpoStatus: string;
+  timerResolution?: string;
 }
 
 export interface ServiceItem {

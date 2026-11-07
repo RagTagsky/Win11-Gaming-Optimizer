@@ -4,13 +4,16 @@
     CheckCircle2,
     Cpu,
     Flame,
+    HardDrive,
     Monitor,
     RefreshCw,
     Shield,
     Sparkles,
+    Timer,
     Zap,
   } from '@lucide/svelte';
-  import type { HardwareInfo, ModeState, OptimizationProfile } from '../types';
+  import { executeEmergencyRepair, lockTimerResolution } from '../api';
+  import type { HardwareInfo, LogEntry, ModeState, OptimizationProfile } from '../types';
 
   interface Props {
     mode: ModeState;
@@ -18,6 +21,7 @@
     hardware: HardwareInfo;
     onToggleMode: () => void;
     onSelectProfile: (profile: OptimizationProfile) => void;
+    onLog?: (level: LogEntry['level'], message: string) => void;
   }
 
   let {
@@ -26,10 +30,40 @@
     hardware,
     onToggleMode,
     onSelectProfile,
+    onLog,
   }: Props = $props();
 
   const isGaming = $derived(mode === 'Gaming');
   const isTransitioning = $derived(mode === 'Transitioning');
+
+  let isTimerLocking = $state(false);
+  let isMemoryPurging = $state(false);
+  let timerLocked = $state(false);
+
+  async function handleLockTimer() {
+    isTimerLocking = true;
+    try {
+      const res = await lockTimerResolution();
+      timerLocked = res.success;
+      onLog?.(res.success ? 'success' : 'error', res.message);
+    } catch (e: any) {
+      onLog?.('error', `Ошибка блокировки таймера: ${e?.message || e}`);
+    } finally {
+      isTimerLocking = false;
+    }
+  }
+
+  async function handlePurgeMemory() {
+    isMemoryPurging = true;
+    try {
+      const res = await executeEmergencyRepair('memory');
+      onLog?.(res.success ? 'success' : 'error', res.message);
+    } catch (e: any) {
+      onLog?.('error', `Ошибка очистки памяти: ${e?.message || e}`);
+    } finally {
+      isMemoryPurging = false;
+    }
+  }
 </script>
 
 <div class="space-y-5">
@@ -208,6 +242,62 @@
           <span class="text-[11px] text-zinc-500">DPC Latency Engine</span>
           <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.dpcLatency}</p>
         </div>
+      </div>
+
+      <!-- RAM & Standby Cache -->
+      <div class="flex items-center justify-between p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
+        <div class="flex items-center gap-3.5 min-w-0">
+          <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
+            <HardDrive class="w-4 h-4 text-zinc-300" />
+          </div>
+          <div class="space-y-0.5 min-w-0">
+            <span class="text-[11px] text-zinc-500">Память & Standby кэш</span>
+            <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.ram}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onclick={handlePurgeMemory}
+          disabled={isMemoryPurging}
+          class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-[#1c1e26] hover:bg-[#252834] text-zinc-200 border border-[#2c2f3d] transition-all cursor-pointer disabled:opacity-50"
+          title="Сбросить кэш Standby RAM"
+        >
+          {#if isMemoryPurging}
+            <RefreshCw class="w-3 h-3 animate-spin" />
+          {:else}
+            <span>Сброс</span>
+          {/if}
+        </button>
+      </div>
+
+      <!-- System Timer Resolution -->
+      <div class="flex items-center justify-between p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
+        <div class="flex items-center gap-3.5 min-w-0">
+          <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
+            <Timer class="w-4 h-4 {timerLocked ? 'text-emerald-400' : 'text-zinc-300'}" />
+          </div>
+          <div class="space-y-0.5 min-w-0">
+            <span class="text-[11px] text-zinc-500">Таймер ядра (Low Jitter)</span>
+            <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.timerResolution || '0.500 ms (Locked via ntdll)'}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onclick={handleLockTimer}
+          disabled={isTimerLocking}
+          class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50 {timerLocked
+            ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/60'
+            : 'bg-[#1c1e26] hover:bg-[#252834] text-zinc-200 border border-[#2c2f3d]'}"
+          title="Заблокировать системный таймер на 0.500 мс"
+        >
+          {#if isTimerLocking}
+            <RefreshCw class="w-3 h-3 animate-spin" />
+          {:else if timerLocked}
+            <span>0.5ms ✓</span>
+          {:else}
+            <span>Lock 0.5ms</span>
+          {/if}
+        </button>
       </div>
     </div>
   </div>

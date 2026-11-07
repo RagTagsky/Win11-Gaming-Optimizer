@@ -2,11 +2,14 @@
   import {
     AlertTriangle,
     CheckCircle,
+    Cpu,
     HardDrive,
     MonitorOff,
     RefreshCw,
+    RotateCcw,
     Search,
     ShieldAlert,
+    Sparkles,
     Wrench,
   } from '@lucide/svelte';
   import { executeEmergencyRepair } from '../api';
@@ -21,7 +24,9 @@
   let runningRepair = $state<string | null>(null);
   let statusMessage = $state<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  async function triggerRepair(repairType: 'display' | 'services' | 'shaders' | 'verify') {
+  async function triggerRepair(
+    repairType: 'display' | 'services' | 'shaders' | 'verify' | 'memory' | 'debloat' | 'restore_debloat'
+  ) {
     runningRepair = repairType;
     statusMessage = null;
     onLog?.('info', `Запуск аварийного ремонта [${repairType}]...`);
@@ -189,6 +194,73 @@
           <span>Запустить тест движка</span>
         {/if}
       </button>
+    </div>
+
+    <!-- Standby RAM Purge (NtSetSystemInformation) -->
+    <div class="p-4 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2b2e3b] transition-colors flex flex-col justify-between space-y-4">
+      <div class="space-y-1.5">
+        <div class="flex items-center gap-2">
+          <Cpu class="w-4 h-4 text-emerald-400 shrink-0" />
+          <span class="text-xs font-bold text-zinc-200">Очистка Standby RAM кэша (0x50)</span>
+        </div>
+        <p class="text-[11px] text-zinc-400 leading-relaxed">
+          Мгновенно сбрасывает кэш Standby List через вызов ядра NtSetSystemInformation (MemoryPurgeStandbyList), освобождая физическую RAM.
+        </p>
+      </div>
+      <button
+        type="button"
+        onclick={() => triggerRepair('memory')}
+        disabled={runningRepair !== null}
+        class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold bg-[#1c1e26] hover:bg-[#252834] text-zinc-200 border border-[#2c2f3d] transition-all cursor-pointer active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {#if runningRepair === 'memory'}
+          <RefreshCw class="w-3.5 h-3.5 animate-spin" />
+          <span>Сброс Standby RAM...</span>
+        {:else}
+          <span>Очистить кэш RAM</span>
+        {/if}
+      </button>
+    </div>
+
+    <!-- Deep Debloat & AI Suppression -->
+    <div class="p-4 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2b2e3b] transition-colors flex flex-col justify-between space-y-4">
+      <div class="space-y-1.5">
+        <div class="flex items-center gap-2">
+          <Sparkles class="w-4 h-4 text-purple-400 shrink-0" />
+          <span class="text-xs font-bold text-zinc-200">Глубокий Debloat Windows 11 & AI</span>
+        </div>
+        <p class="text-[11px] text-zinc-400 leading-relaxed">
+          Подавляет Xbox GameDVR/PresenceWriter, Edge Startup Boost, Copilot AI, Recall, виджеты и поиск Bing в меню Пуск.
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          onclick={() => triggerRepair('debloat')}
+          disabled={runningRepair !== null}
+          class="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-lg text-xs font-bold bg-[#1c1e26] hover:bg-[#252834] text-zinc-200 border border-[#2c2f3d] transition-all cursor-pointer active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {#if runningRepair === 'debloat'}
+            <RefreshCw class="w-3.5 h-3.5 animate-spin" />
+            <span>Применение...</span>
+          {:else}
+            <span>Выполнить Debloat</span>
+          {/if}
+        </button>
+        <button
+          type="button"
+          onclick={() => triggerRepair('restore_debloat')}
+          disabled={runningRepair !== null}
+          class="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg text-xs font-medium bg-[#16171d] hover:bg-[#1e2027] text-zinc-400 hover:text-zinc-200 border border-[#252733] transition-all cursor-pointer active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Восстановить параметры по умолчанию"
+        >
+          {#if runningRepair === 'restore_debloat'}
+            <RefreshCw class="w-3.5 h-3.5 animate-spin" />
+          {:else}
+            <RotateCcw class="w-3.5 h-3.5" />
+          {/if}
+        </button>
+      </div>
     </div>
   </div>
 </div>

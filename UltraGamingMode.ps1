@@ -17,7 +17,7 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate")]
+    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate", "Debloat", "RestoreDebloat")]
     [string]$Action = "Status",
 
     [Parameter()]
@@ -42,7 +42,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 )
 
 if (-not $isAdmin) {
-    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus", "CheckUpdate")) {
+    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus", "CheckUpdate", "Debloat", "RestoreDebloat")) {
         Write-Warning "Running in non-elevated mode. Operating with current user privileges."
     }
     elseif ($Action -eq "RestoreUser" -or ($Action -eq "Restore" -and ($Watchdog -or $Scope -eq "User"))) {
@@ -340,6 +340,7 @@ switch ($Action) {
                         Set-PowerLatencyOptimizations -Config $stateData.PowerLatencyConfig | Out-Null
                         Set-MemoryCompressionGamingState -HardwareProfile $hw | Out-Null
                         Set-DefenderGamingState -Disable $true | Out-Null
+                        Set-Windows11DebloatOptimizations -All | Out-Null
 
                         # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
                         if ($hw.HddProfile) {
@@ -350,9 +351,11 @@ switch ($Action) {
                             }
                         }
 
-                        # If Low-RAM detected, aggressively reclaim memory
+                        # Reclaim memory and flush kernel standby cache
                         if ($hw.LowRamProfile) {
                             Optimize-SystemMemory -Aggressive | Out-Null
+                        } else {
+                            Optimize-SystemMemory | Out-Null
                         }
                     } catch {
                         Write-Verbose "Hardware optimization warning during ApplyBootMode: $($_.Exception.Message)"
@@ -686,6 +689,22 @@ switch ($Action) {
     "FlushShaderCache" {
         $freedMb = Clear-GpuShaderCache
         Write-Host "`n[SUCCESS] Shader cache purge complete ($freedMb MB freed)." -ForegroundColor Green
+    }
+
+    "Debloat" {
+        Write-Host "=====================================================" -ForegroundColor Cyan
+        Write-Host "         WINDOWS 11 DEEP DEBLOAT & AI SUPPRESSION    " -ForegroundColor Cyan
+        Write-Host "=====================================================" -ForegroundColor Cyan
+        Set-Windows11DebloatOptimizations -All
+        Write-Host "`n[SUCCESS] Windows 11 bloatware, telemetry, and background AI suppressed." -ForegroundColor Green
+    }
+
+    "RestoreDebloat" {
+        Write-Host "=====================================================" -ForegroundColor Cyan
+        Write-Host "         RESTORE WINDOWS 11 DEBLOAT DEFAULTS         " -ForegroundColor Cyan
+        Write-Host "=====================================================" -ForegroundColor Cyan
+        Restore-Windows11DebloatOptimizations
+        Write-Host "`n[SUCCESS] Windows 11 default components restored." -ForegroundColor Green
     }
 
     "ToggleVBS" {

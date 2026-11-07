@@ -177,6 +177,7 @@
           {hardware}
           onToggleMode={handleToggleMode}
           onSelectProfile={handleSelectProfile}
+          onLog={addLog}
         />
       {:else if currentTab === 'services'}
         <ServicesView />

@@ -3342,3 +3342,228 @@ function Repair-LegacyOptimizerLeftovers {
     if ($fixed -eq 0) { Write-Host "  [+] No broken optimizer leftovers found." -ForegroundColor Green }
     return $fixed
 }
+
+# ==============================================================================
+# ── Windows 11 Deep Debloat & Background AI / Telemetry Suppression ──────────
+# ==============================================================================
+
+function Get-Windows11DebloatConfig {
+    [CmdletBinding()]
+    param()
+
+    $config = @{
+        GameDVR_Enabled         = $null
+        AppCaptureEnabled       = $null
+        AllowGameDVR            = $null
+        EdgeStartupBoost        = $null
+        EdgeBackgroundMode      = $null
+        DisableAIDataAnalysis   = $null
+        TurnOffWindowsCopilot   = $null
+        AllowNewsAndInterests   = $null
+        BingSearchEnabled       = $null
+    }
+
+    try {
+        $p = Get-ItemProperty -Path "HKCU:\System\GameConfigStore" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.GameDVR_Enabled) { $config.GameDVR_Enabled = [int]$p.GameDVR_Enabled }
+
+        $p = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.AppCaptureEnabled) { $config.AppCaptureEnabled = [int]$p.AppCaptureEnabled }
+
+        $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.AllowGameDVR) { $config.AllowGameDVR = [int]$p.AllowGameDVR }
+
+        $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -ErrorAction SilentlyContinue
+        if ($null -ne $p) {
+            if ($null -ne $p.StartupBoostEnabled) { $config.EdgeStartupBoost = [int]$p.StartupBoostEnabled }
+            if ($null -ne $p.BackgroundModeEnabled) { $config.EdgeBackgroundMode = [int]$p.BackgroundModeEnabled }
+        }
+
+        $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.DisableAIDataAnalysis) { $config.DisableAIDataAnalysis = [int]$p.DisableAIDataAnalysis }
+
+        $p = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.TurnOffWindowsCopilot) { $config.TurnOffWindowsCopilot = [int]$p.TurnOffWindowsCopilot }
+
+        $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.AllowNewsAndInterests) { $config.AllowNewsAndInterests = [int]$p.AllowNewsAndInterests }
+
+        $p = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $null -ne $p.BingSearchEnabled) { $config.BingSearchEnabled = [int]$p.BingSearchEnabled }
+    } catch {
+        Write-Verbose "Get-Windows11DebloatConfig notice: $($_.Exception.Message)"
+    }
+
+    return $config
+}
+
+function Set-Windows11DebloatOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [switch]$DisableGameBar,
+        [Parameter(Mandatory = $false)]
+        [switch]$DisableEdgeBoost,
+        [Parameter(Mandatory = $false)]
+        [switch]$DisableAI,
+        [Parameter(Mandatory = $false)]
+        [switch]$DisableWidgets,
+        [Parameter(Mandatory = $false)]
+        [switch]$DisableBingSearch,
+        [Parameter(Mandatory = $false)]
+        [switch]$All
+    )
+
+    Write-Host "[*] Applying Windows 11 Deep Debloat & Background Suppression..." -ForegroundColor Cyan
+
+    # 1. GameDVR & Background Recording
+    if ($All -or $DisableGameBar) {
+        try {
+            if (-not (Test-Path "HKCU:\System\GameConfigStore")) { New-Item -Path "HKCU:\System\GameConfigStore" -Force | Out-Null }
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR")) { New-Item -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Force | Out-Null }
+            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR")) { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Force | Out-Null }
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\WindowsRuntime\ActivatableClassId\Windows.Gaming.GameBar.PresenceServer.Internal.PresenceWriter")) {
+                New-Item -Path "HKLM:\SOFTWARE\Microsoft\WindowsRuntime\ActivatableClassId\Windows.Gaming.GameBar.PresenceServer.Internal.PresenceWriter" -Force | Out-Null
+            }
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsRuntime\ActivatableClassId\Windows.Gaming.GameBar.PresenceServer.Internal.PresenceWriter" -Name "ActivationType" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Xbox Game Bar DVR & background recording suppressed." -ForegroundColor Green
+        } catch {
+            Write-Warning "Failed to disable GameDVR: $($_.Exception.Message)"
+        }
+    }
+
+    # 2. Edge Startup Boost & Background Extensions
+    if ($All -or $DisableEdgeBoost) {
+        try {
+            foreach ($k in @("HKLM:\SOFTWARE\Policies\Microsoft\Edge", "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended")) {
+                if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+                Set-ItemProperty -Path $k -Name "StartupBoostEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $k -Name "BackgroundModeEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+            Write-Host "  [+] Microsoft Edge Startup Boost & background processes blocked." -ForegroundColor Green
+        } catch {
+            Write-Warning "Failed to disable Edge Startup Boost: $($_.Exception.Message)"
+        }
+    }
+
+    # 3. Windows Copilot & Recall AI
+    if ($All -or $DisableAI) {
+        try {
+            if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI")) { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Force | Out-Null }
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableAIDataAnalysis" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+
+            foreach ($k in @("HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot", "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot")) {
+                if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+                Set-ItemProperty -Path $k -Name "TurnOffWindowsCopilot" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+
+            if (Get-Service -Name "WSAIFabricSvc" -ErrorAction SilentlyContinue) {
+                Stop-Service -Name "WSAIFabricSvc" -Force -ErrorAction SilentlyContinue
+                Set-Service -Name "WSAIFabricSvc" -StartupType Disabled -ErrorAction SilentlyContinue
+            }
+            Write-Host "  [+] Windows Copilot & AI telemetry background analysis disabled." -ForegroundColor Green
+        } catch {
+            Write-Warning "Failed to disable Windows AI: $($_.Exception.Message)"
+        }
+    }
+
+    # 4. Widgets & NewsFeeds
+    if ($All -or $DisableWidgets) {
+        try {
+            if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh")) { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Force | Out-Null }
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced")) { New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Force | Out-Null }
+            Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Windows 11 Widgets Board & News Feeds disabled." -ForegroundColor Green
+        } catch {
+            Write-Warning "Failed to disable Widgets: $($_.Exception.Message)"
+        }
+    }
+
+    # 5. Bing Search in Start Menu
+    if ($All -or $DisableBingSearch) {
+        try {
+            if (-not (Test-Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer")) { New-Item -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Force | Out-Null }
+            Set-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search")) { New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -Force | Out-Null }
+            Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -Name "BingSearchEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Bing search suggestions & ads in Start Menu removed." -ForegroundColor Green
+        } catch {
+            Write-Warning "Failed to disable Bing Search: $($_.Exception.Message)"
+        }
+    }
+
+    return $true
+}
+
+function Restore-Windows11DebloatOptimizations {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$DebloatConfig
+    )
+
+    Write-Host "[*] Restoring Windows 11 Debloat & Application settings..." -ForegroundColor Cyan
+
+    if (-not $DebloatConfig) {
+        $DebloatConfig = @{
+            GameDVR_Enabled         = 1
+            AppCaptureEnabled       = 1
+            AllowGameDVR            = 1
+            EdgeStartupBoost        = 1
+            EdgeBackgroundMode      = 1
+            DisableAIDataAnalysis   = 0
+            TurnOffWindowsCopilot   = 0
+            AllowNewsAndInterests   = 1
+            BingSearchEnabled       = 1
+        }
+    }
+
+    try {
+        # Restore GameDVR
+        if ($null -ne $DebloatConfig.GameDVR_Enabled) {
+            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $DebloatConfig.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $DebloatConfig.AppCaptureEnabled) {
+            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $DebloatConfig.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+        }
+        if ($null -ne $DebloatConfig.AllowGameDVR) {
+            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Value $DebloatConfig.AllowGameDVR -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Force -ErrorAction SilentlyContinue
+        }
+
+        # Restore Edge
+        foreach ($k in @("HKLM:\SOFTWARE\Policies\Microsoft\Edge", "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended")) {
+            Remove-ItemProperty -Path $k -Name "StartupBoostEnabled" -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $k -Name "BackgroundModeEnabled" -Force -ErrorAction SilentlyContinue
+        }
+
+        # Restore AI / Copilot
+        Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableAIDataAnalysis" -Force -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue
+        if (Get-Service -Name "WSAIFabricSvc" -ErrorAction SilentlyContinue) {
+            Set-Service -Name "WSAIFabricSvc" -StartupType Manual -ErrorAction SilentlyContinue
+        }
+
+        # Restore Widgets & Bing
+        Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Force -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableSearchBoxSuggestions" -Force -ErrorAction SilentlyContinue
+
+        Write-Host "  [+] Windows 11 components and debloat settings reverted to original state." -ForegroundColor Green
+        return $true
+    } catch {
+        Write-Warning "Failed to restore Windows 11 debloat settings: $($_.Exception.Message)"
+        return $false
+    }
+}
+

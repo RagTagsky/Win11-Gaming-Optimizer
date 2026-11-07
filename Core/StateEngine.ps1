@@ -236,6 +236,7 @@ function New-SystemStateBackup {
         ExtendedRegistryConfig   = @()
         PowerLatencyConfig       = $null
         MemoryCompressionConfig  = $null
+        DebloatConfig            = $null
     }
 
     # 1. Services Snapshot - shortcut: optimized for FPS & speed (batch CIM query instead of 173 individual calls)
@@ -465,6 +466,7 @@ function New-SystemStateBackup {
     $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist))
     $snapshot.PowerLatencyConfig      = Get-PowerLatencyConfig
     $snapshot.MemoryCompressionConfig = Get-MemoryCompressionConfig
+    $snapshot.DebloatConfig           = Get-Windows11DebloatConfig
 
     # Write snapshot to disk atomically in pure UTF-8 without BOM
     Set-ActiveStateSafe -Path $Script:ActiveStateFile -Data $snapshot | Out-Null
@@ -1172,6 +1174,11 @@ function Restore-SystemState {
     # Restore Memory Compression
     if ($stateData -and $stateData.MemoryCompressionConfig) {
         Restore-MemoryCompressionConfig -Config $stateData.MemoryCompressionConfig | Out-Null
+    }
+
+    # Restore Windows 11 Debloat & Application Settings
+    if ($stateData -and ($null -ne $stateData.DebloatConfig)) {
+        Restore-Windows11DebloatOptimizations -DebloatConfig $stateData.DebloatConfig | Out-Null
     }
 
     # Guarantee Microphone, Steam, LanmanServer, and peripheral services are unblocked
