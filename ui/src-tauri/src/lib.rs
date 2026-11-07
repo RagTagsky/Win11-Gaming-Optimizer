@@ -343,38 +343,30 @@ async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, S
 }
 
 #[tauri::command]
-fn close_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.close();
-    }
-    app.exit(0);
+fn close_window(window: tauri::WebviewWindow) {
+    let _ = window.destroy();
+    std::process::exit(0);
 }
 
 #[tauri::command]
-fn minimize_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.minimize();
-    }
+fn minimize_window(window: tauri::WebviewWindow) {
+    let _ = window.minimize();
 }
 
 #[tauri::command]
-fn toggle_maximize_window(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        if let Ok(is_max) = window.is_maximized() {
-            if is_max {
-                let _ = window.unmaximize();
-            } else {
-                let _ = window.maximize();
-            }
+fn toggle_maximize_window(window: tauri::WebviewWindow) {
+    if let Ok(is_max) = window.is_maximized() {
+        if is_max {
+            let _ = window.unmaximize();
+        } else {
+            let _ = window.maximize();
         }
     }
 }
 
 #[tauri::command]
-fn start_dragging(app: tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.start_dragging();
-    }
+fn start_dragging(window: tauri::WebviewWindow) {
+    let _ = window.start_dragging();
 }
 
 #[tauri::command]

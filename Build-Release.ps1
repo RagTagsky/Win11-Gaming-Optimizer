@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
     Automated build and release packaging orchestrator for Ultra Gaming Mode.
-    Compiles Tauri frontend & Rust backend, harvests release artifacts into .bin/ and root,
-    computes SHA256 checksums, and prepares clean GitHub release packages.
+    Terminates running instances, deletes stale hyphenated binaries, compiles Tauri release,
+    and harvests UltraGamingMode.exe, NSIS setup, and MSI into .bin/ and project root.
 #>
 [CmdletBinding()]
 param(
@@ -12,9 +12,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$rootDir = $PSScriptRoot
-$binDir = Join-Path $rootDir ".bin"
 
+# Automatically detect project root whether script is run from root or ui/ directory
+if (Test-Path (Join-Path $PSScriptRoot "UltraGamingMode.ps1")) {
+    $rootDir = $PSScriptRoot
+} elseif (Test-Path (Join-Path $PSScriptRoot "..\UltraGamingMode.ps1")) {
+    $rootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+} else {
+    $rootDir = $PSScriptRoot
+}
+
+$binDir = Join-Path $rootDir ".bin"
 if (-not (Test-Path $binDir)) {
     New-Item -Path $binDir -ItemType Directory -Force | Out-Null
 }
@@ -23,7 +31,20 @@ Write-Host "=====================================================" -ForegroundCo
 Write-Host "   ULTRA GAMING MODE -- AUTOMATED RELEASE BUILDER    " -ForegroundColor Cyan
 Write-Host "=====================================================" -ForegroundColor Cyan
 
-# 1. Run Tauri Build
+# 1. Stop any running instances so files are not locked
+Write-Host "`n[*] Stopping any running UltraGamingMode instances..." -ForegroundColor Yellow
+Stop-Process -Name "UltraGamingMode", "ultra-gaming-mode" -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 300
+
+# 2. Delete stale hyphenated binary from old Cargo configuration
+$releaseDir = Join-Path $rootDir "ui\src-tauri\target\release"
+$staleExe   = Join-Path $releaseDir "ultra-gaming-mode.exe"
+if (Test-Path $staleExe) {
+    Remove-Item -Path $staleExe -Force -ErrorAction SilentlyContinue
+    Write-Host "  [-] Removed stale legacy binary: target\release\ultra-gaming-mode.exe" -ForegroundColor DarkGray
+}
+
+# 3. Run Tauri Build
 if (-not $SkipBuild) {
     Write-Host "`n[*] Starting release compilation (npm run tauri build)..." -ForegroundColor Yellow
     Push-Location (Join-Path $rootDir "ui")
@@ -37,32 +58,39 @@ if (-not $SkipBuild) {
     }
 }
 
-# 2. Locate and Harvest Artifacts
-$releaseDir = Join-Path $rootDir "ui\src-tauri\target\release"
-$bundleDir  = Join-Path $releaseDir "bundle"
+# 4. Locate and Harvest Artifacts
+$bundleDir = Join-Path $releaseDir "bundle"
 
-Write-Host "`n[*] Harvesting compiled binaries into .bin/ ..." -ForegroundColor Cyan
+Write-Host "`n[*] Harvesting compiled binaries into .bin/ and root..." -ForegroundColor Cyan
 
-# Standalone Portable EXE
-$portableExe = Get-ChildItem -Path $releaseDir -Filter "*ultra-gaming-mode*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $portableExe) {
-    $portableExe = Get-ChildItem -Path $releaseDir -Filter "*UltraGamingMode*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+# Standalone Portable EXE (Strictly prefer UltraGamingMode.exe over any legacy binary)
+$portablePath = Join-Path $releaseDir "UltraGamingMode.exe"
+if (-not (Test-Path $portablePath)) {
+    $fallback = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match "UltraGamingMode|ultra-gaming-mode" } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($fallback) {
+        $portablePath = $fallback.FullName
+    }
 }
 
-if ($portableExe) {
-    $destBinExe = Join-Path $binDir "UltraGamingMode.exe"
-    Copy-Item -Path $portableExe.FullName -Destination $destBinExe -Force
-    # Copy to project root for quick direct launch
-    Copy-Item -Path $portableExe.FullName -Destination (Join-Path $rootDir "UltraGamingMode.exe") -Force
+if (Test-Path $portablePath) {
+    $destBinExe  = Join-Path $binDir "UltraGamingMode.exe"
+    $destRootExe = Join-Path $rootDir "UltraGamingMode.exe"
+    Copy-Item -Path $portablePath -Destination $destBinExe -Force
+    Copy-Item -Path $portablePath -Destination $destRootExe -Force
     $sizeMb = [math]::Round((Get-Item $destBinExe).Length / 1MB, 2)
     Write-Host "  [+] Portable EXE:      .bin\UltraGamingMode.exe ($sizeMb MB)" -ForegroundColor Green
-    Write-Host "  [+] Root Shortcut:     .\UltraGamingMode.exe" -ForegroundColor Green
+    Write-Host "  [+] Root Executable:   .\UltraGamingMode.exe (Updated!)" -ForegroundColor Green
 } else {
     Write-Warning "Portable executable not found in $releaseDir"
 }
 
 # NSIS Installer Setup EXE
-$nsisExe = Get-ChildItem -Path (Join-Path $bundleDir "nsis") -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+$nsisExe = Get-ChildItem -Path (Join-Path $bundleDir "nsis") -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
 if ($nsisExe) {
     $destNsis = Join-Path $binDir "UltraGamingMode-Setup.exe"
     Copy-Item -Path $nsisExe.FullName -Destination $destNsis -Force
@@ -71,7 +99,9 @@ if ($nsisExe) {
 }
 
 # MSI Windows Installer Package
-$msiPkg = Get-ChildItem -Path (Join-Path $bundleDir "msi") -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+$msiPkg = Get-ChildItem -Path (Join-Path $bundleDir "msi") -Filter "*.msi" -Recurse -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
 if ($msiPkg) {
     $destMsi = Join-Path $binDir "UltraGamingMode.msi"
     Copy-Item -Path $msiPkg.FullName -Destination $destMsi -Force
@@ -79,7 +109,7 @@ if ($msiPkg) {
     Write-Host "  [+] MSI Package:       .bin\UltraGamingMode.msi ($sizeMb MB)" -ForegroundColor Green
 }
 
-# 3. Compute Cryptographic Checksums (SHA256)
+# 5. Compute Cryptographic Checksums (SHA256)
 Write-Host "`n[*] Computing SHA256 checksums..." -ForegroundColor Cyan
 $binFiles = Get-ChildItem -Path $binDir -Include "*.exe", "*.msi", "*.zip" -File
 $checksumFile = Join-Path $binDir "SHA256SUMS.txt"
@@ -93,20 +123,6 @@ foreach ($f in $binFiles) {
 
 $hashLines | Out-File -FilePath $checksumFile -Encoding utf8 -Force
 Write-Host "  [+] Checksums written: .bin\SHA256SUMS.txt" -ForegroundColor Green
-
-# 4. Optional: GitHub Release publishing via gh CLI
-if ($CreateGhRelease) {
-    Write-Host "`n[*] Publishing release via GitHub CLI (gh release create)..." -ForegroundColor Yellow
-    $ghAssets = @($binFiles | ForEach-Object { $_.FullName })
-    $ghAssets += $checksumFile
-
-    & gh release create $Tag $ghAssets --title "Ultra Gaming Mode $Tag" --notes "Release $Tag binaries and installers"
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "  [+] GitHub Release published successfully: $Tag" -ForegroundColor Green
-    } else {
-        Write-Warning "gh release create failed. Please upload files from .bin/ manually."
-    }
-}
 
 Write-Host "`n=====================================================" -ForegroundColor Green
 Write-Host " [SUCCESS] All release artifacts ready in .bin/:     " -ForegroundColor Green

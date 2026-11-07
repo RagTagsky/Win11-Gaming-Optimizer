@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Ultra Gaming Mode v3.0",
         "width": 960,
         "height": 680,

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Copy, Minus, Square, X, Zap } from '@lucide/svelte';
+  import { invoke } from '@tauri-apps/api/core';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
 
   interface Props {
     title?: string;
@@ -9,69 +11,51 @@
 
   let isMaximized = $state(false);
 
-  async function handleMouseDown(e: MouseEvent) {
-    if (e.button === 0) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('start_dragging');
-        return;
-      } catch {
+  function handleMouseDown(e: MouseEvent) {
+    if (e.button !== 0) return;
+    if (e.detail === 2) {
+      handleToggleMaximize(e);
+      return;
+    }
+    invoke('start_dragging').catch(() => {
+      getCurrentWindow().startDragging().catch(() => {});
+    });
+  }
+
+  function handleMinimize(e?: Event) {
+    e?.preventDefault();
+    e?.stopPropagation();
+    invoke('minimize_window').catch(() => {
+      getCurrentWindow().minimize().catch(() => {});
+    });
+  }
+
+  function handleToggleMaximize(e?: Event) {
+    e?.preventDefault();
+    e?.stopPropagation();
+    invoke('toggle_maximize_window')
+      .then(() => {
+        isMaximized = !isMaximized;
+      })
+      .catch(async () => {
         try {
-          const { getCurrentWindow } = await import('@tauri-apps/api/window');
-          await getCurrentWindow().startDragging();
+          const win = getCurrentWindow();
+          await win.toggleMaximize();
+          isMaximized = await win.isMaximized();
         } catch {}
-      }
-    }
+      });
   }
 
-  async function handleMinimize(e?: Event) {
+  function handleClose(e?: Event) {
     e?.preventDefault();
     e?.stopPropagation();
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('minimize_window');
-      return;
-    } catch {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        await getCurrentWindow().minimize();
-      } catch {}
-    }
-  }
-
-  async function handleToggleMaximize(e?: Event) {
-    e?.preventDefault();
-    e?.stopPropagation();
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('toggle_maximize_window');
-      isMaximized = !isMaximized;
-      return;
-    } catch {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        await getCurrentWindow().toggleMaximize();
-        isMaximized = await getCurrentWindow().isMaximized();
-      } catch {}
-    }
-  }
-
-  async function handleClose(e?: Event) {
-    e?.preventDefault();
-    e?.stopPropagation();
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('close_window');
-      return;
-    } catch {
-      try {
-        const { getCurrentWindow } = await import('@tauri-apps/api/window');
-        await getCurrentWindow().close();
-        return;
-      } catch {
-        window.close();
-      }
-    }
+    invoke('close_window').catch(() => {
+      getCurrentWindow()
+        .destroy()
+        .catch(() => {
+          window.close();
+        });
+    });
   }
 </script>
 
@@ -81,9 +65,7 @@
   <!-- Window Title & Branding (Draggable) -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    data-tauri-drag-region
     onmousedown={handleMouseDown}
-    ondblclick={handleToggleMaximize}
     class="flex items-center gap-2.5 h-full cursor-default select-none pr-3"
   >
     <div class="w-5 h-5 rounded flex items-center justify-center bg-emerald-950/80 border border-emerald-800/60 shadow-sm shadow-emerald-950/40 pointer-events-none">
@@ -100,9 +82,7 @@
   <!-- Draggable Center Spacer -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    data-tauri-drag-region
     onmousedown={handleMouseDown}
-    ondblclick={handleToggleMaximize}
     class="flex-1 h-full cursor-default"
   ></div>
 
