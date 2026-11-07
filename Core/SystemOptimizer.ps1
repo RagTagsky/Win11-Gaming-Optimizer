@@ -3510,6 +3510,14 @@ function Set-Windows11DebloatOptimizations {
         }
     }
 
+    # 6. Windows Security Event Auditing Suppression (auditpol)
+    try {
+        auditpol.exe /set /category:* /success:disable /failure:disable 2>&1 | Out-Null
+        Write-Host "  [+] Windows Security event auditing (auditpol) suppressed." -ForegroundColor Green
+    } catch {
+        Write-Verbose "Auditpol suppression notice: $($_.Exception.Message)"
+    }
+
     return $true
 }
 
@@ -3567,6 +3575,9 @@ function Restore-Windows11DebloatOptimizations {
         # Restore Widgets & Bing
         Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Force -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableSearchBoxSuggestions" -Force -ErrorAction SilentlyContinue
+
+        # Restore basic Security Event Auditing
+        auditpol.exe /set /subcategory:"Logon" /success:enable /failure:enable 2>&1 | Out-Null
 
         Write-Host "  [+] Windows 11 components and debloat settings reverted to original state." -ForegroundColor Green
         return $true
