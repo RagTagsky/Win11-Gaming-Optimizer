@@ -14,28 +14,38 @@
   let copied = $state(false);
 
   function copyLogs() {
-    const text = logs.map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.message}`).join('\n');
+    const text = logs
+      .map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.message}`)
+      .join('\n');
     navigator.clipboard.writeText(text);
     copied = true;
     setTimeout(() => (copied = false), 2000);
   }
 </script>
 
-<div class="rounded-xl border border-[#20222a] bg-[#111216] overflow-hidden transition-all shadow-sm">
-  <!-- Bar Header -->
-  <div class="flex items-center justify-between px-4 py-2.5 bg-[#14151a] border-b border-[#1f2027]">
+<div
+  class="rounded-xl border overflow-hidden transition-all"
+  style="background-color: var(--bg-surface); border-color: var(--border-subtle);"
+>
+  <div
+    class="flex items-center justify-between px-4 py-2.5 border-b"
+    style="background-color: var(--bg-elevated); border-color: var(--border-subtle);"
+  >
     <button
       type="button"
       onclick={onToggle}
-      class="flex items-center gap-2 text-xs font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer select-none"
+      class="flex items-center gap-2 text-xs font-semibold transition-colors cursor-pointer select-none"
+      style="color: var(--text-primary);"
     >
-      <Terminal class="w-3.5 h-3.5 text-zinc-400" />
-      <span>Консоль выполнения и журнал событий</span>
-      <span class="text-[10px] text-zinc-500 font-mono">({logs.length})</span>
+      <Terminal class="w-3.5 h-3.5" style="color: var(--text-secondary);" />
+      <span>Журнал событий</span>
+      <span class="text-[11px] font-mono" style="color: var(--text-muted);">
+        ({logs.length})
+      </span>
       {#if isOpen}
-        <ChevronDown class="w-3.5 h-3.5 text-zinc-500" />
+        <ChevronDown class="w-3.5 h-3.5" style="color: var(--text-muted);" />
       {:else}
-        <ChevronUp class="w-3.5 h-3.5 text-zinc-500" />
+        <ChevronUp class="w-3.5 h-3.5" style="color: var(--text-muted);" />
       {/if}
     </button>
 
@@ -44,17 +54,19 @@
         <button
           type="button"
           onclick={copyLogs}
-          class="flex items-center gap-1.5 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 px-2.5 py-1 rounded-lg hover:bg-[#1f2027] transition-colors cursor-pointer"
+          class="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-colors cursor-pointer"
+          style="background-color: var(--bg-surface); border-color: var(--border-subtle); color: var(--text-secondary);"
           title="Скопировать журнал"
         >
           <Copy class="w-3 h-3" />
-          <span>{copied ? 'Скопировано!' : 'Копировать'}</span>
+          <span>{copied ? 'Скопировано' : 'Копировать'}</span>
         </button>
         <button
           type="button"
           onclick={onClear}
-          class="flex items-center gap-1.5 text-[11px] font-medium text-zinc-400 hover:text-rose-400 px-2.5 py-1 rounded-lg hover:bg-[#1f2027] transition-colors cursor-pointer"
-          title="Очистить"
+          class="flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-md border transition-colors cursor-pointer"
+          style="background-color: var(--bg-surface); border-color: var(--border-subtle); color: var(--text-secondary);"
+          title="Очистить журнал"
         >
           <Trash2 class="w-3 h-3" />
           <span>Очистить</span>
@@ -63,25 +75,31 @@
     {/if}
   </div>
 
-  <!-- Collapsible Log Body -->
   {#if isOpen}
-    <div class="p-3.5 max-h-[170px] overflow-y-auto font-mono text-[11px] space-y-1 select-text bg-[#0c0d10]">
+    <div
+      class="p-3.5 max-h-[170px] overflow-y-auto font-mono text-[11px] space-y-1.5 select-text"
+      style="background-color: var(--bg-app);"
+    >
       {#each logs as log}
         <div class="flex items-start gap-2.5 leading-relaxed">
-          <span class="text-zinc-600 shrink-0 select-none">[{log.timestamp}]</span>
+          <span class="shrink-0 select-none" style="color: var(--text-muted);">
+            {log.timestamp}
+          </span>
           {#if log.level === 'success'}
-            <span class="text-emerald-400 shrink-0 font-bold">[OK]</span>
+            <span class="shrink-0 font-semibold" style="color: var(--active-primary);">Готово</span>
           {:else if log.level === 'warn'}
-            <span class="text-amber-400 shrink-0 font-bold">[WARN]</span>
+            <span class="shrink-0 font-semibold" style="color: var(--warn-primary);">Внимание</span>
           {:else if log.level === 'error'}
-            <span class="text-rose-400 shrink-0 font-bold">[ERR]</span>
+            <span class="shrink-0 font-semibold" style="color: var(--danger-primary);">Ошибка</span>
           {:else}
-            <span class="text-zinc-500 shrink-0">[INFO]</span>
+            <span class="shrink-0" style="color: var(--accent-primary);">Инфо</span>
           {/if}
-          <span class="text-zinc-300 break-all">{log.message}</span>
+          <span class="break-all" style="color: var(--text-primary);">{log.message}</span>
         </div>
       {:else}
-        <div class="text-zinc-600 text-center py-4 text-xs font-sans">Журнал событий пуст</div>
+        <div class="text-center py-4 text-xs font-sans" style="color: var(--text-muted);">
+          Журнал событий пуст
+        </div>
       {/each}
     </div>
   {/if}

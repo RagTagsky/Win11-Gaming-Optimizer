@@ -1,6 +1,8 @@
-export type ModeState = 'Normal' | 'Gaming' | 'Transitioning' | 'Error';
+export type ModeState = 'Normal' | 'Armed' | 'Gaming' | 'Transitioning' | 'Error';
 
 export type OptimizationProfile = 'competitive' | 'aaa' | 'custom';
+
+export type ThemeMode = 'dark' | 'light';
 
 export interface HardwareInfo {
   cpu: string;
@@ -12,25 +14,23 @@ export interface HardwareInfo {
   timerResolution?: string;
 }
 
-export interface ServiceItem {
-  name: string;
-  reason: string;
-  category: 'telemetry' | 'printing' | 'network' | 'gaming' | 'system';
-  status: 'Running' | 'Stopped' | 'Disabled' | 'Manual';
+export interface TuningConfig {
+  DisableFullscreenOptimizations: boolean;
+  DisableMouseAccel: boolean;
+  EnableNetAdapterMsi: boolean;
+  InputBufferQueueSize: number;
 }
 
-export interface BloatProcess {
-  name: string;
-  description: string;
+export interface BlacklistServiceItem {
+  Name: string;
+  DisplayName: string;
+  Category: string;
+  Reason: string;
 }
 
-export interface TweakSetting {
-  id: string;
-  title: string;
-  description: string;
-  category: 'display' | 'latency' | 'power' | 'network';
-  enabled: boolean;
-  recommended: boolean;
+export interface ServicesLists {
+  blacklist: BlacklistServiceItem[];
+  whitelist: string[];
 }
 
 export interface LogEntry {

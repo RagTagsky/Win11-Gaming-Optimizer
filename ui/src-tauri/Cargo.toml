@@ -9,6 +9,7 @@ build = "build.rs"
 [[bin]]
 name = "UltraGamingMode"
 path = "src/main.rs"
+test = false
 
 [lib]
 name = "ultra_gaming_mode_lib"

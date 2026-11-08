@@ -4,7 +4,7 @@
 .DESCRIPTION
     Manages the full lifecycle of Ultra Gaming Mode:
     - Enable: Snapshots current state, suppresses user startup apps/UWP/visual effects, and arms boot task.
-    - ApplyBootMode: Called by Task Scheduler on boot under SYSTEM to strip 173 non-essential services.
+    - ApplyBootMode: Called by Task Scheduler on boot under SYSTEM to strip 207 non-essential services.
     - Restore: Returns all services, startup items, UWP apps, and visual parameters to original state.
     - Status: Shows current state, active services, and scheduled task status.
     - Diagnostic: Verifies system readiness, whitelist protection, and bloatware coverage.
@@ -34,6 +34,12 @@ param (
 
     [switch]$Force
 )
+
+# ── Console UTF-8 Output Encoding (prevents CP866 mojibake in Tauri pipes) ───
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {}
 
 # ── Admin Rights & Watchdog Delegation Check ──────────────────────────────────
 $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem
@@ -65,9 +71,9 @@ $blacklistPath   = Join-Path $RootDir "Config\services_blacklist.json"
 $whitelistPath   = Join-Path $RootDir "Config\services_whitelist.json"
 $startupAppsPath = Join-Path $RootDir "Config\startup_apps.json"
 
-$blacklist  = (Get-Content $blacklistPath -Raw | ConvertFrom-Json).TargetServices
-$whitelist  = (Get-Content $whitelistPath -Raw | ConvertFrom-Json).ProtectedServices
-$startupCfg = Get-Content $startupAppsPath -Raw | ConvertFrom-Json
+$blacklist  = (Get-Content -LiteralPath $blacklistPath -Raw -Encoding UTF8 | ConvertFrom-Json).TargetServices
+$whitelist  = (Get-Content -LiteralPath $whitelistPath -Raw -Encoding UTF8 | ConvertFrom-Json).ProtectedServices
+$startupCfg = Get-Content -LiteralPath $startupAppsPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 # ── Automatic Update Check on Direct Launch ───────────────────────────────────
 if (-not $SkipUpdateCheck -and -not $Watchdog -and -not $isSystem -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate")) {
@@ -276,7 +282,7 @@ switch ($Action) {
 
         Write-Host "`n[SUCCESS] PC is primed for Ultra Gaming Mode!" -ForegroundColor Green
         Write-Host "  - Third-party startup apps, shortcuts, and TranslucentTB are suppressed." -ForegroundColor White
-        Write-Host "  - On next restart, 173 non-essential Windows services will be disabled." -ForegroundColor White
+        Write-Host "  - On next restart, 207 non-essential Windows services will be disabled." -ForegroundColor White
         Write-Host "  - Windows Audio, Network, AMD DisplayPort DSC, and Anti-Cheats remain 100% protected." -ForegroundColor White
         Write-Host "`n[FAIL-SAFE WATCHDOG] When done playing, simply run Option [2] Restore, or reboot the PC." -ForegroundColor Yellow
     }
@@ -332,7 +338,7 @@ switch ($Action) {
                         Set-NTFSGamingOptimizations -IsHdd:([bool]$hw.HddProfile) | Out-Null
                         Set-NetworkGamingOptimizations | Out-Null
                         Set-KernelDpcOptimizations -IsLowRam:([bool]$hw.LowRamProfile) | Out-Null
-                        Set-InputBufferOptimizations -QueueSize 100 | Out-Null
+                        Apply-SystemStateBootMode -StateData $stateData | Out-Null
                         Set-BcdeditTimerOptimizations | Out-Null
                         Set-TcpGamingStackOptimizations | Out-Null
                         Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
@@ -568,10 +574,10 @@ switch ($Action) {
         $bcd = Get-BcdeditTimerConfig
         $hags = Get-HagsGpuSchedulingConfig
 
-        $dpcBadge = if ($kdpc.ThreadDpcEnable -eq 0) { "Kernel DPC: Direct" } else { "Kernel DPC: Standard" }
+        $dpcBadge = if ($kdpc.ThreadDpcEnable -ne 0) { "Kernel DPC: Threaded (Optimal)" } else { "Kernel DPC: Direct (Unsafe)" }
         $mouQueue = if ($input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { 100 }
         $inputBadge = "Input Buffer: $mouQueue"
-        $timerBadge = if ($bcd.DynamicTick -eq "yes") { "Dynamic Tick: Off" } else { "Dynamic Tick: Default" }
+        $timerBadge = if ($bcd.DynamicTick -ne "yes") { "Dynamic Tick: Default (Optimal)" } else { "Dynamic Tick: Off (Overhead)" }
         $hagsBadge = if ($hags.HwSchMode -eq 2) { "HAGS: Active" } else { "HAGS: Inactive" }
         Write-Host " Latency Badges: [$dpcBadge] [$inputBadge] [$timerBadge] [$hagsBadge]" -ForegroundColor Green
 

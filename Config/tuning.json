@@ -1,3 +1,6 @@
 {
-  "DisableFullscreenOptimizations": true
+  "DisableFullscreenOptimizations": true,
+  "DisableMouseAccel": false,
+  "EnableNetAdapterMsi": true,
+  "InputBufferQueueSize": 100
 }

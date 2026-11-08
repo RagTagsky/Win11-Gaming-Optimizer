@@ -3,16 +3,16 @@
     Activity,
     CheckCircle2,
     Cpu,
-    Flame,
     HardDrive,
     Monitor,
     RefreshCw,
     Shield,
+    Sliders,
     Sparkles,
     Timer,
     Zap,
   } from '@lucide/svelte';
-  import { executeEmergencyRepair, lockTimerResolution } from '../api';
+  import { executeEmergencyRepair, fetchSystemStatus, lockTimerResolution } from '../api';
   import type { HardwareInfo, LogEntry, ModeState, OptimizationProfile } from '../types';
 
   interface Props {
@@ -21,6 +21,7 @@
     hardware: HardwareInfo;
     onToggleMode: () => void;
     onSelectProfile: (profile: OptimizationProfile) => void;
+    onHardwareRefresh?: (hw: HardwareInfo) => void;
     onLog?: (level: LogEntry['level'], message: string) => void;
   }
 
@@ -30,15 +31,42 @@
     hardware,
     onToggleMode,
     onSelectProfile,
+    onHardwareRefresh,
     onLog,
   }: Props = $props();
 
   const isGaming = $derived(mode === 'Gaming');
+  const isArmed = $derived(mode === 'Armed');
+  const isActiveOrArmed = $derived(mode === 'Gaming' || mode === 'Armed');
   const isTransitioning = $derived(mode === 'Transitioning');
 
   let isTimerLocking = $state(false);
   let isMemoryPurging = $state(false);
   let timerLocked = $state(false);
+
+  const statusBadgeText = $derived(
+    isGaming
+      ? 'Игровой режим активен'
+      : isArmed
+        ? 'Активен в сессии (ожидает перезагрузки)'
+        : 'Штатный режим'
+  );
+
+  const statusHeadline = $derived(
+    isGaming
+      ? 'Игровой режим полностью активирован'
+      : isArmed
+        ? 'Сессия оптимизирована · перезагрузите ПК для отключения 207 служб'
+        : 'Штатный режим работы Windows'
+  );
+
+  const statusDescription = $derived(
+    isGaming
+      ? '207 неигровых фоновых служб остановлены, планировщик CPU/GPU и сетевой стек переведены в режим минимальной задержки. При следующей перезагрузке штатное состояние восстановится автоматически.'
+      : isArmed
+        ? 'Пользовательская автозагрузка, анимации, сетевые очереди и параметры ввода уже применены в текущей сессии. После перезагрузки ПК планировщик отключит 207 фоновых служб.'
+        : 'Все системные службы, поиск Windows, буфер обмена, скриншоты (PrtSc) и печать работают в стандартном режиме. Выберите профиль и включите игровой режим перед запуском игры.'
+  );
 
   async function handleLockTimer() {
     isTimerLocking = true;
@@ -46,8 +74,10 @@
       const res = await lockTimerResolution();
       timerLocked = res.success;
       onLog?.(res.success ? 'success' : 'error', res.message);
+      const latest = await fetchSystemStatus();
+      onHardwareRefresh?.(latest.hardware);
     } catch (e: any) {
-      onLog?.('error', `Ошибка блокировки таймера: ${e?.message || e}`);
+      onLog?.('error', `Ошибка настройки таймера: ${e?.message || e}`);
     } finally {
       isTimerLocking = false;
     }
@@ -58,6 +88,8 @@
     try {
       const res = await executeEmergencyRepair('memory');
       onLog?.(res.success ? 'success' : 'error', res.message);
+      const latest = await fetchSystemStatus();
+      onHardwareRefresh?.(latest.hardware);
     } catch (e: any) {
       onLog?.('error', `Ошибка очистки памяти: ${e?.message || e}`);
     } finally {
@@ -67,235 +99,346 @@
 </script>
 
 <div class="space-y-5">
-  <!-- Status Banner Card -->
+  <!-- Main System State Card -->
   <div
-    class="relative overflow-hidden rounded-2xl p-6 border transition-all duration-300 {isGaming
-      ? 'bg-gradient-to-br from-[#101b15] via-[#0d1512] to-[#0a100e] border-emerald-500/40 shadow-xl shadow-emerald-950/30 ring-1 ring-emerald-500/20'
-      : 'bg-[#131419] border-[#20222a] shadow-md'}"
+    class="rounded-xl p-6 border transition-all duration-200"
+    style="
+      background-color: var(--bg-surface);
+      border-color: {isGaming
+      ? 'var(--active-border)'
+      : isArmed
+        ? 'var(--warn-border)'
+        : 'var(--border-subtle)'};
+    "
   >
-    <div class="flex items-start justify-between gap-6">
-      <div class="space-y-2.5">
-        <div class="flex items-center gap-2">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-5">
+      <div class="space-y-2">
+        <div class="flex items-center gap-2.5">
           <span
-            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold tracking-wider {isGaming
-              ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-700/60 shadow-sm shadow-emerald-950/50'
-              : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/60'}"
+            class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-semibold border"
+            style="
+              background-color: {isGaming
+              ? 'var(--active-soft)'
+              : isArmed
+                ? 'var(--warn-soft)'
+                : 'var(--bg-elevated)'};
+              color: {isGaming
+              ? 'var(--active-primary)'
+              : isArmed
+                ? 'var(--warn-primary)'
+                : 'var(--text-secondary)'};
+              border-color: {isGaming
+              ? 'var(--active-border)'
+              : isArmed
+                ? 'var(--warn-border)'
+                : 'var(--border-subtle)'};
+            "
           >
             <span
-              class="w-2 h-2 rounded-full {isGaming
-                ? 'bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400/50'
-                : 'bg-zinc-500'}"
+              class="w-2 h-2 rounded-full"
+              style="background-color: {isGaming
+                ? 'var(--active-primary)'
+                : isArmed
+                  ? 'var(--warn-primary)'
+                  : 'var(--text-muted)'};"
             ></span>
-            {isGaming ? 'GAMING MODE ACTIVE' : 'NORMAL MODE'}
+            {statusBadgeText}
           </span>
-          <span class="text-xs text-zinc-500 font-mono">v3.0 Pure On-Demand</span>
         </div>
 
-        <h2 class="text-2xl font-bold text-white tracking-tight">
-          {isGaming ? 'Ultra Gaming Mode активен' : 'Штатный режим Windows'}
+        <h2 class="text-xl font-bold tracking-tight" style="color: var(--text-primary);">
+          {statusHeadline}
         </h2>
 
-        <p class="text-xs text-zinc-400 max-w-xl leading-relaxed">
-          {isGaming
-            ? '207 служб телеметрии и фоновый шум подавлены. Максимальный приоритет GPU/DWM, защита MPO включена, микрозадержки DPC устранены.'
-            : 'Все стандартные системные службы (Windows Search, Ножницы/PrtSc, диспетчер печати, сетевые профили) работают штатно. Система готова к игре.'}
+        <p class="text-xs max-w-2xl leading-relaxed" style="color: var(--text-secondary);">
+          {statusDescription}
         </p>
       </div>
 
-      <!-- Action Button -->
-      <div class="flex flex-col items-end gap-2 shrink-0">
+      <!-- Primary Control Action -->
+      <div class="flex flex-col items-start md:items-end gap-1.5 shrink-0">
         <button
           type="button"
           onclick={onToggleMode}
           disabled={isTransitioning}
-          class="relative flex items-center gap-2.5 px-6 py-3.5 rounded-xl text-sm font-bold tracking-wide transition-all duration-200 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed {isGaming
-            ? 'bg-[#1e222a] hover:bg-[#282d38] text-zinc-100 border border-zinc-600/60 hover:border-zinc-500 shadow-md active:scale-[0.98]'
-            : 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-zinc-950 shadow-lg shadow-emerald-950/60 active:scale-[0.98]'}"
+          class="flex items-center gap-2.5 px-5 py-3 rounded-lg text-sm font-semibold transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-white shadow-sm"
+          style="
+            background-color: {isActiveOrArmed ? 'var(--bg-elevated)' : 'var(--accent-primary)'};
+            color: {isActiveOrArmed ? 'var(--text-primary)' : '#ffffff'};
+            border: 1px solid {isActiveOrArmed ? 'var(--border-strong)' : 'transparent'};
+          "
         >
           {#if isTransitioning}
-            <RefreshCw class="w-4 h-4 animate-spin text-zinc-300" />
-            <span>Применение...</span>
-          {:else if isGaming}
-            <RefreshCw class="w-4 h-4 text-zinc-300" />
-            <span>Восстановить штатный режим</span>
+            <RefreshCw class="w-4 h-4 animate-spin" />
+            <span>Выполнение...</span>
+          {:else if isActiveOrArmed}
+            <RefreshCw class="w-4 h-4" />
+            <span>Вернуть штатный режим</span>
           {:else}
-            <Zap class="w-4 h-4 text-zinc-950 fill-zinc-950" />
-            <span>Включить Ultra Gaming Mode</span>
+            <Zap class="w-4 h-4" />
+            <span>Включить игровой режим</span>
           {/if}
         </button>
-        <span class="text-[11px] text-zinc-500">
-          {isGaming ? 'Откат занимает ~1.2 сек' : 'Мгновенный переход без перезагрузки'}
+        <span class="text-[11px]" style="color: var(--text-muted);">
+          {isActiveOrArmed
+            ? 'Восстанавливает все службы и настройки из резервной копии'
+            : 'Создаёт снимок состояния и применяет выбранный профиль'}
         </span>
       </div>
     </div>
   </div>
 
-  <!-- Profiles Selector -->
+  <!-- Profile Selector -->
   <div class="space-y-2.5">
     <div class="flex items-center justify-between">
-      <span class="text-xs font-bold uppercase tracking-wider text-zinc-400">
+      <span class="text-xs font-semibold" style="color: var(--text-secondary);">
         Профиль оптимизации
       </span>
-      <span class="text-[11px] font-mono text-zinc-500">АКТИВЕН: <span class="text-emerald-400 font-semibold">{profile.toUpperCase()}</span></span>
+      <span class="text-xs" style="color: var(--text-muted);">
+        Выбран:
+        <strong style="color: var(--text-primary);">
+          {profile === 'competitive'
+            ? 'Киберспорт'
+            : profile === 'aaa'
+              ? 'AAA и стриминг'
+              : 'Пользовательский'}
+        </strong>
+      </span>
     </div>
 
-    <div class="grid grid-cols-3 gap-3">
-      <!-- Competitive Profile -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <!-- Esports / Competitive -->
       <button
         type="button"
         onclick={() => onSelectProfile('competitive')}
-        class="text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer {profile === 'competitive'
-          ? 'bg-[#121c17] border-emerald-500/60 ring-1 ring-emerald-500/30 shadow-md shadow-emerald-950/30'
-          : 'bg-[#131418] border-[#22242b] hover:border-[#323540] hover:bg-[#161820] text-zinc-400'}"
+        class="text-left p-4 rounded-xl border transition-all duration-150 cursor-pointer"
+        style="
+          background-color: {profile === 'competitive' ? 'var(--accent-soft)' : 'var(--bg-surface)'};
+          border-color: {profile === 'competitive' ? 'var(--accent-border)' : 'var(--border-subtle)'};
+        "
       >
         <div class="flex items-center gap-2 mb-1.5">
-          <Flame class="w-4 h-4 {profile === 'competitive' ? 'text-emerald-400' : 'text-zinc-500'}" />
-          <span class="text-xs font-bold text-zinc-200">Киберспорт (CS2 / Deadlock)</span>
+          <Zap
+            class="w-4 h-4"
+            style="color: {profile === 'competitive' ? 'var(--accent-primary)' : 'var(--text-muted)'};"
+          />
+          <span class="text-xs font-semibold" style="color: var(--text-primary);">
+            Киберспорт
+          </span>
         </div>
-        <p class="text-[11px] text-zinc-400 leading-snug">
-          Агрессивный FSE, IFEO High, подавление фоновых процессов, DPC-приоритет.
+        <p class="text-[11px] leading-relaxed" style="color: var(--text-secondary);">
+          Классический полноэкранный режим (FSE), MSI сетевой карты, очередь ввода 100 пакетов и высокий приоритет CS2 / Deadlock.
         </p>
       </button>
 
-      <!-- AAA Balanced Profile -->
+      <!-- AAA & Streaming -->
       <button
         type="button"
         onclick={() => onSelectProfile('aaa')}
-        class="text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer {profile === 'aaa'
-          ? 'bg-[#121c17] border-emerald-500/60 ring-1 ring-emerald-500/30 shadow-md shadow-emerald-950/30'
-          : 'bg-[#131418] border-[#22242b] hover:border-[#323540] hover:bg-[#161820] text-zinc-400'}"
+        class="text-left p-4 rounded-xl border transition-all duration-150 cursor-pointer"
+        style="
+          background-color: {profile === 'aaa' ? 'var(--accent-soft)' : 'var(--bg-surface)'};
+          border-color: {profile === 'aaa' ? 'var(--accent-border)' : 'var(--border-subtle)'};
+        "
       >
         <div class="flex items-center gap-2 mb-1.5">
-          <Sparkles class="w-4 h-4 {profile === 'aaa' ? 'text-emerald-400' : 'text-zinc-500'}" />
-          <span class="text-xs font-bold text-zinc-200">AAA Сбалансированный (RDR2)</span>
+          <Sparkles
+            class="w-4 h-4"
+            style="color: {profile === 'aaa' ? 'var(--accent-primary)' : 'var(--text-muted)'};"
+          />
+          <span class="text-xs font-semibold" style="color: var(--text-primary);">
+            AAA и стриминг
+          </span>
         </div>
-        <p class="text-[11px] text-zinc-400 leading-snug">
-          Приоритет Normal, защита DWM/FreeSync, стабильный Vulkan, защита от морганий.
+        <p class="text-[11px] leading-relaxed" style="color: var(--text-secondary);">
+          Современный Flip Model без принудительного FSE, плавный Alt-Tab для OBS/Discord, защита от мерцания дисплея (MPO).
         </p>
       </button>
 
-      <!-- Custom Profile -->
+      <!-- Custom -->
       <button
         type="button"
         onclick={() => onSelectProfile('custom')}
-        class="text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer {profile === 'custom'
-          ? 'bg-[#121c17] border-emerald-500/60 ring-1 ring-emerald-500/30 shadow-md shadow-emerald-950/30'
-          : 'bg-[#131418] border-[#22242b] hover:border-[#323540] hover:bg-[#161820] text-zinc-400'}"
+        class="text-left p-4 rounded-xl border transition-all duration-150 cursor-pointer"
+        style="
+          background-color: {profile === 'custom' ? 'var(--accent-soft)' : 'var(--bg-surface)'};
+          border-color: {profile === 'custom' ? 'var(--accent-border)' : 'var(--border-subtle)'};
+        "
       >
         <div class="flex items-center gap-2 mb-1.5">
-          <Shield class="w-4 h-4 {profile === 'custom' ? 'text-emerald-400' : 'text-zinc-500'}" />
-          <span class="text-xs font-bold text-zinc-200">Пользовательский</span>
+          <Sliders
+            class="w-4 h-4"
+            style="color: {profile === 'custom' ? 'var(--accent-primary)' : 'var(--text-muted)'};"
+          />
+          <span class="text-xs font-semibold" style="color: var(--text-primary);">
+            Пользовательский
+          </span>
         </div>
-        <p class="text-[11px] text-zinc-400 leading-snug">
-          Ручной выбор из 207 служб и индивидуальных твиков системы.
+        <p class="text-[11px] leading-relaxed" style="color: var(--text-secondary);">
+          Использует индивидуальные параметры из вкладки «Настройки» (Config/tuning.json).
         </p>
       </button>
     </div>
   </div>
 
-  <!-- Hardware & Realtime Latency Grid -->
+  <!-- Hardware & System Metrics Grid -->
   <div class="space-y-2.5">
-    <span class="text-xs font-bold uppercase tracking-wider text-zinc-400">
-      Аппаратный стек и готовность системы
+    <span class="text-xs font-semibold" style="color: var(--text-secondary);">
+      Оборудование и ключевые показатели
     </span>
 
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <!-- CPU -->
-      <div class="flex items-center gap-3.5 p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
-        <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
-          <Cpu class="w-4 h-4 text-zinc-300" />
+      <div
+        class="flex items-center gap-3.5 p-3.5 rounded-xl border transition-colors"
+        style="background-color: var(--bg-surface); border-color: var(--border-subtle);"
+      >
+        <div
+          class="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0"
+          style="background-color: var(--bg-elevated); border-color: var(--border-subtle);"
+        >
+          <Cpu class="w-4 h-4" style="color: var(--accent-primary);" />
         </div>
         <div class="space-y-0.5 min-w-0">
-          <span class="text-[11px] text-zinc-500">Процессор (TSC High-Res)</span>
-          <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.cpu}</p>
+          <span class="text-[11px]" style="color: var(--text-muted);">Процессор</span>
+          <p class="text-xs font-semibold truncate" style="color: var(--text-primary);" title={hardware.cpu}>
+            {hardware.cpu}
+          </p>
         </div>
       </div>
 
       <!-- GPU -->
-      <div class="flex items-center gap-3.5 p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
-        <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
-          <Activity class="w-4 h-4 text-zinc-300" />
+      <div
+        class="flex items-center gap-3.5 p-3.5 rounded-xl border transition-colors"
+        style="background-color: var(--bg-surface); border-color: var(--border-subtle);"
+      >
+        <div
+          class="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0"
+          style="background-color: var(--bg-elevated); border-color: var(--border-subtle);"
+        >
+          <Activity class="w-4 h-4" style="color: var(--accent-primary);" />
         </div>
         <div class="space-y-0.5 min-w-0">
-          <span class="text-[11px] text-zinc-500">Видеокарта & VRAM</span>
-          <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.gpu}</p>
+          <span class="text-[11px]" style="color: var(--text-muted);">Видеокарта</span>
+          <p class="text-xs font-semibold truncate" style="color: var(--text-primary);" title={hardware.gpu}>
+            {hardware.gpu}
+          </p>
         </div>
       </div>
 
-      <!-- Display -->
-      <div class="flex items-center gap-3.5 p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
-        <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
-          <Monitor class="w-4 h-4 text-emerald-400" />
+      <!-- Display & MPO -->
+      <div
+        class="flex items-center gap-3.5 p-3.5 rounded-xl border transition-colors"
+        style="background-color: var(--bg-surface); border-color: var(--border-subtle);"
+      >
+        <div
+          class="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0"
+          style="background-color: var(--bg-elevated); border-color: var(--border-subtle);"
+        >
+          <Monitor class="w-4 h-4" style="color: var(--active-primary);" />
         </div>
         <div class="space-y-0.5 min-w-0">
-          <span class="text-[11px] text-zinc-500">Дисплей & FreeSync</span>
-          <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.display}</p>
+          <span class="text-[11px]" style="color: var(--text-muted);">Дисплей и композитор DWM</span>
+          <p class="text-xs font-semibold truncate" style="color: var(--text-primary);" title={hardware.display}>
+            {hardware.display}
+          </p>
         </div>
       </div>
 
-      <!-- DPC Latency -->
-      <div class="flex items-center gap-3.5 p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
-        <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
-          <CheckCircle2 class="w-4 h-4 text-emerald-400" />
+      <!-- Kernel DPC & Scheduler -->
+      <div
+        class="flex items-center gap-3.5 p-3.5 rounded-xl border transition-colors"
+        style="background-color: var(--bg-surface); border-color: var(--border-subtle);"
+      >
+        <div
+          class="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0"
+          style="background-color: var(--bg-elevated); border-color: var(--border-subtle);"
+        >
+          <CheckCircle2 class="w-4 h-4" style="color: var(--active-primary);" />
         </div>
         <div class="space-y-0.5 min-w-0">
-          <span class="text-[11px] text-zinc-500">DPC Latency Engine</span>
-          <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.dpcLatency}</p>
+          <span class="text-[11px]" style="color: var(--text-muted);">Планировщик ядра и DPC</span>
+          <p class="text-xs font-semibold truncate" style="color: var(--text-primary);" title={hardware.dpcLatency}>
+            {hardware.dpcLatency}
+          </p>
         </div>
       </div>
 
       <!-- RAM & Standby Cache -->
-      <div class="flex items-center justify-between p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
+      <div
+        class="flex items-center justify-between gap-2 p-3.5 rounded-xl border transition-colors"
+        style="background-color: var(--bg-surface); border-color: var(--border-subtle);"
+      >
         <div class="flex items-center gap-3.5 min-w-0">
-          <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
-            <HardDrive class="w-4 h-4 text-zinc-300" />
+          <div
+            class="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0"
+            style="background-color: var(--bg-elevated); border-color: var(--border-subtle);"
+          >
+            <HardDrive class="w-4 h-4" style="color: var(--accent-primary);" />
           </div>
           <div class="space-y-0.5 min-w-0">
-            <span class="text-[11px] text-zinc-500">Память & Standby кэш</span>
-            <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.ram}</p>
+            <span class="text-[11px]" style="color: var(--text-muted);">Оперативная память</span>
+            <p class="text-xs font-semibold truncate" style="color: var(--text-primary);" title={hardware.ram}>
+              {hardware.ram}
+            </p>
           </div>
         </div>
         <button
           type="button"
           onclick={handlePurgeMemory}
           disabled={isMemoryPurging}
-          class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-[#1c1e26] hover:bg-[#252834] text-zinc-200 border border-[#2c2f3d] transition-all cursor-pointer disabled:opacity-50"
-          title="Сбросить кэш Standby RAM"
+          class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer disabled:opacity-50"
+          style="background-color: var(--bg-elevated); border-color: var(--border-subtle); color: var(--text-primary);"
+          title="Очистить резервный кэш памяти (Standby List)"
         >
           {#if isMemoryPurging}
-            <RefreshCw class="w-3 h-3 animate-spin" />
+            <RefreshCw class="w-3.5 h-3.5 animate-spin" />
           {:else}
-            <span>Сброс</span>
+            <span>Очистить кэш</span>
           {/if}
         </button>
       </div>
 
       <!-- System Timer Resolution -->
-      <div class="flex items-center justify-between p-3.5 rounded-xl bg-[#131419] border border-[#20222a] hover:border-[#2d303b] transition-colors">
+      <div
+        class="flex items-center justify-between gap-2 p-3.5 rounded-xl border transition-colors"
+        style="background-color: var(--bg-surface); border-color: var(--border-subtle);"
+      >
         <div class="flex items-center gap-3.5 min-w-0">
-          <div class="w-9 h-9 rounded-lg bg-[#181a22] flex items-center justify-center border border-[#2a2d39] shrink-0">
-            <Timer class="w-4 h-4 {timerLocked ? 'text-emerald-400' : 'text-zinc-300'}" />
+          <div
+            class="w-9 h-9 rounded-lg flex items-center justify-center border shrink-0"
+            style="background-color: var(--bg-elevated); border-color: var(--border-subtle);"
+          >
+            <Timer
+              class="w-4 h-4"
+              style="color: {timerLocked ? 'var(--active-primary)' : 'var(--accent-primary)'};"
+            />
           </div>
           <div class="space-y-0.5 min-w-0">
-            <span class="text-[11px] text-zinc-500">Таймер ядра (Low Jitter)</span>
-            <p class="text-xs font-semibold text-zinc-200 truncate">{hardware.timerResolution || '0.500 ms (Locked via ntdll)'}</p>
+            <span class="text-[11px]" style="color: var(--text-muted);">Системный таймер ядра</span>
+            <p class="text-xs font-semibold truncate" style="color: var(--text-primary);">
+              {hardware.timerResolution || '1.000 мс'}
+            </p>
           </div>
         </div>
         <button
           type="button"
           onclick={handleLockTimer}
           disabled={isTimerLocking}
-          class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50 {timerLocked
-            ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/60'
-            : 'bg-[#1c1e26] hover:bg-[#252834] text-zinc-200 border border-[#2c2f3d]'}"
-          title="Заблокировать системный таймер на 0.500 мс"
+          class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer disabled:opacity-50"
+          style="
+            background-color: {timerLocked ? 'var(--active-soft)' : 'var(--bg-elevated)'};
+            border-color: {timerLocked ? 'var(--active-border)' : 'var(--border-subtle)'};
+            color: {timerLocked ? 'var(--active-primary)' : 'var(--text-primary)'};
+          "
+          title="Зафиксировать разрешение системного таймера на 0.5 мс"
         >
           {#if isTimerLocking}
-            <RefreshCw class="w-3 h-3 animate-spin" />
+            <RefreshCw class="w-3.5 h-3.5 animate-spin" />
           {:else if timerLocked}
-            <span>0.5ms ✓</span>
+            <span>0.5 мс активен</span>
           {:else}
-            <span>Lock 0.5ms</span>
+            <span>Задать 0.5 мс</span>
           {/if}
         </button>
       </div>

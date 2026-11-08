@@ -237,9 +237,10 @@ function New-SystemStateBackup {
         PowerLatencyConfig       = $null
         MemoryCompressionConfig  = $null
         DebloatConfig            = $null
+        NetAdapterMsiConfig      = @()
     }
 
-    # 1. Services Snapshot - shortcut: optimized for FPS & speed (batch CIM query instead of 173 individual calls)
+    # 1. Services Snapshot - shortcut: optimized for FPS & speed (batch CIM query instead of 207 individual calls)
     $cimServices = @(Get-CimInstance -ClassName Win32_Service -Property Name, DisplayName, StartMode, State -ErrorAction SilentlyContinue)
     $serviceMap = @{}
     foreach ($cs in $cimServices) {
@@ -462,11 +463,12 @@ function New-SystemStateBackup {
     # 17. HAGS GPU Scheduling Snapshot
     $snapshot.HagsConfig = Get-HagsGpuSchedulingConfig
 
-    # 18-20. v2.8 extended registry tweaks, USB/NVMe/EPP power latency, memory compression
-    $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist))
+    # 18-21. v2.8 extended registry tweaks, USB/NVMe/EPP power latency, memory compression, PCIe NIC MSI mode
+    $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true })))
     $snapshot.PowerLatencyConfig      = Get-PowerLatencyConfig
     $snapshot.MemoryCompressionConfig = Get-MemoryCompressionConfig
     $snapshot.DebloatConfig           = Get-Windows11DebloatConfig
+    $snapshot.NetAdapterMsiConfig      = @(Get-NetAdapterMsiConfig)
 
     # Write snapshot to disk atomically in pure UTF-8 without BOM
     Set-ActiveStateSafe -Path $Script:ActiveStateFile -Data $snapshot | Out-Null
@@ -621,9 +623,32 @@ function Disable-UserStateAggressive {
         Stop-BlacklistedProcesses -ProcessNames $StartupConfig.BlacklistProcesses
     }
 
-    # 7. Apply Deep GameDVR and Ultra Low Latency Network (TCPNoDelay, FlowControl=0, InterruptModeration=0)
+    # Load user tuning preferences
+    $tuningPath = Join-Path $Script:ProjectRoot "Config\tuning.json"
+    $tuning = $null
+    if (Test-Path -LiteralPath $tuningPath) {
+        try { $tuning = Get-Content -LiteralPath $tuningPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
+    }
+    $inputQueueSize = 100
+    if ($tuning -and ($null -ne $tuning.InputBufferQueueSize)) {
+        try { $inputQueueSize = [int]$tuning.InputBufferQueueSize } catch { $inputQueueSize = 100 }
+    }
+    $enableNetMsi = $true
+    if ($tuning -and ($null -ne $tuning.EnableNetAdapterMsi)) {
+        $enableNetMsi = [bool]$tuning.EnableNetAdapterMsi
+    }
+
+    # 7. Apply Deep GameDVR and Ultra Low Latency Network (TCPNoDelay, FlowControl=0, InterruptModeration=0, PCIe NIC MSI)
     Set-DeepGameDVROptimizations | Out-Null
     Set-NetworkGamingOptimizations | Out-Null
+    if ($enableNetMsi) {
+        $nicMsiBackup = @(Set-NetAdapterMsiMode)
+        $curState = Get-ActiveStateSafe
+        if ($curState -and (-not $curState.NetAdapterMsiConfig -or @($curState.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
+            Set-StatePropertySafe -StateObject $curState -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
+            Set-ActiveStateSafe -Data $curState | Out-Null
+        }
+    }
 
     # 8. Apply Defender, Widgets & Focus Assist optimizations
     Set-DefenderGamingState -Disable $true | Out-Null
@@ -637,7 +662,7 @@ function Disable-UserStateAggressive {
 
     # 10. Apply Low-Latency Kernel DPC, Input Buffer Queues, Timers & HAGS (takes effect on reboot)
     Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
-    Set-InputBufferOptimizations -QueueSize 100 | Out-Null
+    Set-InputBufferOptimizations -QueueSize $inputQueueSize | Out-Null
     Set-BcdeditTimerOptimizations | Out-Null
     Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
 
@@ -658,6 +683,34 @@ function Disable-UserStateAggressive {
     Set-MemoryCompressionGamingState -HardwareProfile $hw | Out-Null
 
     Write-Host "[+] User startup environment completely stripped and optimized for gaming." -ForegroundColor Green
+}
+
+function Apply-SystemStateBootMode {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $false)]
+        $StateData = $null
+    )
+
+    $tuningPath = Join-Path $Script:ProjectRoot "Config\tuning.json"
+    $tuning = $null
+    if (Test-Path -LiteralPath $tuningPath) {
+        try { $tuning = Get-Content -LiteralPath $tuningPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
+    }
+
+    $inputQueueSize = 100
+    if ($tuning -and ($null -ne $tuning.InputBufferQueueSize)) {
+        try { $inputQueueSize = [int]$tuning.InputBufferQueueSize } catch { $inputQueueSize = 100 }
+    }
+    Set-InputBufferOptimizations -QueueSize $inputQueueSize | Out-Null
+
+    if (-not $tuning -or ($tuning.EnableNetAdapterMsi -ne $false)) {
+        $nicMsiBackup = @(Set-NetAdapterMsiMode)
+        if ($StateData -and (-not $StateData.NetAdapterMsiConfig -or @($StateData.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
+            Set-StatePropertySafe -StateObject $StateData -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
+            Set-ActiveStateSafe -Data $StateData | Out-Null
+        }
+    }
 }
 
 function Restore-QuarantinedShortcuts {
@@ -1094,6 +1147,9 @@ function Restore-SystemState {
         Restore-NetworkGamingOptimizations `
             -NetworkLatencyConfig $stateData.NetworkLatencyConfig `
             -NetworkAdapterProperties $stateData.NetworkAdapterProperties | Out-Null
+        if ($null -ne $stateData.NetAdapterMsiConfig) {
+            Restore-NetAdapterMsiMode -MsiBackup $stateData.NetAdapterMsiConfig | Out-Null
+        }
     }
 
     # Restore GameDVR System Policies (HKLM)

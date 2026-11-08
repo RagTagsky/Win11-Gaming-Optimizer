@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ultra Gaming Mode v3.0</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('ugm-theme');
+          document.documentElement.setAttribute(
+            'data-theme',
+            t === 'light' || t === 'dark' ? t : 'dark'
+          );
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

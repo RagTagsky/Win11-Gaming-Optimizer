@@ -37,8 +37,8 @@ Temporarily strips background bloat, halts real-time disk scanning, auto-detects
   - [Execution Flow Diagram](#execution-flow-diagram)
   - [The Zero-Risk Watchdog Guarantee](#the-zero-risk-watchdog-guarantee)
 - [Deep Technical Features](#deep-technical-features)
-  - [1. Targeted Service Blacklist (173 Services)](#1-targeted-service-blacklist-173-services)
-  - [2. Ironclad Whitelist (119 Protected Services)](#2-ironclad-whitelist-119-protected-services)
+  - [1. Targeted Service Blacklist (207 Services)](#1-targeted-service-blacklist-207-services)
+  - [2. Ironclad Whitelist (90 Protected Services)](#2-ironclad-whitelist-90-protected-services)
   - [3. Temporary Windows Defender Suspension](#3-temporary-windows-defender-suspension)
   - [4. Background Process & Bloatware Annihilator](#4-background-process-bloatware-annihilator)
   - [5. Windows 11 Widgets & Bing Search Elimination](#5-windows-11-widgets-bing-search-elimination)
@@ -47,7 +47,7 @@ Temporarily strips background bloat, halts real-time disk scanning, auto-detects
   - [8. Adaptive GPU Engine & Message Signaled Interrupts (MSI Mode)](#8-adaptive-gpu-engine--message-signaled-interrupts-msi-mode)
   - [9. VBS / HVCI (Core Isolation / Memory Integrity) Diagnostics & Toggle](#9-vbs--hvci-core-isolation--memory-integrity-diagnostics--toggle)
   - [10. NTFS File System I/O Optimizations](#10-ntfs-file-system-io-optimizations)
-  - [11. Physical Network Adapter Driver Tweaks (FlowControl & InterruptModeration)](#11-physical-network-adapter-driver-tweaks-flowcontrol--interruptmoderation)
+  - [11. Physical Network Adapter Driver Tweaks (FlowControl, InterruptModeration & MSI Mode)](#11-physical-network-adapter-driver-tweaks-flowcontrol-interruptmoderation--msi-mode)
   - [12. On-Demand Memory Trimming (Working Sets & Standby List)](#12-on-demand-memory-trimming-working-sets--standby-list)
   - [13. Emergency Repair Toolkit (DisplayPort & Audio/Microphone)](#13-emergency-repair-toolkit-displayport--audiomicrophone)
   - [14. Kernel DPC Execution & Executive Memory Tuning](#14-kernel-dpc-execution--executive-memory-tuning)
@@ -55,7 +55,7 @@ Temporarily strips background bloat, halts real-time disk scanning, auto-detects
   - [16. BCDedit System Timer Synchronization](#16-bcdedit-system-timer-synchronization)
   - [17. High-Performance TCP Gaming Stack](#17-high-performance-tcp-gaming-stack)
   - [18. Hardware-Accelerated GPU Scheduling (HAGS)](#18-hardware-accelerated-gpu-scheduling-hags)
-  - [19. Competitive Frame Pacing, Ring-0 IFEO & IRQ De-Contention (v3.0)](#19-competitive-frame-pacing-ring-0-ifeo--irq-de-contention-v28)
+  - [19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Community Optimizations (v3.0)](#19-competitive-frame-pacing-ring-0-ifeo--top-tier-community-optimizations-v30)
 - [Quick Start Guide](#quick-start-guide)
   - [Option A: Native Desktop GUI App (v3.0 - Recommended)](#option-a-native-desktop-gui-app-v30---recommended)
   - [Option B: Interactive TUI Menu](#option-b-interactive-tui-menu)
@@ -202,14 +202,14 @@ On budget hardware like the **Intel Core i3-2100 + RX 570 + 8GB RAM + 1TB HDD** 
                   +---------------------------------------+
                   | Task Scheduler executes ApplyBootMode |
                   | under NT AUTHORITY\SYSTEM:            |
-                  | - Strips 173 Blacklist Services       |
+                  | - Strips 207 Blacklist Services       |
                   | - Pauses Defender Real-Time Scans     |
-                  | - Direct Input Queues (16-packet buf) |
+                  | - Peripheral Input Queues (>=32-100)  |
                   | - Kernel DPC & Executive Memory Tune  |
-                  | - BCDedit Dynamic Tick & TSC Sync     |
-                  | - TCP Gaming Stack (NoDelay, RSS, ECN)|
+                  | - BCDedit Timer & TSC Synchronization |
+                  | - TCP & Winsock AFD Fast-Path (64KB)  |
                   | - Hardware-Accelerated GPU Sched(HAGS)|
-                  | - Tunes Network (*EEE, FlowControl)   |
+                  | - Tunes Network (*EEE, NIC MSI Mode)  |
                   | - Arms HKLM RunOnce Watchdog          |
                   +---------------------------------------+
                                       │
@@ -232,7 +232,7 @@ On budget hardware like the **Intel Core i3-2100 + RX 570 + 8GB RAM + 1TB HDD** 
                   | - Input Queues restored (100 packets) |
                   | - Kernel DPC & Paging Exec restored   |
                   | - BCDedit Dynamic Tick & TSC restored |
-                  | - TCP stack parameters restored       |
+                  | - TCP & Winsock AFD settings restored |
                   | - HAGS GPU scheduling restored        |
                   | - Widgets, Search & Startup Restored  |
                   +---------------------------------------+
@@ -240,14 +240,14 @@ On budget hardware like the **Intel Core i3-2100 + RX 570 + 8GB RAM + 1TB HDD** 
 
 ### The Zero-Risk Watchdog Guarantee
 Unlike other tweak scripts that leave your operating system in an unrecoverable state if your machine crashes, Ultra Gaming Mode implements a hardware-grade fail-safe:
-1. **State Snapshots (`Backups\active_state.json`):** Before touching a single registry key or service, every service's exact startup mode (`Manual`, `Auto`, `Disabled`), user startup shortcuts, UWP app flags, network configs, hardware profile, processor throttle states, ULPS, MSI, NTFS, Core Parking, NIC settings, scheduled defrag, Kernel DPC config, Input Buffer config, BCDedit timer config, TCP stack config, and HAGS GPU scheduling config are stored in a structured JSON snapshot.
+1. **State Snapshots (`Backups\active_state.json`):** Before touching a single registry key or service, every service's exact startup mode (`Manual`, `Auto`, `Disabled`), user startup shortcuts, UWP app flags, network configs, hardware profile, processor throttle states, ULPS, GPU & NIC MSI Mode, NTFS, Core Parking, NIC settings, scheduled defrag, Kernel DPC config, Input Buffer config, BCDedit timer config, TCP stack config, Extended Registry snapshots, and HAGS GPU scheduling config are stored in a structured JSON snapshot.
 2. **`HKLM\RunOnce` Kernel Watchdog:** An autonomous watchdog is registered in `HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce` named `*UltraGamingModeRestore`.
 3. **Crash-Proof Reversion:** If your PC unexpectedly crashes, loses power, or you simply reboot when your match finishes, Windows runs the watchdog on the next logon. It detects the reboot, unpacks `active_state.json`, and completely restores every service, timer, queue, and driver setting back to normal.
 ---
 
 ## 🔬 Deep Technical Features
 
-### 1. Targeted Service Blacklist (173 Services)
+### 1. Targeted Service Blacklist (207 Services)
 Carefully compiled to remove all background context switching without compromising system integrity:
 - **Telemetry & Diagnostics:** `DiagTrack`, `dmwappushservice`, `DPS` (Diagnostic Policy Service), `wmiApSrv`, `pla` (Performance Logs), `TroubleshootingSvc`, `wuqisvc`, `WSAIFabricSvc` (Windows AI Fabric).
 - **Hyper-V & Remote Desktop:** `TermService`, `SessionEnv`, `UmRdpService`, `WinRM`, `HvHost`, all `vmic*` Guest Integration services, `MSiSCSI`, `SNMPTrap`, `RpcLocator`.
@@ -255,20 +255,21 @@ Carefully compiled to remove all background context switching without compromisi
 - **Print & Scanners:** `Spooler`, `PrintNotify`, `PrintScanBrokerService`, `PrintDeviceConfigurationService`, `PrintWorkflowUserSvc`, `StiSvc` (WIA), `Fax`, `WiaRpc`.
 - **Bluetooth (Selective):** `bthserv`, `BthAvctpSvc`, `BTAGService`, `BluetoothUserService` (can be instantly restored if Bluetooth controller is needed).
 - **Xbox & Microsoft Store Background Daemons:** `ClipSVC`, `LicenseManager`, `AppXSvc`, `GamingServices`, `GamingServicesNet`, `XblAuthManager`, `XblGameSave`, `XboxGipSvc`, `XboxNetApiSvc`, `InstallService`, `PushToInstall`.
-- **Windows 11 Per-User Template Services:** `CaptureService`, `BcastDVRUserService` (GameDVR broadcast buffer), `CDPUserSvc`, `DevicePickerUserSvc`, `DevicesFlowUserSvc`, `DeviceAssociationBrokerSvc`, `SmsRouter`, `MessagingService`, `PenService`, `UserDataSvc`, `UnistoreSvc`, `cbdhsvc`, `NPSMSvc`.
+- **Windows 11 Per-User Template Services:** `BcastDVRUserService` (GameDVR broadcast buffer), `DevicePickerUserSvc`, `DevicesFlowUserSvc`, `DeviceAssociationBrokerSvc`, `SmsRouter`, `MessagingService`, `PenService`, `UserDataSvc`, `UnistoreSvc`, `NPSMSvc`.
 - **Search & Caches:** `WSearch` (Windows Search Indexer), `SysMain` (Superfetch).
-- **Updates & Background Downloaders:** `wuauserv`, `bits`, `dosvc`, `UsoSvc`, `WaaSMedicSvc`, `edgeupdate`, `edgeupdatem`, `gupdate`, `gupdatem`.
+- **Updates & Background Downloaders:** `wuauserv`, `bits`, `dosvc`, `UsoSvc`, `WaaSMedicSvc`, `edgeupdate`, `edgeupdatem`, `gupdate`, `gupdatem`, `GoogleUpdaterService`.
 - **Hotspot, Cellular & Geolocation:** `icssvc`, `autotimesvc`, `lfsvc`, `WFDSConMgrSvc`.
 - **Third-Party Background Bloat:** `EABackgroundService` (EA App telemetry), `LibreOfficeMaintenance`.
 
-### 2. Ironclad Whitelist (119 Protected Services)
+### 2. Ironclad Whitelist (90 Protected Services)
 The optimizer strictly checks every operation against an inviolable whitelist:
 - **Ultra-Low Latency Input:** `GameInputSvc` (Windows 11 GameInput API), `hidserv` (HID input stack preserving 1,000 Hz, 4,000 Hz, and 8,000 Hz mouse polling and macros), `TextInputManagementService` (keyboard engine & in-game chat typing).
-- **Audio & Microphone Security:** `Audiosrv`, `AudioEndpointBuilder`, `camsvc` (**Capability Access Manager Service** — protects microphone privacy permissions so Discord, Steam, and in-game voice never get blocked), `ApxSvc`, `midisrv`, `QWAVE`.
-- **Network & Mobile Tethering:** `Dhcp`, `Dnscache`, `LanmanWorkstation`, `LanmanServer` (prevents RPC permission failures), `NlaSvc`, `netprofm`, `WlanSvc`, `Wcmsvc`, `Netman`, `nsi`, `Apple Mobile Device Service` (guarantees iPhone USB tethering on Ethernet 2 remains 100% active).
-- **Anti-Cheat Kernels & Launchers:** `FACEIT`, `FACEITService`, `Steam Client Service`, `Rockstar Service`, `vgk`, `vgc` (Riot Vanguard), `EasyAntiCheat`, `BEService` (BattlEye).
-- **Display & Hardware Drivers:** `AMD External Events Utility`, `AMD Crash Defender Service`, `GraphicsPerfSvc`, `DisplayEnhancementService`, `DispBrokerDesktopSvc`, `ProcessGovernor` (Process Lasso).
-- **Core Security & UAC:** `Appinfo` (UAC privilege escalation), `StateRepository`, `UserManager`, `TokenBroker`, `wlidsvc`, `Schedule`, `TimeBrokerSvc`, `Winmgmt`.
+- **Snipping Tool (`PrtSc`) & Clipboard Protection:** `CaptureService`, `cbdhsvc` (Clipboard User Service), `CDPUserSvc`, `ConsentUxUserSvc`, `UdkUserSvc` — strictly protected (including per-user `_xxxxx` suffixed instances) so screenshots and clipboard history work seamlessly during gameplay.
+- **Audio & Microphone Security:** `Audiosrv`, `AudioEndpointBuilder`, `camsvc` (**Capability Access Manager Service** — protects microphone privacy permissions so Discord, Steam, and in-game voice never get blocked), `ApxSvc`, `QWAVE`.
+- **Network & Mobile Tethering:** `Dhcp`, `Dnscache`, `LanmanWorkstation`, `NlaSvc`, `netprofm`, `Wcmsvc`, `Netman`, `nsi`, `Apple Mobile Device Service` (guarantees iPhone USB tethering on Ethernet 2 remains 100% active).
+- **Anti-Cheat Kernels & Launchers:** `Steam Client Service`, `vgk`, `vgc` (Riot Vanguard), `EasyAntiCheat`, `BEService` (BattlEye).
+- **Display & Hardware Drivers:** `AMD External Events Utility` (FreeSync), `GraphicsPerfSvc`, `DisplayEnhancementService`, `DispBrokerDesktopSvc`, `ProcessGovernor` (Process Lasso).
+- **Core Security & UAC:** `Appinfo` (UAC privilege escalation), `StateRepository`, `UserManager`, `TokenBroker`, `Schedule`, `TimeBrokerSvc`, `Winmgmt`.
 
 ### 3. Temporary Windows Defender Suspension
 - When Ultra Gaming Mode boots, Windows Defender Real-Time Protection is temporarily set to bypass (`DisableRealtimeMonitoring = 1`, `DisableBehaviorMonitoring = 1`, `DisableIOAVProtection = 1`, `DisableScriptScanning = 1`).
@@ -277,7 +278,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ### 4. Background Process & Bloatware Annihilator
 - **Terminated on Launch:** Web browsers (`firefox`, `chrome`, `msedge`), `Telegram`, `Discord`, `Spotify`, `EpicGamesLauncher`, `CrossDeviceResume` (Phone Link), AMD screen record overlays (`amdow`, `AMDRSServ`), taskbar widgets (`msedgewebview2`), cloud sync clients (`GoogleDriveFS`), background store updaters.
-- **Strictly Protected:** The active game, **Steam**, **FACEIT Client**, AMD Radeon display driver (`atieclxx`, `amdfendrsr`), **MSI Afterburner / RivaTuner Statistics Server**, **Process Lasso** (`ProcessGovernor`), **Apple Mobile Device Service** (USB Tethering).
+- **Strictly Protected:** The active game, **Steam**, **FACEIT Client**, AMD Radeon display driver (`atieclxx`), **MSI Afterburner / RivaTuner Statistics Server**, **Process Lasso** (`ProcessGovernor`), **Apple Mobile Device Service** (USB Tethering), Windows 11 Start Menu Search (`SearchHost`, `TextInputHost`).
 - **Origin-Segregated Startup Shortcut Quarantine:** Startup folder shortcuts (`.lnk`, `.url`) from both user (`AppData\...\Startup`) and system (`ProgramData\...\Startup`) are quarantined into dedicated origin folders (`Backups\QuarantinedShortcuts\User` and `Backups\QuarantinedShortcuts\ProgramData`). Uses PowerShell `-LiteralPath` to prevent wildcard syntax errors when filenames contain brackets (e.g. `Game [Modded].lnk`), and restores them to their exact origin folders with zero name collisions.
 
 ### 5. Windows 11 Widgets & Bing Search Elimination
@@ -305,8 +306,9 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 - Applies `fsutil behavior set disablelastaccess 1` to stop Windows from updating the last-access timestamp on disk whenever a file is read, eliminating write amplification during game asset streaming.
 - Applies `fsutil behavior set disable8dot3 1` to stop creating legacy DOS 8.3 short filename directory entries, accelerating directory traversals. Both settings are backed up and cleanly restored on normal state restoration.
 
-### 11. Physical Network Adapter Driver Tweaks (FlowControl & InterruptModeration)
+### 11. Physical Network Adapter Driver Tweaks (FlowControl, InterruptModeration & MSI Mode)
 - For physical Ethernet and Wi-Fi adapters, automatically disables `*FlowControl` (prevents artificial pause frames that cause ping spikes) and `*InterruptModeration` (delivers incoming packets immediately to the CPU for the lowest possible network latency).
+- **PCIe Network Adapter MSI Mode (`EnableNetAdapterMsi`):** Automatically switches physical PCIe network controllers (`^PCI\\`) to Message Signaled Interrupts (`MSISupported = 1` under `Device Parameters\Interrupt Management\MessageSignaledInterruptProperties`), eliminating legacy line-based IRQ sharing between the network card and USB/audio controllers.
 - **Ironclad Safety Exclusions:** Strictly ignores and protects Apple Mobile Device Ethernet (`Ethernet 2` for iPhone tethering) and Wintun tunnel adapters (`wwan99`).
 
 ### 12. On-Demand Memory Trimming (Working Sets & Standby List)
@@ -314,24 +316,24 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 - Flushes bloated background process working sets, purges kernel standby memory caches, triggers garbage collection, and yields up to 3 GB of free RAM on the fly without restarting.
 
 ### 13. Emergency Repair Toolkit (DisplayPort & Audio/Microphone)
-- **Option [1] DisplayPort Topology Reset:** Clears corrupt multi-monitor configuration caches in `HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers` (`Configuration`, `Connectivity`, `ScaleFactors`). Cleans invalid MMCSS thread priorities (`Affinity = 0`), restarts display services, and forces a clean DisplayPort Link Training handshake.
-- **Option [2] Microphone & Core Services Unblock:** Instantly resets and starts `camsvc` (fixes microphone access in Discord/CS2), starts `LanmanServer`, and switches `Steam Client Service` and `bthserv` to Demand start.
+- **Option [1] DisplayPort Topology & MPO Reset:** Clears corrupt multi-monitor configuration caches in `HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers` (`Configuration`, `Connectivity`, `ScaleFactors`), clears broken MPO/FSE overrides (`OverlayTestMode`, `DisableOverlays`), cleans invalid MMCSS thread priorities (`Affinity = 0`), restarts display services, and forces a clean DisplayPort Link Training handshake.
+- **Option [2] Microphone, Search, Snipping Tool & Core Services Unblock:** Instantly resets and starts `camsvc` (fixes microphone access in Discord/CS2), restores Windows Search (`WSearch`), Snipping Tool (`CaptureService`, `cbdhsvc`, `PrintScreenKeyForSnippingEnabled = 1`, AppContainer ACLs), starts `LanmanServer`, and switches `Steam Client Service` and `bthserv` to Demand start.
 
 ### 14. Kernel DPC Execution & Executive Memory Tuning
-- **Disable Paging Executive (`DisablePagingExecutive = 1`):** Configured under `HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management`. Forces Windows kernel-mode drivers and executive code to reside permanently in physical RAM, completely preventing driver page faults and eliminating disk swap latency in performance-critical driver code paths.
-- **Immediate DPC Dispatching (`ThreadDpcEnable = 0`):** Configured under `HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\kernel`. Bypasses threaded DPC queues, forcing Deferred Procedure Calls (DPCs) to execute immediately at `DISPATCH_LEVEL` on the active processor core. This eradicates queued scheduling latency between hardware interrupts (mouse clicks, network packets, GPU draw completions) and game rendering threads.
+- **Disable Paging Executive (`DisablePagingExecutive = 1`):** Configured under `HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management` on systems with >= 16 GB RAM (automatically skipped on `LowRamProfile` 8 GB systems to preserve physical RAM). Forces Windows kernel-mode drivers and executive code to reside permanently in physical RAM, preventing driver page faults.
+- **Threaded DPC Scheduling (`ThreadDpcEnable`):** Preserves optimal Windows 11 threaded DPC execution while cleaning legacy uncached DPC bottlenecks, avoiding `DISPATCH_LEVEL` lockups on modern high-polling USB and audio stacks.
 - **Foreground Quantum Priority (`Win32PrioritySeparation = 0x26` / 38 dec):** Configured under `HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl`. Enforces short, variable thread scheduling quantums with a 3:1 foreground execution boost. This gives the focused esports title maximum CPU scheduling preemption over background threads.
 - **Disable Power Throttling (`PowerThrottlingOff = 1`):** Configured under `HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling`. Disables Windows EcoQoS energy throttling for game processes, ensuring render threads never suffer artificial CPU frequency downclocking.
 
 ### 15. Direct Peripheral Input Queues (Mouse & Keyboard)
-- **Direct 16-Packet Input Queues:** Decreases `MouseDataQueueSize` and `KeyboardDataQueueSize` from the Windows default of `100` down to `16` in `HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters` and `kbdclass\Parameters`.
-- **Eradicates Input Buffer Latency:** Modern competitive mice (1,000 Hz, 4,000 Hz, 8,000 Hz) flood the OS input driver with packets. A large 100-packet queue creates internal buffer latency and cursor smoothing. Reducing queue depth to 16 packets forces direct, real-time packet processing without unneeded buffering, delivering razor-sharp crosshair tracking in fast-paced shooters.
-- Original queue depths (100) are captured in `active_state.json` and cleanly restored upon mode deactivation.
+- **Configurable High-Polling Safe Input Queues (`InputBufferQueueSize = 100`, Floor `>= 32`):** Configures `MouseDataQueueSize` and `KeyboardDataQueueSize` in `HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters` and `kbdclass\Parameters` via `Config\tuning.json`.
+- **Zero-Drop High-Polling Protection:** Competitive mice operating at 1,000 Hz, 4,000 Hz, and 8,000 Hz generate dense interrupt bursts. The engine defaults to `100` packets for zero packet drops and enforces a strict safety floor of `>= 32` packets inside `Set-InputBufferOptimizations`, preventing buffer overflow stutters while keeping input response instantaneous.
+- **Optional 1:1 Raw Mouse Curve (`DisableMouseAccel`):** Configurable in `Config\tuning.json` to enforce `MouseSpeed = 0`, `MouseThreshold1 = 0`, and `MouseThreshold2 = 0` under `HKCU:\Control Panel\Mouse`.
+- Original queue depths are captured in `active_state.json` and cleanly restored upon mode deactivation.
 
 ### 16. BCDedit System Timer Synchronization
-- **Dynamic Tick Elimination (`disabledynamictick yes`):** Configured via Windows Boot Configuration Data (`bcdedit /set disabledynamictick yes`). Stops the Windows kernel from enabling dynamic power-saving tick stepping (tickless kernel), maintaining a fixed, continuous hardware clock interrupt cadence and eliminating frame pacing jitter.
-- **Enhanced TSC Synchronization (`tscsyncpolicy Enhanced`):** Forces `bcdedit /set tscsyncpolicy Enhanced`, ensuring all CPU sockets and cores maintain strictly synchronized Time Stamp Counter (TSC) state. This prevents sub-millisecond clock drifts and timing desync across multi-core systems in high-fps games like *CS2*.
-- Restores cleanly on normal state reversion by removing custom BCD keys (`bcdedit /deletevalue disabledynamictick`, `bcdedit /deletevalue tscsyncpolicy`) or reverting to original state.
+- **Native Hardware Invariant TSC & Dynamic Tick Preservation:** Clears legacy `disabledynamictick` and `tscsyncpolicy` overrides (`bcdedit /deletevalue disabledynamictick`, `bcdedit /deletevalue tscsyncpolicy`) so modern multi-core CPUs use hardware Invariant Time Stamp Counter (TSC) without high-overhead software timer synchronization or micro-stutters in *CS2* and *Deadlock*.
+- Original boot configuration state is captured in `active_state.json` and restored cleanly upon mode deactivation.
 
 ### 17. High-Performance TCP Gaming Stack
 - **Global TCP Low-Latency Stack (`netsh int tcp set global`):**
@@ -339,44 +341,49 @@ The optimizer strictly checks every operation against an inviolable whitelist:
   - `ecncapability=disabled`: Disables Explicit Congestion Notification to prevent dropped or artificially delayed packets on gaming routers and hops that handle ECN incorrectly.
   - `rss=enabled`: Enforces Receive Side Scaling across CPU cores, offloading network packet interrupts across all available processor threads.
 - **Per-Adapter Gaming TCP Tuning:** Sets `TcpAckFrequency = 1` (immediate ACK without waiting) and `TCPNoDelay = 1` (disables Nagle's algorithm) across all active physical gaming adapters under `HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces`.
-- **Language-Independent CIM Detection:** State inspection queries typed CIM cmdlets (`Get-NetTCPSetting` and `Get-NetOffloadGlobalSetting`) with automatic `netsh` fallback, eliminating parsing fragility on non-English Windows locales.
+- **Language-Independent CIM Detection:** State inspection queries typed CIM cmdlets (`Get-NetTCPSetting` and `Get-NetOffloadGlobalSetting`) with localized Russian/English `netsh` and `Tcp1323Opts` registry fallback, eliminating parsing fragility on non-English Windows locales.
 - **Ironclad Safety Exclusions:** Strictly isolates and excludes Apple Mobile Device USB tethering (`Ethernet 2`) and Wintun VPN tunnels (`wwan99`), guaranteeing phone tethering and VPN connections remain unaffected.
 
 ### 18. Hardware-Accelerated GPU Scheduling (HAGS)
 - Sets `HwSchMode = 2` under `HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers`.
-- Offloads high-frequency GPU memory management and frame scheduling directly from the Windows OS kernel to the GPU's dedicated scheduling processor (available on NVIDIA Pascal/Turing/Ampere/Ada Lovelace, AMD RDNA 1/2/3, and Intel Arc).
+- Offloads high-frequency GPU memory management and frame scheduling directly from the Windows OS kernel to the GPU's dedicated scheduling processor (available on NVIDIA Pascal/Turing/Ampere/Ada Lovelace, AMD RDNA 3, and Intel Arc).
 - Significantly cuts frame submission queuing overhead and reduces DPC latency spikes during GPU-bound scenarios.
 - Automatically disabled on AMD RDNA2/Polaris cards (`HwSchMode = 1`) to eliminate known Source 2 engine (CS2) frame-pacing micro-stutter.
 - Fully snapshot-backed and restored cleanly in `active_state.json`.
 
-### 19. Competitive Frame Pacing, Ring-0 IFEO & IRQ De-Contention (v3.0)
+### 19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Community Optimizations (v3.0)
+- **Winsock AFD Fast-Path & NDIS Multi-Core RSS:** Sets `FastSendDatagramThreshold = 65536`, `FastCopyReceiveThreshold = 65536`, `DefaultSendWindow = 65536`, and `DefaultReceiveWindow = 65536` under `HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters` so UDP game packets up to 64 KB bypass Winsock kernel buffering, and sets `MaxNumRssCpus = 4` under `Services\NDIS\Parameters` for multi-core network interrupt scaling.
+- **Kernel Power Telemetry Suppression & Process Consolidation:** Disables Windows energy estimation telemetry (`DisableTaggedEnergyLogging = 1`, `TelemetryMaxApplication = 0`, `TelemetryMaxTagPerApplication = 0` under `Control\Power\EnergyEstimation\TaggedEnergy`), disables timer coalescing (`CoalescingTimerInterval = 0`) and Fast Startup (`HiberbootEnabled = 0`), and consolidates `svchost.exe` processes (`SvcHostSplitThresholdInKB = 67108864` on systems with >= 16 GB RAM; automatically skipped on `LowRamProfile`).
+- **AMD Radeon DXNAVI Anti-Stutter & Clock Lock:** Alongside disabling PCIe link power state drops (`EnableAspmL0s = 0`, `EnableAspmL1 = 0`) and locking AMD UMD ShaderCache to `Always On (0x32, 0x00)`, configures `StutterMode = 0` and `PP_SclkDeepSleepDisable = 1` across AMD display class keys (`{4d36e968-e325-11ce-bfc1-08002be10318}`) to eliminate DXNAVI core downclocking micro-stutters.
+- **DirectX Flip Model Upgrade & Desktop Responsiveness:** Enables DirectX Flip Model and VRR optimizations (`DirectXUserGlobalSettings = SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;`), disables Miracast wireless display polling (`PlatformSupportMiracast = 0`), accelerates desktop input response (`MenuShowDelay = 0`, `LowLevelHooksTimeout = 5000`, `MouseHoverTime = 10`), and suppresses background disk I/O from Storage Sense (`01 = 0`) and Windows Update ReserveManager (`ShippedWithReserves = 0`).
 - **Third-Party Optimizer Leftovers Remediation:** Scans for and fixes priority inversion caused by uninstalled third-party optimizers (e.g., `GameModeX`). Restores system-critical services (`fontdrvhost.exe`, `sihost.exe`, `lsass.exe`, `ctfmon.exe`) stuck at Idle (4) or Low I/O priorities back to Normal, eliminating text rendering freezes and frame pacing spikes.
 - **Ring-0 IFEO Execution Options for 16 Esports Games:** Pre-registers kernel image execution options (`CpuPriorityClass = 3` [High], `IoPriority = 3` [High], `PagePriority = 5`) for games such as *Counter-Strike 2* (`cs2.exe`), *Deadlock* (`project8.exe`), *Dota 2* (`dota2.exe`), *Fortnite*, *Apex Legends*, *Rust*, *Cyberpunk 2077*, and *Elden Ring*. Because the Windows NT kernel assigns these at process initialization, priorities take effect before user-mode anti-cheat systems strip process handle access rights.
 - **Storage Controller IRQ De-Contention:** Reconfigures NVMe and SATA storage controllers from High (`DevicePriority = 3`) to Normal (`DevicePriority = 2`), reserving High IRQ Priority exclusively for the primary gaming GPU (`DevicePriority = 3`). Prevents heavy disk I/O interrupts from preempting frame rendering on the PCIe bus.
 - **USB HID Idle Suspend Lockout:** Suppresses aggressive USB power management (`EnhancedPowerManagementEnabled = 0`, `AllowIdleIrpInD3 = 0`) on gaming mice and keyboards, preventing polling drops on rapid mouse flicks.
-- **AMD RDNA2/Polaris Driver Class Tuning:** Disables PCIe link power state drops (`EnableAspmL0s = 0`, `EnableAspmL1 = 0`), locks AMD UMD ShaderCache to `Always On (0x32, 0x00)`, and prevents HAGS stutter on AMD GPUs.
 - **MMCSS Tasks\Games Priority Optimization:** Re-aligns Multimedia Class Scheduler Games task to `Priority = 6` (Medium category), elevating game audio and frame threads over background multimedia tasks while preserving DWM system stability.
 - **Windows Maintenance Lockout & Memory Compression Toggling:** Disables Windows Automatic Maintenance during gaming (`MaintenanceDisabled = 1`) and disables memory compression (`Disable-MMAgent -mc -prelaunch` on systems with >=16 GB RAM) to free up CPU cycles and reduce L3 cache thrashing.
-- **Target Blacklist Expansion:** Expanded to 212 target services (+33 unused network, diagnostic, and virtualization services) and user background bloat (`incy.exe` INCY VPN [533 MB RAM], `PulseSync.exe`, `GeminiAppLauncher.exe`, and background tracking scripts).
+- **Target Blacklist & Whitelist Precision:** 207 non-essential background services stripped during gaming mode while 90 critical system, input, anti-cheat, audio, and screenshot (`CaptureService`, `cbdhsvc`) services remain strictly protected.
 ---
 
 ## 🚀 Quick Start Guide
 
 ### Option A: Native Desktop GUI App (v3.0 - Recommended)
 
-Ultra Gaming Mode v3.0 introduces a modern Windows 11 Native Desktop application built on **Tauri v2 (Rust)** and **Svelte 5** with strict dark graphite Fluent Mica aesthetic:
+Ultra Gaming Mode v3.0 features a clean, human-centric Windows 11 Native Desktop application built on **Tauri v2 (Rust)** and **Svelte 5** with full **Dark & Light Mode** support (`Sun` / `Moon` theme toggle persisted in `localStorage` and synchronized with native Windows DWM window chrome):
 
 1. Launch **`UltraGamingMode.exe`** from the root folder (it requests Administrator UAC elevation automatically).
-2. **Dashboard Tab**:
-   - Displays real-time hardware status, CPU/GPU architecture, active display refresh rate, and low-latency metrics.
-   - Select your optimization profile (`Competitive`, `Extreme`, or `Balanced`).
-   - Click **"Активировать Ultra Gaming Mode"** (Arms state and optimizes user startup environment).
-   - Restart your PC to enter full stripped mode.
-3. **Emergency Repair Tab (One-Click Fixes)**:
-   - **Display & MPO Repair**: Restores DWM compositor layers, eliminates Deadlock/RDR2 display flicker, and recalibrates FreeSync 180Hz.
-   - **Services & Windows Search Repair**: Unblocks Windows Search (`Win` key typing redirection), Text Services Framework (`ctfmon`), Print Spooler, and microphone permissions.
-   - **GPU Shader Cache Purge**: Cleans corrupt DirectX / Vulkan / AMD driver caches with live megabyte counter.
-   - **Engine Verification**: Runs 260 unit tests in one click.
+2. **Control Panel Tab (`Панель управления`)**:
+   - Displays current system state, clear hardware profile cards (CPU, GPU, RAM, Storage), and live optimization telemetry (RAM usage, active background services, system timer resolution, and GPU MSI status) without visual clutter.
+   - Select your optimization profile (`Киберспорт`, `AAA и стриминг`, or `Пользовательский`), lock the `0.500 ms` timer or clean RAM on demand, and click **«Включить игровой режим»** (or **«Вернуть штатный режим»** to revert).
+3. **Services Tab (`Службы (207)`)**:
+   - Browse, search, and filter all **207** blacklisted background services (by category: Telemetry, Xbox, Print, Network, System) and inspect all **90** strictly protected whitelisted system/anti-cheat services.
+4. **Settings Tab (`Настройки`)**:
+   - Configure live `Config\tuning.json` parameters in plain language: Classic Fullscreen Exclusive (`DisableFullscreenOptimizations`), PCIe Network Card MSI Mode (`EnableNetAdapterMsi`), Raw 1:1 Mouse Input (`DisableMouseAccel`), and Peripheral Input Buffer Queue Size (`InputBufferQueueSize`: `64`, `100`, `150`, or `200` packets), plus inspect automatic kernel/scheduler rules.
+5. **Maintenance Tab (`Обслуживание`)**:
+   - **Display & MPO Repair**: Restores DWM compositor layers, eliminates Deadlock/CS2 display flicker, and recalibrates DisplayPort / FreeSync.
+   - **Services, Search & Snipping Tool Repair**: Restores Windows Search (`Win` key typing), `PrtSc` Snipping Tool (`CaptureService`, `cbdhsvc`, AppContainer ACLs), Print Spooler, and microphone permissions.
+   - **GPU Shader Cache Purge & RAM Cleanup**: Cleans DirectX / Vulkan / AMD / NVIDIA / Intel shader caches and purges the Windows Standby memory list on demand.
+   - **Diagnostics & Engine Self-Test**: Runs full hardware/DPC diagnostics or executes all 286 automated unit and integration tests in one click.
 
 ---
 
@@ -474,8 +481,8 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ### Main Menu:
 | Menu Option | CLI Action Flag | Description |
 |:---:|:---|:---|
-| **`[1]`** | `-Action Enable` | Creates backup snapshot (services, hardware profile, processor throttle, ULPS, MSI, NTFS, Core Parking, NIC settings, scheduled defrag, Kernel DPC, input queues, timers, TCP stack, HAGS), suppresses user startup apps, and arms Task Scheduler boot trigger under SYSTEM. |
-| **`[2]`** | `-Action Restore` | Restores all 173 services, hardware settings (processor throttle, ULPS, MSI, Core Parking, NTFS, NIC, scheduled defrag, Kernel DPC, input queues, timers, TCP stack, HAGS), re-enables Windows Defender, unregisters boot triggers, and restores startup apps. |
+| **`[1]`** | `-Action Enable` | Creates backup snapshot (services, hardware profile, processor throttle, ULPS, GPU & NIC MSI Mode, NTFS, Core Parking, NIC settings, scheduled defrag, Kernel DPC, input queues, timers, TCP stack, Extended Registry targets, HAGS), suppresses user startup apps, and arms Task Scheduler boot trigger under SYSTEM. |
+| **`[2]`** | `-Action Restore` | Restores all 207 services, hardware settings (processor throttle, ULPS, GPU & NIC MSI Mode, Core Parking, NTFS, NIC, scheduled defrag, Kernel DPC, input queues, timers, TCP stack, Extended Registry targets, HAGS), re-enables Windows Defender, unregisters boot triggers, and restores startup apps. |
 | **`[3]`** | `-Action CleanMemory` | Calls `EmptyWorkingSet` and `Win32StandbyCleaner` (P/Invoke `NtSetSystemInformation`) to purge standby cache and process working sets instantly. |
 | **`[4]`** | `-Action Diagnostic` | Runs pre-flight audit: inspects Universal Hardware Profile (CPU, GPU, RAM, Storage), checks administrator privileges, power plans & Core Parking, MMCSS profiles, network adapters, AMD ULPS, shader caches, GPU MSI mode, VBS/HVCI status, NTFS settings, whitelist protection, bloat services, Kernel DPC, input queues, BCDedit timers, TCP stack, and HAGS status. |
 | **`[5]`** | `Advanced Tools -->` | Opens the Advanced Tools & Emergency Repairs submenu (see below). |
@@ -486,7 +493,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 | Submenu Option | CLI Action Flag | Description |
 |:---:|:---|:---|
 | **`[1]`** | `-Action RepairDisplay` | Emergency fix: wipes corrupt registry display topology caches and resets MMCSS game scheduling to default safe parameters. |
-| **`[2]`** | `-Action RepairServices`| Emergency fix: repairs and starts `camsvc` (Microphone privacy), `LanmanServer` (RPC session), and unblocks Steam/Bluetooth. |
+| **`[2]`** | `-Action RepairServices`| Emergency fix: repairs and starts `camsvc` (Microphone privacy), `LanmanServer` (RPC session), Windows Search, Snipping Tool (`CaptureService`, `cbdhsvc`), and unblocks Steam/Bluetooth. |
 | **`[3]`** | `-Action FlushShaderCache`| Purges AMD, NVIDIA, and DirectX/Vulkan shader caches (`DxCache`, `VkCache`, `DxcCache`, `DX9Cache`, `OglCache`, `NVIDIA\DXCache`, `GLCache`, `ComputeCache`, `D3DSCache`) to eliminate shader pipeline micro-stutters. |
 | **`[4]`** | `-Action ToggleVBS` | Checks and toggles Virtualization-Based Security (VBS) and Memory Integrity (HVCI) in registry to eliminate virtualization overhead. |
 | **`[5]`** | `-Action GpuMsiStatus` | Displays GPU Vendor, Message Signaled Interrupts (MSI) status, and IRQ priority (`DevicePriority = 3`). |
@@ -500,7 +507,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
-├── UltraGamingMode.exe              # Native Windows 11 Mica GUI application (v3.0, Tauri v2)
+├── UltraGamingMode.exe              # Native Windows 11 Desktop GUI application (v3.0, Tauri v2, Dark/Light Mode)
 ├── UltraGamingMode.bat              # Elevated interactive TUI launcher
 ├── UltraGamingMode.ps1              # Core PowerShell CLI controller & orchestrator
 ├── README.md                        # English documentation & benchmarks
@@ -508,13 +515,14 @@ Win11-Gaming-Optimizer/
 ├── LICENSE                          # MIT License
 │
 ├── ui/                              # Native Desktop frontend & Tauri Rust backend
-│   ├── src/                         # Svelte 5 (Runes) + Tailwind CSS + Lucide Icons
-│   └── src-tauri/                   # Rust application core with native window-vibrancy Mica
+│   ├── src/                         # Svelte 5 (Runes) + Tailwind CSS + Lucide Icons (Dark & Light themes)
+│   └── src-tauri/                   # Rust application core with native window chrome & theme sync
 │
 ├── Config/
-│   ├── services_blacklist.json      # 212 target non-essential Windows services
-│   ├── services_whitelist.json      # 75 strictly protected critical components
-│   └── startup_apps.json            # Target startup bloat & protected app rules
+│   ├── services_blacklist.json      # 207 target non-essential Windows services
+│   ├── services_whitelist.json      # 90 strictly protected critical components
+│   ├── startup_apps.json            # Target startup bloat & protected app rules
+│   └── tuning.json                  # User-configurable FSE, Mouse Accel, NIC MSI & Input Queue toggles
 │
 ├── Core/
 │   ├── ServiceManager.ps1           # Safe service manipulation with whitelist locks
@@ -522,7 +530,7 @@ Win11-Gaming-Optimizer/
 │   └── SystemOptimizer.ps1          # Power, MMCSS, Network, Memory, and Defender tuning
 │
 ├── Tests/
-│   └── Verify-UniversalEngine.ps1   # 260 automated unit tests & hardware simulation suite
+│   └── Verify-UniversalEngine.ps1   # 286 automated unit tests & hardware simulation suite
 │
 └── Backups/
     └── active_state.json            # Dynamic active session snapshot (auto-generated)

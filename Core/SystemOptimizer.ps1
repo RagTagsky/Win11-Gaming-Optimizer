@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Advanced Windows gaming optimizations: Power schemes, MMCSS/Network registry tweaks, and RAM cleaning.
 .DESCRIPTION
@@ -820,6 +820,135 @@ function Restore-NetworkGamingOptimizations {
     }
 
     Write-Host "  [+] Network settings restored to original state." -ForegroundColor Green
+    return $true
+}
+
+function Get-NetAdapterMsiConfig {
+    [CmdletBinding()]
+    param()
+
+    $results = [System.Collections.Generic.List[object]]::new()
+    $adapters = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
+        $name = $_.Name
+        $desc = $_.InterfaceDescription
+        ($name -ne "Ethernet 2") -and
+        ($name -ne "wwan99") -and
+        ($name -notmatch '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V|vEthernet') -and
+        ($desc -notmatch '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V')
+    })
+
+    foreach ($adapter in $adapters) {
+        try {
+            $pnpId = [string]$adapter.PnPDeviceID
+            if ([string]::IsNullOrWhiteSpace($pnpId)) {
+                $pnpDev = Get-PnpDevice -FriendlyName $adapter.InterfaceDescription -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($pnpDev) { $pnpId = [string]$pnpDev.InstanceId }
+            }
+            if ([string]::IsNullOrWhiteSpace($pnpId) -or -not ($pnpId -match "^PCI\\")) { continue }
+
+            $msiKeyPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$pnpId\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
+            $origMsi = $null
+            if (Test-Path -LiteralPath $msiKeyPath) {
+                $prop = Get-ItemProperty -LiteralPath $msiKeyPath -Name "MSISupported" -ErrorAction SilentlyContinue
+                if ($null -ne $prop -and $null -ne $prop.MSISupported) {
+                    $origMsi = [int]$prop.MSISupported
+                }
+            }
+            $results.Add(@{
+                AdapterName  = $adapter.Name
+                PnpDeviceId  = $pnpId
+                RegistryPath = $msiKeyPath
+                OriginalMsi  = $origMsi
+            })
+        } catch {
+            Write-Verbose "Get-NetAdapterMsiConfig notice for $($adapter.Name): $($_.Exception.Message)"
+        }
+    }
+    return $results.ToArray()
+}
+
+function Set-NetAdapterMsiMode {
+    [CmdletBinding()]
+    param()
+
+    Write-Host "[*] Enabling MSI (Message Signaled Interrupts) mode for physical PCIe network adapters..." -ForegroundColor Cyan
+    $modified = [System.Collections.Generic.List[object]]::new()
+    $adapters = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
+        $name = $_.Name
+        $desc = $_.InterfaceDescription
+        ($name -ne "Ethernet 2") -and
+        ($name -ne "wwan99") -and
+        ($name -notmatch '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V|vEthernet') -and
+        ($desc -notmatch '(?i)Apple|Wintun|Bluetooth|Virtual|TAP|VPN|Hyper-V')
+    })
+
+    foreach ($adapter in $adapters) {
+        try {
+            $pnpId = [string]$adapter.PnPDeviceID
+            if ([string]::IsNullOrWhiteSpace($pnpId)) {
+                $pnpDev = Get-PnpDevice -FriendlyName $adapter.InterfaceDescription -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($pnpDev) { $pnpId = [string]$pnpDev.InstanceId }
+            }
+            if ([string]::IsNullOrWhiteSpace($pnpId) -or -not ($pnpId -match "^PCI\\")) { continue }
+
+            $msiKeyPath = "HKLM:\SYSTEM\CurrentControlSet\Enum\$pnpId\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties"
+            $origMsi = $null
+            if (Test-Path -LiteralPath $msiKeyPath) {
+                $prop = Get-ItemProperty -LiteralPath $msiKeyPath -Name "MSISupported" -ErrorAction SilentlyContinue
+                if ($null -ne $prop -and $null -ne $prop.MSISupported) {
+                    $origMsi = [int]$prop.MSISupported
+                }
+            }
+
+            if (-not (Test-Path -LiteralPath $msiKeyPath)) {
+                New-Item -Path $msiKeyPath -Force -ErrorAction Stop | Out-Null
+            }
+            Set-ItemProperty -LiteralPath $msiKeyPath -Name "MSISupported" -Value 1 -Type DWord -Force -ErrorAction Stop
+            $modified.Add(@{
+                AdapterName  = $adapter.Name
+                PnpDeviceId  = $pnpId
+                RegistryPath = $msiKeyPath
+                OriginalMsi  = $origMsi
+            })
+            Write-Host "  [+] PCIe Network Adapter '$($adapter.Name)' ($pnpId): MSISupported = 1 (MSI interrupt mode active)." -ForegroundColor Green
+        } catch {
+            Write-Verbose "Could not enable MSI mode for adapter $($adapter.Name): $($_.Exception.Message)"
+        }
+    }
+    return $modified.ToArray()
+}
+
+function Restore-NetAdapterMsiMode {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [Alias("NetAdapterMsiConfig")]
+        [AllowEmptyCollection()]
+        [array]$MsiBackup = @()
+    )
+
+    if (-not $MsiBackup -or $MsiBackup.Count -eq 0) { return $true }
+    Write-Host "[*] Restoring PCIe network adapter MSI interrupt configuration..." -ForegroundColor Cyan
+    foreach ($entry in @($MsiBackup)) {
+        if (-not $entry) { continue }
+        $regPath = if ($entry -is [hashtable]) { $entry["RegistryPath"] } else { $entry.RegistryPath }
+        $origMsi = if ($entry -is [hashtable]) { $entry["OriginalMsi"] } else { $entry.OriginalMsi }
+        $aName   = if ($entry -is [hashtable]) { $entry["AdapterName"] } else { $entry.AdapterName }
+        if (-not $regPath) { continue }
+        try {
+            if (Test-Path -LiteralPath $regPath) {
+                if ($null -ne $origMsi) {
+                    Set-ItemProperty -LiteralPath $regPath -Name "MSISupported" -Value ([int]$origMsi) -Type DWord -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [+] Restored network adapter '$aName' MSISupported = $origMsi." -ForegroundColor Green
+                } else {
+                    Remove-ItemProperty -LiteralPath $regPath -Name "MSISupported" -Force -ErrorAction SilentlyContinue
+                    Write-Host "  [+] Removed network adapter '$aName' MSISupported override (default)." -ForegroundColor Green
+                }
+            }
+        } catch {
+            Write-Verbose "Failed to restore MSI mode for $aName`: $($_.Exception.Message)"
+        }
+    }
     return $true
 }
 
@@ -2342,6 +2471,8 @@ function Set-InputBufferOptimizations {
         [int]$QueueSize = 100
     )
 
+    if ($QueueSize -lt 32) { $QueueSize = 32 }
+
     # shortcut: optimized for FPS - default 100 packets prevents packet drop / aim hitching on 1000Hz-8000Hz mice during high-speed flicks
     Write-Host "[*] Applying Direct Input Buffer Queue Optimizations (Mouse & Keyboard direct delivery, QueueSize = $QueueSize)..." -ForegroundColor Cyan
 
@@ -2896,8 +3027,11 @@ function Set-RegistryTargets {
     [CmdletBinding()]
     param([Parameter(Mandatory = $false)] [array]$Targets = @())
 
+    $isSystem = $false
+    try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
     $applied = 0
     foreach ($t in $Targets) {
+        if ($isSystem -and ([string]$t.Path).StartsWith("HKCU:", [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         $root, $sub = ConvertTo-RegistryKeyParts $t.Path
         if (-not $root) { continue }
         try {
@@ -2928,7 +3062,7 @@ function Restore-RegistryValueSnapshot {
     $restored = 0
     foreach ($e in @($Snapshot)) {
         if (-not $e -or -not $e.Path) { continue }
-        if ($Hive -ne "All" -and -not ([string]$e.Path).StartsWith("$($Hive):")) { continue }
+        if ($Hive -ne "All" -and -not ([string]$e.Path).StartsWith("$($Hive):", [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         $root, $sub = ConvertTo-RegistryKeyParts $e.Path
         if (-not $root) { continue }
         try {
@@ -2978,7 +3112,8 @@ function Get-ExtendedGamingTargets {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)] [object]$HardwareProfile,
-        [Parameter(Mandatory = $false)] [string[]]$Whitelist
+        [Parameter(Mandatory = $false)] [string[]]$Whitelist,
+        [Parameter(Mandatory = $false)] [object]$TuningConfig
     )
 
     $hw = if ($HardwareProfile) { $HardwareProfile } else { Get-HardwareProfile }
@@ -2987,6 +3122,15 @@ function Get-ExtendedGamingTargets {
         if (Test-Path -LiteralPath $wlFile) {
             $Whitelist = @((Get-Content -LiteralPath $wlFile -Raw -Encoding UTF8 | ConvertFrom-Json).ProtectedServices)
         }
+    }
+
+    $tuning = if ($null -ne $TuningConfig) {
+        $TuningConfig
+    } else {
+        $tuningFile = Join-Path $PSScriptRoot "..\Config\tuning.json"
+        if (Test-Path -LiteralPath $tuningFile) {
+            try { Get-Content -LiteralPath $tuningFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $null }
+        } else { $null }
     }
 
     $targets = [System.Collections.Generic.List[object]]::new()
@@ -3018,13 +3162,15 @@ function Get-ExtendedGamingTargets {
         Add-T $pp "PagePriority" 5 "DWord" "IFEO"
     }
 
-    # 6. AMD RDNA/Polaris driver: PCIe link sleep off + shader cache Always On
+    # 6. AMD RDNA/Polaris driver: PCIe link sleep off, DXNAVI de-stutter, deep sleep off + shader cache Always On
     if ($hw.GpuVendor -eq "AMD") {
         foreach ($k in @(Get-AmdGpuDriverClassKeys)) {
             $kp = if ($k -is [hashtable]) { $k["Path"] } else { $k.Path }
             if ($kp) {
                 Add-T $kp "EnableAspmL0s" 0 "DWord" "AMD"
                 Add-T $kp "EnableAspmL1" 0 "DWord" "AMD"
+                Add-T $kp "StutterMode" 0 "DWord" "AMD"
+                Add-T $kp "PP_SclkDeepSleepDisable" 1 "DWord" "AMD"
                 if (Test-Path -LiteralPath "$kp\UMD") { Add-T "$kp\UMD" "ShaderCache" ([byte[]](0x32, 0x00)) "Binary" "AMD" }
             }
         }
@@ -3079,6 +3225,41 @@ function Get-ExtendedGamingTargets {
     } catch {
         Write-Verbose "Enum root access notice: $($_.Exception.Message)"
     }
+
+    # 9. Winsock AFD Fast-Path & NDIS RSS CPU Scaling (WinUtil / AtlasOS / ReviOS / Calypto / Fr33thy / XOS)
+    $afdPath = "HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters"
+    Add-T $afdPath "FastSendDatagramThreshold" 65536 "DWord" "Network"
+    Add-T $afdPath "FastCopyReceiveThreshold" 65536 "DWord" "Network"
+    Add-T $afdPath "DefaultSendWindow" 65536 "DWord" "Network"
+    Add-T $afdPath "DefaultReceiveWindow" 65536 "DWord" "Network"
+    Add-T "HKLM:\SYSTEM\CurrentControlSet\Services\NDIS\Parameters" "MaxNumRssCpus" 4 "DWord" "Network"
+
+    # 10. Kernel Power Energy Estimation Telemetry, Fast Startup & Svchost Consolidation
+    $taggedEnergyPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\EnergyEstimation\TaggedEnergy"
+    Add-T $taggedEnergyPath "DisableTaggedEnergyLogging" 1 "DWord" "Kernel"
+    Add-T $taggedEnergyPath "TelemetryMaxApplication" 0 "DWord" "Kernel"
+    Add-T $taggedEnergyPath "TelemetryMaxTagPerApplication" 0 "DWord" "Kernel"
+    Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" "HiberbootEnabled" 0 "DWord" "Kernel"
+    Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" "CoalescingTimerInterval" 0 "DWord" "Kernel"
+    if (-not $hw.LowRamProfile) {
+        Add-T "HKLM:\SYSTEM\CurrentControlSet\Control" "SvcHostSplitThresholdInKB" 67108864 "DWord" "Svchost"
+    }
+
+    # 11. DirectX Flip Model, Windowed Optimizations & Desktop/Mouse Input
+    Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" "PlatformSupportMiracast" 0 "DWord" "Graphics"
+    Add-T "HKCU:\Control Panel\Desktop" "MenuShowDelay" "0" "String" "Desktop"
+    Add-T "HKCU:\Control Panel\Desktop" "LowLevelHooksTimeout" 5000 "DWord" "Desktop"
+    Add-T "HKCU:\Control Panel\Mouse" "MouseHoverTime" "10" "String" "Input"
+    Add-T "HKCU:\Software\Microsoft\DirectX\UserGpuPreferences" "DirectXUserGlobalSettings" "SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;" "String" "Graphics"
+    if ($tuning -and $tuning.DisableMouseAccel -eq $true) {
+        Add-T "HKCU:\Control Panel\Mouse" "MouseSpeed" "0" "String" "Input"
+        Add-T "HKCU:\Control Panel\Mouse" "MouseThreshold1" "0" "String" "Input"
+        Add-T "HKCU:\Control Panel\Mouse" "MouseThreshold2" "0" "String" "Input"
+    }
+
+    # 12. Storage Sense & Reserve Manager I/O Prevention
+    Add-T "HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy" "01" 0 "DWord" "Storage"
+    Add-T "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\ReserveManager" "ShippedWithReserves" 0 "DWord" "Storage"
 
     return $targets.ToArray()
 }
@@ -3294,7 +3475,8 @@ function Repair-LegacyOptimizerLeftovers {
     try {
         $dxu = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Microsoft\DirectX\UserGpuPreferences", $true)
         if ($dxu) {
-            if ($null -ne $dxu.GetValue("DirectXUserGlobalSettings")) {
+            $globalVal = [string]$dxu.GetValue("DirectXUserGlobalSettings")
+            if ($globalVal -match "SwapEffectUpgradeEnable=0") {
                 $dxu.DeleteValue("DirectXUserGlobalSettings", $false)
                 Write-Host "  [x] Removed forced DXGI global override: DirectXUserGlobalSettings" -ForegroundColor Yellow
                 $fixed++
@@ -3424,15 +3606,19 @@ function Set-Windows11DebloatOptimizations {
     )
 
     Write-Host "[*] Applying Windows 11 Deep Debloat & Background Suppression..." -ForegroundColor Cyan
+    $isSystem = $false
+    try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
 
     # 1. GameDVR & Background Recording
     if ($All -or $DisableGameBar) {
         try {
-            if (-not (Test-Path "HKCU:\System\GameConfigStore")) { New-Item -Path "HKCU:\System\GameConfigStore" -Force | Out-Null }
-            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            if (-not $isSystem) {
+                if (-not (Test-Path "HKCU:\System\GameConfigStore")) { New-Item -Path "HKCU:\System\GameConfigStore" -Force | Out-Null }
+                Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
 
-            if (-not (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR")) { New-Item -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Force | Out-Null }
-            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR")) { New-Item -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Force | Out-Null }
+                Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
 
             if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR")) { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Force | Out-Null }
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
@@ -3467,7 +3653,8 @@ function Set-Windows11DebloatOptimizations {
             if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI")) { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Force | Out-Null }
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableAIDataAnalysis" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
 
-            foreach ($k in @("HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot", "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot")) {
+            $copilotKeys = if ($isSystem) { @("HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot") } else { @("HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot", "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot") }
+            foreach ($k in $copilotKeys) {
                 if (-not (Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
                 Set-ItemProperty -Path $k -Name "TurnOffWindowsCopilot" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
             }
@@ -3488,8 +3675,10 @@ function Set-Windows11DebloatOptimizations {
             if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh")) { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Force | Out-Null }
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
 
-            if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced")) { New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Force | Out-Null }
-            Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            if (-not $isSystem) {
+                if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced")) { New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Force | Out-Null }
+                Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
             Write-Host "  [+] Windows 11 Widgets Board & News Feeds disabled." -ForegroundColor Green
         } catch {
             Write-Warning "Failed to disable Widgets: $($_.Exception.Message)"
@@ -3497,7 +3686,7 @@ function Set-Windows11DebloatOptimizations {
     }
 
     # 5. Bing Search in Start Menu
-    if ($All -or $DisableBingSearch) {
+    if (($All -or $DisableBingSearch) -and -not $isSystem) {
         try {
             if (-not (Test-Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer")) { New-Item -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Force | Out-Null }
             Set-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
@@ -3529,6 +3718,8 @@ function Restore-Windows11DebloatOptimizations {
     )
 
     Write-Host "[*] Restoring Windows 11 Debloat & Application settings..." -ForegroundColor Cyan
+    $isSystem = $false
+    try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
 
     if (-not $DebloatConfig) {
         $DebloatConfig = @{
@@ -3546,11 +3737,13 @@ function Restore-Windows11DebloatOptimizations {
 
     try {
         # Restore GameDVR
-        if ($null -ne $DebloatConfig.GameDVR_Enabled) {
-            Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $DebloatConfig.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
-        }
-        if ($null -ne $DebloatConfig.AppCaptureEnabled) {
-            Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $DebloatConfig.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+        if (-not $isSystem) {
+            if ($null -ne $DebloatConfig.GameDVR_Enabled) {
+                Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $DebloatConfig.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+            if ($null -ne $DebloatConfig.AppCaptureEnabled) {
+                Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $DebloatConfig.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+            }
         }
         if ($null -ne $DebloatConfig.AllowGameDVR) {
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Value $DebloatConfig.AllowGameDVR -Type DWord -Force -ErrorAction SilentlyContinue
@@ -3566,7 +3759,9 @@ function Restore-Windows11DebloatOptimizations {
 
         # Restore AI / Copilot
         Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableAIDataAnalysis" -Force -ErrorAction SilentlyContinue
-        Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue
+        if (-not $isSystem) {
+            Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue
+        }
         Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue
         if (Get-Service -Name "WSAIFabricSvc" -ErrorAction SilentlyContinue) {
             Set-Service -Name "WSAIFabricSvc" -StartupType Manual -ErrorAction SilentlyContinue
@@ -3574,7 +3769,9 @@ function Restore-Windows11DebloatOptimizations {
 
         # Restore Widgets & Bing
         Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Force -ErrorAction SilentlyContinue
-        Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableSearchBoxSuggestions" -Force -ErrorAction SilentlyContinue
+        if (-not $isSystem) {
+            Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableSearchBoxSuggestions" -Force -ErrorAction SilentlyContinue
+        }
 
         # Restore basic Security Event Auditing
         auditpol.exe /set /subcategory:"Logon" /success:enable /failure:enable 2>&1 | Out-Null

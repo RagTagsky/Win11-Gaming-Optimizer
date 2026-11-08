@@ -1,9 +1,13 @@
-﻿<#
+<#
 .SYNOPSIS
     Unit and integration verification suite for Universal Hardware Auto-Detection Engine.
 #>
 
 $ErrorActionPreference = "Stop"
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {}
 $failures = 0
 $testsRun = 0
 
@@ -879,6 +883,92 @@ Assert-Test ($systemStateDef -match '\$item\.Scope -notin @\("HKLM",\s*"HKLM32"\
 $tcpDef = (Get-Command Get-TcpStackConfig).Definition
 Assert-Test ($tcpDef -match 'включено' -and $tcpDef -match 'Tcp1323Opts') "Get-TcpStackConfig supports localized Russian netsh output and Tcp1323Opts registry fallback"
 
+# 14.9 Community Top-Tier Optimizations, PCIe NIC MSI Mode & Safety Guards
+Assert-Test ($tuningCfg.DisableMouseAccel -is [bool]) "Config\tuning.json declares boolean DisableMouseAccel switch"
+Assert-Test ($tuningCfg.EnableNetAdapterMsi -is [bool]) "Config\tuning.json declares boolean EnableNetAdapterMsi switch"
+Assert-Test ($tuningCfg.InputBufferQueueSize -ge 32) "Config\tuning.json declares numeric InputBufferQueueSize (>= 32)"
+
+$setRegDef = (Get-Command Set-RegistryTargets).Definition
+Assert-Test ($setRegDef -match 'IsSystem' -and $setRegDef -match 'StartsWith\("HKCU:"') "Set-RegistryTargets skips HKCU: targets when running under NT AUTHORITY\SYSTEM"
+
+$inputBufDef = (Get-Command Set-InputBufferOptimizations).Definition
+Assert-Test ($inputBufDef -match '\$QueueSize -lt 32' -and $inputBufDef -match '\$QueueSize = 32') "Set-InputBufferOptimizations enforces minimum safety floor of 32 packets"
+
+$highRamTargets = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $false; HddProfile = $false })
+$lowRamTargets  = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $true;  HddProfile = $false })
+
+$afdFastSend = $highRamTargets | Where-Object { $_.Path -match 'Services\\AFD\\Parameters' -and $_.Name -eq 'FastSendDatagramThreshold' }
+$afdFastCopy = $highRamTargets | Where-Object { $_.Path -match 'Services\\AFD\\Parameters' -and $_.Name -eq 'FastCopyReceiveThreshold' }
+$ndisRss     = $highRamTargets | Where-Object { $_.Path -match 'Services\\NDIS\\Parameters' -and $_.Name -eq 'MaxNumRssCpus' }
+Assert-Test ($null -ne $afdFastSend -and $afdFastSend.Value -eq 65536 -and $null -ne $afdFastCopy -and $afdFastCopy.Value -eq 65536) "Winsock AFD Fast-Path datagram/copy thresholds set to 65536"
+Assert-Test ($null -ne $ndisRss -and $ndisRss.Value -eq 4) "NDIS MaxNumRssCpus set to 4 for multi-core network interrupt distribution"
+
+$taggedEnergy = $highRamTargets | Where-Object { $_.Path -match 'TaggedEnergy' -and $_.Name -eq 'DisableTaggedEnergyLogging' }
+$hiberboot    = $highRamTargets | Where-Object { $_.Path -match 'Session Manager\\Power' -and $_.Name -eq 'HiberbootEnabled' }
+$coalescing   = $highRamTargets | Where-Object { $_.Path -match 'Control\\Session Manager$' -and $_.Name -eq 'CoalescingTimerInterval' }
+$svchostHigh  = $highRamTargets | Where-Object { $_.Path -match 'CurrentControlSet\\Control$' -and $_.Name -eq 'SvcHostSplitThresholdInKB' }
+$svchostLow   = $lowRamTargets  | Where-Object { $_.Path -match 'CurrentControlSet\\Control$' -and $_.Name -eq 'SvcHostSplitThresholdInKB' }
+Assert-Test ($null -ne $taggedEnergy -and $taggedEnergy.Value -eq 1) "Kernel Power TaggedEnergy logging is disabled (DisableTaggedEnergyLogging = 1)"
+Assert-Test ($null -ne $hiberboot -and $hiberboot.Value -eq 0 -and $null -ne $coalescing -and $coalescing.Value -eq 0) "HiberbootEnabled = 0 and CoalescingTimerInterval = 0 are configured"
+Assert-Test ($null -ne $svchostHigh -and $svchostHigh.Value -eq 67108864 -and $null -eq $svchostLow) "SvcHostSplitThresholdInKB (67108864) is applied on >=16GB RAM and skipped on LowRamProfile"
+
+$extDef = (Get-Command Get-ExtendedGamingTargets).Definition
+Assert-Test ($extDef -match 'StutterMode' -and $extDef -match 'PP_SclkDeepSleepDisable') "AMD Radeon DXNAVI StutterMode=0 and PP_SclkDeepSleepDisable=1 are defined in Get-ExtendedGamingTargets"
+
+$miracast = $highRamTargets | Where-Object { $_.Path -match 'GraphicsDrivers' -and $_.Name -eq 'PlatformSupportMiracast' }
+$menuShow = $highRamTargets | Where-Object { $_.Path -match 'Control Panel\\Desktop' -and $_.Name -eq 'MenuShowDelay' }
+$hooksTo  = $highRamTargets | Where-Object { $_.Path -match 'Control Panel\\Desktop' -and $_.Name -eq 'LowLevelHooksTimeout' }
+$hoverTm  = $highRamTargets | Where-Object { $_.Path -match 'Control Panel\\Mouse' -and $_.Name -eq 'MouseHoverTime' }
+$dxGlobal = $highRamTargets | Where-Object { $_.Path -match 'DirectX\\UserGpuPreferences' -and $_.Name -eq 'DirectXUserGlobalSettings' }
+$storageS = $highRamTargets | Where-Object { $_.Path -match 'StorageSense\\Parameters\\StoragePolicy' -and $_.Name -eq '01' }
+$resvMgr  = $highRamTargets | Where-Object { $_.Path -match 'ReserveManager' -and $_.Name -eq 'ShippedWithReserves' }
+Assert-Test ($null -ne $miracast -and $miracast.Value -eq 0 -and $null -ne $dxGlobal -and $dxGlobal.Value -match 'SwapEffectUpgradeEnable=1' -and $dxGlobal.Value -match 'VRROptimizeEnable=1') "DirectX Flip Model upgrade (SwapEffectUpgradeEnable=1), Windowed VRR (VRROptimizeEnable=1) and PlatformSupportMiracast=0 are configured"
+Assert-Test ($null -ne $menuShow -and $menuShow.Value -eq "0" -and $null -ne $hooksTo -and $hooksTo.Value -eq 5000 -and $null -ne $hoverTm -and $hoverTm.Value -eq "10") "Desktop MenuShowDelay=0, LowLevelHooksTimeout=5000, and MouseHoverTime=10 are configured"
+Assert-Test ($null -ne $storageS -and $storageS.Value -eq 0 -and $null -ne $resvMgr -and $resvMgr.Value -eq 0) "Storage Sense (01=0) and ReserveManager (ShippedWithReserves=0) I/O suppression are configured"
+
+Assert-Test ($null -ne (Get-Command Get-NetAdapterMsiConfig -ErrorAction SilentlyContinue) -and $null -ne (Get-Command Set-NetAdapterMsiMode -ErrorAction SilentlyContinue) -and $null -ne (Get-Command Restore-NetAdapterMsiMode -ErrorAction SilentlyContinue)) "PCIe Network Adapter MSI functions (Get/Set/Restore-NetAdapterMsiMode) are exported"
+$netMsiDef = (Get-Command Set-NetAdapterMsiMode).Definition
+Assert-Test ($netMsiDef -match '\^PCI\\\\' -and $netMsiDef -match 'MSISupported') "Set-NetAdapterMsiMode strictly filters physical PCIe adapters (^PCI\\) and sets MSISupported = 1"
+
+$ugmContent = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\UltraGamingMode.ps1") -Raw -Encoding UTF8
+Assert-Test ($ugmContent -notmatch '173 non-essential' -and $ugmContent -match '207 non-essential') "UltraGamingMode.ps1 references all 207 non-essential services"
+Assert-Test ($ugmContent -match 'Kernel DPC: Threaded \(Optimal\)' -and $ugmContent -match 'Dynamic Tick: Default \(Optimal\)') "UltraGamingMode.ps1 displays accurate optimal status badges for Kernel DPC and Dynamic Tick"
+
+# 14.10 Behavioral Verification: DisableMouseAccel, NetAdapterMsi Restore & Registry Snapshot Round-Trip
+$mouseTargetsOn  = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $false; HddProfile = $false }) -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true })
+$mouseTargetsOff = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $false; HddProfile = $false }) -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $false })
+$msOn  = $mouseTargetsOn  | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') }
+$msOff = $mouseTargetsOff | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') }
+Assert-Test (@($msOn).Count -eq 3 -and (@($msOn | Where-Object { $_.Value -eq '0' }).Count -eq 3) -and @($msOff).Count -eq 0) "Get-ExtendedGamingTargets emits MouseSpeed/MouseThreshold1/MouseThreshold2 = '0' when DisableMouseAccel is true and omits them when false"
+
+$debloatDef = (Get-Command Set-Windows11DebloatOptimizations).Definition
+$restoreDebloatDef = (Get-Command Restore-Windows11DebloatOptimizations).Definition
+Assert-Test ($debloatDef -match '\$isSystem' -and $restoreDebloatDef -match '\$isSystem') "Set-Windows11DebloatOptimizations and Restore-Windows11DebloatOptimizations guard HKCU: operations under NT AUTHORITY\SYSTEM"
+
+$tempMsiKey = "HKCU:\Software\UGM_UnitTest_Msi_" + [System.Guid]::NewGuid().ToString("N")
+New-Item -Path $tempMsiKey -Force | Out-Null
+Set-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -Value 1 -Type DWord -Force
+$null = Restore-NetAdapterMsiMode -MsiBackup @(@{ AdapterName = "TestNIC"; RegistryPath = $tempMsiKey; OriginalMsi = 0 }) 6>$null
+$restoredZero = (Get-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -ErrorAction SilentlyContinue).MSISupported
+$null = Restore-NetAdapterMsiMode -MsiBackup @(@{ AdapterName = "TestNIC"; RegistryPath = $tempMsiKey; OriginalMsi = $null }) 6>$null
+$restoredNull = (Get-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -ErrorAction SilentlyContinue).MSISupported
+Remove-Item -LiteralPath $tempMsiKey -Recurse -Force -ErrorAction SilentlyContinue
+Assert-Test ($restoredZero -eq 0 -and $null -eq $restoredNull) "Restore-NetAdapterMsiMode accurately restores OriginalMsi value and removes property when OriginalMsi is null"
+
+$tempRegKey = "HKCU:\Software\UGM_UnitTest_Reg_" + [System.Guid]::NewGuid().ToString("N")
+$testTargets = @(
+    @{ Path = $tempRegKey; Name = "FastSendDatagramThreshold"; Value = 65536; Kind = "DWord"; Group = "Network" },
+    @{ Path = $tempRegKey; Name = "MenuShowDelay"; Value = "0"; Kind = "String"; Group = "Desktop" }
+)
+$snapBefore = Get-RegistryValueSnapshot -Targets $testTargets
+$appliedCnt = Set-RegistryTargets -Targets $testTargets
+$valDword = (Get-ItemProperty -LiteralPath $tempRegKey -Name "FastSendDatagramThreshold" -ErrorAction SilentlyContinue).FastSendDatagramThreshold
+$valStr   = (Get-ItemProperty -LiteralPath $tempRegKey -Name "MenuShowDelay" -ErrorAction SilentlyContinue).MenuShowDelay
+$restoredCnt = Restore-RegistryValueSnapshot -Snapshot $snapBefore -Hive "HKCU"
+$propAfter = Get-ItemProperty -LiteralPath $tempRegKey -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $tempRegKey -Recurse -Force -ErrorAction SilentlyContinue
+Assert-Test ($appliedCnt -eq 2 -and $valDword -eq 65536 -and $valStr -eq "0" -and $restoredCnt -eq 2 -and $null -eq $propAfter.FastSendDatagramThreshold) "Get-RegistryValueSnapshot / Set-RegistryTargets / Restore-RegistryValueSnapshot perform lossless round-trip"
+
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta
 Write-Host "   TEST RESULTS: $testsRun Tests Run | $failures Failures" -ForegroundColor $(if ($failures -eq 0) { "Green" } else { "Red" })
@@ -889,5 +979,4 @@ if ($failures -gt 0) {
 } else {
     exit 0
 }
-
 

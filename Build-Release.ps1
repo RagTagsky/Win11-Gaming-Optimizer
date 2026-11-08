@@ -121,7 +121,8 @@ foreach ($f in $binFiles) {
     Write-Host "  $($f.Name): $hash" -ForegroundColor Gray
 }
 
-$hashLines | Out-File -FilePath $checksumFile -Encoding utf8 -Force
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllLines($checksumFile, $hashLines, $utf8NoBom)
 Write-Host "  [+] Checksums written: .bin\SHA256SUMS.txt" -ForegroundColor Green
 
 Write-Host "`n=====================================================" -ForegroundColor Green
