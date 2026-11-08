@@ -1,14 +1,14 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode for Windows 11
-### *Competitive Low-Latency & Universal Hardware Edition (v3.1)*
+### *Competitive Low-Latency & Universal Hardware Edition (v3.1.1)*
 
 **A zero-risk, high-precision latency, frame pacing, and universal hardware optimizer for Windows 10/11.**  
 Temporarily strips background bloat, halts real-time disk scanning, auto-detects and adapts to ANY PC hardware (Intel/AMD CPUs, NVIDIA/AMD/Intel GPUs, 8GB Low-RAM Guard, HDD 100% Thrash Protection), activates GPU MSI Mode, bypasses kernel DPC queuing, cuts peripheral input buffer latency, synchronizes system timers, activates HAGS, and guarantees 100% automated failsafe recovery on next boot.
 
 [![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
 [![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Version](https://img.shields.io/badge/Version-v3.1--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
+[![Version](https://img.shields.io/badge/Version-v3.1.1--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-success.svg?style=for-the-badge)](LICENSE)
 [![Zero-Risk Watchdog](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#the-zero-risk-watchdog-guarantee)
 [![Universal Hardware](https://img.shields.io/badge/Hardware-Intel%20%2B%20AMD%20%7C%20NVIDIA-ED1C24?style=for-the-badge)](#universal-hardware-auto-detection-engine)
@@ -507,7 +507,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
-├── UltraGamingMode.exe              # Native Windows 11 Desktop GUI application (v3.1, Tauri v2, Dark/Light Mode)
+├── UltraGamingMode.exe              # Native Windows 11 Desktop GUI application (v3.1.1, Tauri v2, Dark/Light Mode)
 ├── UltraGamingMode.bat              # Elevated interactive TUI launcher
 ├── UltraGamingMode.ps1              # Core PowerShell CLI controller & orchestrator
 ├── README.md                        # English documentation & benchmarks

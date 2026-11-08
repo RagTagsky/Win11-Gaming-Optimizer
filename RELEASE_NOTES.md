@@ -1,6 +1,11 @@
-# ⚡ Ultra Gaming Mode v3.1.0 — Competitive Low-Latency Engine & Fluent UI Overhaul
+# ⚡ Ultra Gaming Mode v3.1.1 — Competitive Low-Latency Engine & Fluent UI Overhaul
 
-**Ultra Gaming Mode v3.1** is a major milestone release delivering a redesigned native desktop interface with dark/light themes, cutting-edge kernel-level latency optimizations, Winsock AFD fast-path socket bypass, ring-0 process prioritization for competitive esports titles, and an automated release distribution pipeline.
+**Ultra Gaming Mode v3.1.1** is a patch release addressing automated release packaging checksum generation while bringing all v3.1 low-latency and UI features: a redesigned native desktop interface with dark/light themes, cutting-edge kernel-level latency optimizations, Winsock AFD fast-path socket bypass, ring-0 process prioritization for competitive esports titles, and an automated release distribution pipeline.
+
+---
+
+### 🔧 Bug Fixes in v3.1.1
+- **Fixed Empty `SHA256SUMS.txt` Generation:** Resolved a PowerShell directory enumeration issue in `Build-Release.ps1` where `Get-ChildItem -Path $binDir -Include ...` without `-Recurse` caused `$binFiles` to return empty. Implemented robust extension matching (`Where-Object { $_.Extension -in @(".exe", ".msi", ".zip") }`) to ensure `.bin\SHA256SUMS.txt` reliably records all binary hashes.
 
 ---
 
@@ -73,4 +78,4 @@
 
 ---
 
-**Full Changelog**: https://github.com/RagTagsky/Win11-Gaming-Optimizer/compare/v3.0...v3.1
+**Full Changelog**: https://github.com/RagTagsky/Win11-Gaming-Optimizer/compare/v3.0...v3.1.1

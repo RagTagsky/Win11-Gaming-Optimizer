@@ -344,7 +344,7 @@
         class="flex items-center justify-between text-[11px] pt-2 px-1"
         style="color: var(--text-muted);"
       >
-        <span>Ultra Gaming Mode v3.1 · Обратимая оптимизация с резервным снимком состояния</span>
+        <span>Ultra Gaming Mode v3.1.1 · Обратимая оптимизация с резервным снимком состояния</span>
         <span>Тема: {theme === 'dark' ? 'Тёмная' : 'Светлая'}</span>
       </div>
     </footer>

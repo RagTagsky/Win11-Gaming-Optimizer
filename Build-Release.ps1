@@ -8,7 +8,7 @@
 param(
     [switch]$SkipBuild,
     [switch]$CreateGhRelease,
-    [string]$Tag = "v3.1.0"
+    [string]$Tag = "v3.1.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -111,19 +111,25 @@ if ($msiPkg) {
 
 # 5. Compute Cryptographic Checksums (SHA256)
 Write-Host "`n[*] Computing SHA256 checksums..." -ForegroundColor Cyan
-$binFiles = Get-ChildItem -Path $binDir -Include "*.exe", "*.msi", "*.zip" -File
+$binFiles = Get-ChildItem -Path $binDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in @(".exe", ".msi", ".zip") -and $_.Name -ne "SHA256SUMS.txt" } |
+    Sort-Object Name
 $checksumFile = Join-Path $binDir "SHA256SUMS.txt"
-$hashLines = @()
+$hashLines = [System.Collections.Generic.List[string]]::new()
 
 foreach ($f in $binFiles) {
     $hash = (Get-FileHash -Path $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    $hashLines += "$hash  $($f.Name)"
+    $hashLines.Add("$hash  $($f.Name)")
     Write-Host "  $($f.Name): $hash" -ForegroundColor Gray
 }
 
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllLines($checksumFile, $hashLines, $utf8NoBom)
-Write-Host "  [+] Checksums written: .bin\SHA256SUMS.txt" -ForegroundColor Green
+if ($hashLines.Count -gt 0) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines($checksumFile, $hashLines.ToArray(), $utf8NoBom)
+    Write-Host "  [+] Checksums written: .bin\SHA256SUMS.txt ($($hashLines.Count) files)" -ForegroundColor Green
+} else {
+    Write-Warning "No binary artifacts found in $binDir to checksum!"
+}
 
 Write-Host "`n=====================================================" -ForegroundColor Green
 Write-Host " [SUCCESS] All release artifacts ready in .bin/:     " -ForegroundColor Green

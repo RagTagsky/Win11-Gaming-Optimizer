@@ -1,14 +1,14 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode для Windows 11
-### *Native Desktop, Competitive Low-Latency & Universal Hardware Edition (v3.1)*
+### *Native Desktop, Competitive Low-Latency & Universal Hardware Edition (v3.1.1)*
 
 **Высокоточный оптимизатор задержек (input latency), фреймтайма и универсальной аппаратной части с нулевым риском для Windows 10/11.**  
 Оснащен лаконичным нативным графическим интерфейсом для Windows 11 (Tauri v2 + Rust + Svelte 5) с поддержкой Темной и Светлой тем (Dark / Light Mode), временно выгружает фоновый мусор, приостанавливает синхронное сканирование диска Защитником, автоматически определяет и адаптируется к ЛЮБОМУ ПК (процессоры Intel/AMD, видеокарты NVIDIA/AMD/Intel, защита 8 ГБ ОЗУ Low-RAM Guard, 100% защита механических HDD от фризов), переводит GPU и PCIe сетевые карты в режим MSI Mode, ускоряет сетевой трафик через Winsock AFD Fast-Path (64KB), синхронизирует системные таймеры, активирует HAGS, обеспечивает аварийный ремонт компонентов в 1 клик и гарантирует 100% автоматическое безопасное восстановление при следующей перезагрузке.
 
 [![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
 [![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Версия](https://img.shields.io/badge/Версия-v3.1--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
+[![Версия](https://img.shields.io/badge/Версия-v3.1.1--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
 [![Лицензия: MIT](https://img.shields.io/badge/Лицензия-MIT-success.svg?style=for-the-badge)](LICENSE)
 [![Zero-Risk Сторож](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#гарантия-безопасности-и-fail-safe-сторож)
 [![Универсальное оборудование](https://img.shields.io/badge/Платформа-Intel%20%2B%20AMD%20%7C%20NVIDIA-ED1C24?style=for-the-badge)](#универсальный-модуль-автоопределения-оборудования)
@@ -507,7 +507,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
-├── UltraGamingMode.exe              # Нативное десктопное приложение GUI (v3.1, Tauri v2, Темная/Светлая темы)
+├── UltraGamingMode.exe              # Нативное десктопное приложение GUI (v3.1.1, Tauri v2, Темная/Светлая темы)
 ├── UltraGamingMode.bat              # Интерактивное меню с автоматическим запросом прав
 ├── UltraGamingMode.ps1              # Основной оркестратор и контроллер PowerShell
 ├── README.md                        # Документация и тесты на английском языке
