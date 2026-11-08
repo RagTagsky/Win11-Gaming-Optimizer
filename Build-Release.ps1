@@ -8,7 +8,7 @@
 param(
     [switch]$SkipBuild,
     [switch]$CreateGhRelease,
-    [string]$Tag = "v3.0.0"
+    [string]$Tag = "v3.1.0"
 )
 
 $ErrorActionPreference = "Stop"

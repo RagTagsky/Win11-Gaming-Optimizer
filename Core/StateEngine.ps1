@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "3.0"
+$Script:APP_VERSION = "3.1"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {

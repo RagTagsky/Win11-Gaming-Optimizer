@@ -88,7 +88,7 @@
       class="text-[11px] font-medium px-1.5 py-0.5 rounded border pointer-events-none"
       style="background-color: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border-subtle);"
     >
-      v3.0
+      v3.1
     </span>
   </div>
 
