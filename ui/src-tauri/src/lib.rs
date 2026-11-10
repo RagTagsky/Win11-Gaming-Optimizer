@@ -1,12 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
-use tauri::Manager;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
-use window_vibrancy::apply_mica;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -769,10 +766,6 @@ fn set_window_theme(window: tauri::WebviewWindow, dark: bool) -> Result<(), Stri
         tauri::Theme::Light
     };
     let _ = window.set_theme(Some(theme));
-    #[cfg(target_os = "windows")]
-    {
-        let _ = apply_mica(&window, Some(dark));
-    }
     Ok(())
 }
 
@@ -1021,14 +1014,7 @@ fn lock_timer_resolution() -> Result<ActionResult, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
-        .setup(|app| {
-            let window = app.get_webview_window("main").unwrap();
-
-            #[cfg(target_os = "windows")]
-            {
-                let _ = apply_mica(&window, Some(true));
-            }
-
+        .setup(|_app| {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
