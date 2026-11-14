@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "3.1.1"
+$Script:APP_VERSION = "3.2.0"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -464,7 +464,7 @@ function New-SystemStateBackup {
     $snapshot.HagsConfig = Get-HagsGpuSchedulingConfig
 
     # 18-21. v2.8 extended registry tweaks, USB/NVMe/EPP power latency, memory compression, PCIe NIC MSI mode
-    $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true })))
+    $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true; DisableNvidiaDynamicPstate = $true })))
     $snapshot.PowerLatencyConfig      = Get-PowerLatencyConfig
     $snapshot.MemoryCompressionConfig = Get-MemoryCompressionConfig
     $snapshot.DebloatConfig           = Get-Windows11DebloatConfig
@@ -655,7 +655,8 @@ function Disable-UserStateAggressive {
     Set-WindowsWidgetsAndSearchGamingState -Disable $true | Out-Null
     Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $true | Out-Null
 
-    # 9. Apply Adaptive CPU, GPU & NTFS Optimizations
+    # 9. Activate Ultimate Performance scheme and apply Adaptive CPU, GPU & NTFS Optimizations
+    Enable-UltimatePerformance | Out-Null
     Apply-CpuGamingOptimizations -HardwareProfile $hw | Out-Null
     Apply-GpuGamingOptimizations -HardwareProfile $hw | Out-Null
     Set-NTFSGamingOptimizations -IsHdd:$hw.HddProfile | Out-Null
@@ -954,7 +955,10 @@ function Restore-UserProfileState {
     if (Test-Path -LiteralPath "HKCU:\Software\Policies\Microsoft\TabletPC") {
         Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\TabletPC" -Name "DisableSnippingTool" -ErrorAction SilentlyContinue
     }
-    Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $false -SkipSystemPolicies | Out-Null
+    if ($StateData -and ($null -ne $StateData.DebloatConfig)) {
+        Restore-Windows11DebloatOptimizations -DebloatConfig $StateData.DebloatConfig -UserOnly | Out-Null
+    }
     Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
     Write-Host "  [+] User Windows Search, Snipping Tool (PrtSc), Start menu and Widgets restored." -ForegroundColor Green
 
@@ -1232,33 +1236,37 @@ function Restore-SystemState {
         Restore-MemoryCompressionConfig -Config $stateData.MemoryCompressionConfig | Out-Null
     }
 
-    # Restore Windows 11 Debloat & Application Settings
-    if ($stateData -and ($null -ne $stateData.DebloatConfig)) {
-        Restore-Windows11DebloatOptimizations -DebloatConfig $stateData.DebloatConfig | Out-Null
-    }
-
     # Guarantee Microphone, Steam, LanmanServer, and peripheral services are unblocked
     Repair-CoreServices | Out-Null
 
-    # Restore Windows Defender, Widgets & Focus Assist
+    # Restore Windows Defender, Widgets & Focus Assist BEFORE Debloat restore so Debloat snapshot values are not overwritten
     Set-DefenderGamingState -Disable $false | Out-Null
     if (-not $isSystem) {
         Set-WindowsWidgetsAndSearchGamingState -Disable $false | Out-Null
         Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $false | Out-Null
     }
 
-    # Mark system state as restored atomically with latest state from disk
+    # Mark system state as restored atomically and restore user profile when Scope = All
     $latest = Get-ActiveStateSafe
     if ($latest) {
         Set-StatePropertySafe -StateObject $latest -Name "SystemRestored" -Value $true
         if ($Scope -eq "All") {
-            # In All scope, execute user profile restoration now
+            Set-ActiveStateSafe -Data $latest | Out-Null
             Restore-UserProfileState -StateData $latest -StartupConfig $StartupConfig | Out-Null
-            $latest = Get-ActiveStateSafe
-            if ($latest) {
-                Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restored"
-                Set-ActiveStateSafe -Data $latest | Out-Null
-            }
+        }
+    }
+
+    # Restore Windows 11 Debloat & Application Settings AFTER Widgets/User restoration so snapshotted values take precedence
+    if ($stateData -and ($null -ne $stateData.DebloatConfig)) {
+        Restore-Windows11DebloatOptimizations -DebloatConfig $stateData.DebloatConfig | Out-Null
+    }
+
+    $latest = Get-ActiveStateSafe
+    if ($latest) {
+        Set-StatePropertySafe -StateObject $latest -Name "SystemRestored" -Value $true
+        if ($Scope -eq "All") {
+            Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restored"
+            Set-ActiveStateSafe -Data $latest | Out-Null
         } else {
             if ($latest.UserRestored) {
                 Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restored"

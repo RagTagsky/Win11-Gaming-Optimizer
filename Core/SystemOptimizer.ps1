@@ -649,6 +649,20 @@ function Get-PhysicalGamingAdapters {
     })
 }
 
+$Script:NetworkAdapterGamingMap = @(
+    @{ Key = "FlowControl";         Keyword = "*FlowControl";         GamingValue = "0"; DefaultRestore = "3" }
+    @{ Key = "InterruptModeration"; Keyword = "*InterruptModeration"; GamingValue = "0"; DefaultRestore = "1" }
+    @{ Key = "EEE";                 Keyword = "*EEE";                 GamingValue = "0"; DefaultRestore = "1" }
+    @{ Key = "GreenEthernet";       Keyword = "EnableGreenEthernet";  GamingValue = "0"; DefaultRestore = $null }
+    @{ Key = "PowerSavingMode";     Keyword = "PowerSavingMode";      GamingValue = "0"; DefaultRestore = $null }
+    @{ Key = "RscIPv4";             Keyword = "*RscIPv4";             GamingValue = "0"; DefaultRestore = "1" }
+    @{ Key = "RscIPv6";             Keyword = "*RscIPv6";             GamingValue = "0"; DefaultRestore = "1" }
+    @{ Key = "WakeOnMagicPacket";   Keyword = "*WakeOnMagicPacket";   GamingValue = "0"; DefaultRestore = $null }
+    @{ Key = "WakeOnPattern";       Keyword = "*WakeOnPattern";       GamingValue = "0"; DefaultRestore = $null }
+    @{ Key = "PMARPOffload";        Keyword = "*PMARPOffload";        GamingValue = "0"; DefaultRestore = $null }
+    @{ Key = "PMNSOffload";         Keyword = "*PMNSOffload";         GamingValue = "0"; DefaultRestore = $null }
+)
+
 function Get-NetworkAdapterGamingProperties {
     [CmdletBinding()]
     param()
@@ -657,21 +671,15 @@ function Get-NetworkAdapterGamingProperties {
     $adapters = Get-PhysicalGamingAdapters
     foreach ($adapter in $adapters) {
         $allProps = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue
-        $flow = $allProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
-        $mod  = $allProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
-        $eee  = $allProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
-        $grn  = $allProps | Where-Object { $_.RegistryKeyword -eq "EnableGreenEthernet" }
-        $pwr  = $allProps | Where-Object { $_.RegistryKeyword -eq "PowerSavingMode" }
-
-        $results += @{
-            AdapterName         = $adapter.Name
-            InterfaceDesc       = $adapter.InterfaceDescription
-            FlowControl         = if ($flow) { ($flow.RegistryValue | Select-Object -First 1) } else { $null }
-            InterruptModeration = if ($mod) { ($mod.RegistryValue | Select-Object -First 1) } else { $null }
-            EEE                 = if ($eee) { ($eee.RegistryValue | Select-Object -First 1) } else { $null }
-            GreenEthernet       = if ($grn) { ($grn.RegistryValue | Select-Object -First 1) } else { $null }
-            PowerSavingMode     = if ($pwr) { ($pwr.RegistryValue | Select-Object -First 1) } else { $null }
+        $entry = @{
+            AdapterName   = $adapter.Name
+            InterfaceDesc = $adapter.InterfaceDescription
         }
+        foreach ($spec in $Script:NetworkAdapterGamingMap) {
+            $matched = $allProps | Where-Object { $_.RegistryKeyword -eq $spec.Keyword }
+            $entry[$spec.Key] = if ($matched) { ($matched.RegistryValue | Select-Object -First 1) } else { $null }
+        }
+        $results += $entry
     }
     return $results
 }
@@ -680,7 +688,7 @@ function Set-NetworkGamingOptimizations {
     [CmdletBinding()]
     param()
 
-    Write-Host "[*] Applying Ultra Low Latency Network (TCPNoDelay, FlowControl=0, InterruptModeration=0)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying Ultra Low Latency Network (TCPNoDelay, FlowControl=0, InterruptModeration=0, RSC=0, WoL/PM=0)..." -ForegroundColor Cyan
 
     # 1. Apply TCP gaming stack optimizations (TCPNoDelay, TcpAckFrequency, netsh global, protecting iPhone and Wintun)
     Set-TcpGamingStackOptimizations | Out-Null
@@ -690,19 +698,14 @@ function Set-NetworkGamingOptimizations {
     foreach ($adapter in $adapters) {
         try {
             $advProps = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue
-            $fcProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
-            $imProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
-            $eeeProp = $advProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
-            $grnProp = $advProps | Where-Object { $_.RegistryKeyword -eq "EnableGreenEthernet" }
-            $pwrProp = $advProps | Where-Object { $_.RegistryKeyword -eq "PowerSavingMode" }
+            foreach ($spec in $Script:NetworkAdapterGamingMap) {
+                $prop = $advProps | Where-Object { $_.RegistryKeyword -eq $spec.Keyword }
+                if ($prop) {
+                    Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue $spec.GamingValue -ErrorAction SilentlyContinue
+                }
+            }
 
-            if ($fcProp)  { Set-NetAdapterAdvancedProperty -InputObject $fcProp -RegistryValue "0" -ErrorAction SilentlyContinue }
-            if ($imProp)  { Set-NetAdapterAdvancedProperty -InputObject $imProp -RegistryValue "0" -ErrorAction SilentlyContinue }
-            if ($eeeProp) { Set-NetAdapterAdvancedProperty -InputObject $eeeProp -RegistryValue "0" -ErrorAction SilentlyContinue }
-            if ($grnProp) { Set-NetAdapterAdvancedProperty -InputObject $grnProp -RegistryValue "0" -ErrorAction SilentlyContinue }
-            if ($pwrProp) { Set-NetAdapterAdvancedProperty -InputObject $pwrProp -RegistryValue "0" -ErrorAction SilentlyContinue }
-
-            Write-Host "  [+] Optimized '$($adapter.Name)' ($($adapter.InterfaceDescription)): FlowControl=0, InterruptModeration=0." -ForegroundColor Green
+            Write-Host "  [+] Optimized '$($adapter.Name)' ($($adapter.InterfaceDescription)): FlowControl=0, InterruptModeration=0, RSC=0, WoL/PM=0." -ForegroundColor Green
         }
         catch {
             Write-Verbose "Could not configure adapter $($adapter.Name): $($_.Exception.Message)"
@@ -766,33 +769,22 @@ function Restore-NetworkGamingOptimizations {
             $aName = if ($item -is [hashtable]) { $item["AdapterName"] } else { $item.AdapterName }
             if (-not $aName) { continue }
 
-            $fc  = if ($item -is [hashtable]) { $item["FlowControl"] } else { $item.FlowControl }
-            $im  = if ($item -is [hashtable]) { $item["InterruptModeration"] } else { $item.InterruptModeration }
-            $eee = if ($item -is [hashtable]) { $item["EEE"] } else { $item.EEE }
-            $grn = if ($item -is [hashtable]) { $item["GreenEthernet"] } else { $item.GreenEthernet }
-            $pwr = if ($item -is [hashtable]) { $item["PowerSavingMode"] } else { $item.PowerSavingMode }
-
             try {
                 $advProps = Get-NetAdapterAdvancedProperty -Name $aName -ErrorAction SilentlyContinue
-                if ($null -ne $fc) {
-                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
-                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$fc) -ErrorAction SilentlyContinue }
-                }
-                if ($null -ne $im) {
-                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
-                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$im) -ErrorAction SilentlyContinue }
-                }
-                if ($null -ne $eee) {
-                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
-                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$eee) -ErrorAction SilentlyContinue }
-                }
-                if ($null -ne $grn) {
-                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "EnableGreenEthernet" }
-                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$grn) -ErrorAction SilentlyContinue }
-                }
-                if ($null -ne $pwr) {
-                    $prop = $advProps | Where-Object { $_.RegistryKeyword -eq "PowerSavingMode" }
-                    if ($prop) { Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$pwr) -ErrorAction SilentlyContinue }
+                foreach ($spec in $Script:NetworkAdapterGamingMap) {
+                    $savedVal = if ($item -is [hashtable]) {
+                        $item[$spec.Key]
+                    } elseif ($item.PSObject.Properties[$spec.Key]) {
+                        $item.PSObject.Properties[$spec.Key].Value
+                    } else {
+                        $null
+                    }
+                    if ($null -ne $savedVal) {
+                        $prop = $advProps | Where-Object { $_.RegistryKeyword -eq $spec.Keyword }
+                        if ($prop) {
+                            Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue ([string]$savedVal) -ErrorAction SilentlyContinue
+                        }
+                    }
                 }
                 Write-Host "  [+] Restored adapter settings on '$aName'." -ForegroundColor Green
             }
@@ -806,12 +798,14 @@ function Restore-NetworkGamingOptimizations {
         foreach ($adapter in $adapters) {
             try {
                 $advProps = Get-NetAdapterAdvancedProperty -Name $adapter.Name -ErrorAction SilentlyContinue
-                $fcProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*FlowControl" }
-                $imProp  = $advProps | Where-Object { $_.RegistryKeyword -eq "*InterruptModeration" }
-                $eeeProp = $advProps | Where-Object { $_.RegistryKeyword -eq "*EEE" }
-                if ($fcProp)  { Set-NetAdapterAdvancedProperty -InputObject $fcProp -RegistryValue "3" -ErrorAction SilentlyContinue }
-                if ($imProp)  { Set-NetAdapterAdvancedProperty -InputObject $imProp -RegistryValue "1" -ErrorAction SilentlyContinue }
-                if ($eeeProp) { Set-NetAdapterAdvancedProperty -InputObject $eeeProp -RegistryValue "1" -ErrorAction SilentlyContinue }
+                foreach ($spec in $Script:NetworkAdapterGamingMap) {
+                    if ($null -ne $spec.DefaultRestore) {
+                        $prop = $advProps | Where-Object { $_.RegistryKeyword -eq $spec.Keyword }
+                        if ($prop) {
+                            Set-NetAdapterAdvancedProperty -InputObject $prop -RegistryValue $spec.DefaultRestore -ErrorAction SilentlyContinue
+                        }
+                    }
+                }
             }
             catch {
                 Write-Verbose "Could not apply default adapter properties for $($adapter.Name)`: $($_.Exception.Message)"
@@ -959,11 +953,11 @@ function Set-DeepGameDVROptimizations {
     Write-Host "[*] Disabling GameDVR screen capture hooks and compositor overhead..." -ForegroundColor Cyan
 
     $gameDvrPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR"
-    if (-not (Test-Path $gameDvrPath)) { New-Item -Path $gameDvrPath -Force | Out-Null }
+    if (-not (Test-Path $gameDvrPath)) { New-Item -Path $gameDvrPath -Force -ErrorAction SilentlyContinue | Out-Null }
     Set-ItemProperty -Path $gameDvrPath -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
 
     $configStorePath = "HKCU:\System\GameConfigStore"
-    if (-not (Test-Path $configStorePath)) { New-Item -Path $configStorePath -Force | Out-Null }
+    if (-not (Test-Path $configStorePath)) { New-Item -Path $configStorePath -Force -ErrorAction SilentlyContinue | Out-Null }
     Set-ItemProperty -Path $configStorePath -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
     # Classic exclusive-fullscreen behaviour (present in every release up to v2.7). Switch: Config\tuning.json
     $tuningFile = Join-Path $PSScriptRoot "..\Config\tuning.json"
@@ -975,7 +969,7 @@ function Set-DeepGameDVROptimizations {
     }
 
     $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
-    if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force | Out-Null }
+    if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force -ErrorAction SilentlyContinue | Out-Null }
     Set-ItemProperty -Path $policyPath -Name "AllowGameDVR" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
 
     Write-Host "  [+] GameDVR background capture hooks completely deactivated." -ForegroundColor Green
@@ -1226,7 +1220,10 @@ function Set-WindowsWidgetsAndSearchGamingState {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [bool]$Disable
+        [bool]$Disable,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$SkipSystemPolicies
     )
 
     if ($Disable) {
@@ -1271,22 +1268,24 @@ function Set-WindowsWidgetsAndSearchGamingState {
         if (Test-Path $expPol) {
             Remove-ItemProperty -Path $expPol -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue
         }
-        $expPolMachine = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer"
-        if (Test-Path $expPolMachine) {
-            Remove-ItemProperty -Path $expPolMachine -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue
-        }
         $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         if (Test-Path $advPath) {
             Set-ItemProperty -Path $advPath -Name "SearchboxTaskbarMode" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
         }
-        $dshPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
-        if (Test-Path $dshPath) {
-            Remove-ItemProperty -Path $dshPath -Name "AllowNewsAndInterests" -ErrorAction SilentlyContinue
+        if (-not $SkipSystemPolicies) {
+            $expPolMachine = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            if (Test-Path $expPolMachine) {
+                Remove-ItemProperty -Path $expPolMachine -Name "DisableSearchBoxSuggestions" -ErrorAction SilentlyContinue
+            }
+            $dshPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
+            if (Test-Path $dshPath) {
+                Remove-ItemProperty -Path $dshPath -Name "AllowNewsAndInterests" -ErrorAction SilentlyContinue
+            }
+            # Ensure WSearch service is restored to Automatic and started
+            Set-Service -Name "WSearch" -StartupType Automatic -ErrorAction SilentlyContinue
+            $ws = Get-Service -Name "WSearch" -ErrorAction SilentlyContinue
+            if ($ws -and $ws.Status -ne "Running") { Start-Service -Name "WSearch" -ErrorAction SilentlyContinue }
         }
-        # Ensure WSearch service is restored to Automatic and started
-        Set-Service -Name "WSearch" -StartupType Automatic -ErrorAction SilentlyContinue
-        $ws = Get-Service -Name "WSearch" -ErrorAction SilentlyContinue
-        if ($ws -and $ws.Status -ne "Running") { Start-Service -Name "WSearch" -ErrorAction SilentlyContinue }
         Write-Host "  [+] Widgets, Windows Search and Start search settings restored." -ForegroundColor Green
     }
     return $true
@@ -1564,6 +1563,41 @@ function Get-AmdGpuDriverClassKeys {
     }
     catch {
         Write-Warning "Could not enumerate GPU driver class keys: $($_.Exception.Message)"
+    }
+    return $keys
+}
+
+function Get-NvidiaGpuDriverClassKeys {
+    [CmdletBinding()]
+    param()
+
+    $keys = @()
+    $classPath = "SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+    try {
+        $base = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($classPath)
+        if ($base) {
+            $subNames = $base.GetSubKeyNames() | Where-Object { $_ -match '^\d{4}$' }
+            foreach ($sub in $subNames) {
+                $sk = $base.OpenSubKey($sub)
+                if ($sk) {
+                    $desc = $sk.GetValue("DriverDesc")
+                    $prov = $sk.GetValue("ProviderName")
+                    $mId  = $sk.GetValue("MatchingDeviceId")
+                    if (($prov -match '(?i)NVIDIA') -or ($desc -match '(?i)NVIDIA') -or ($mId -match '(?i)VEN_10DE')) {
+                        $keys += @{
+                            SubKeyName = $sub
+                            Path       = "HKLM:\$classPath\$sub"
+                            DriverDesc = $desc
+                        }
+                    }
+                    $sk.Close()
+                }
+            }
+            $base.Close()
+        }
+    }
+    catch {
+        Write-Warning "Could not enumerate NVIDIA GPU driver class keys: $($_.Exception.Message)"
     }
     return $keys
 }
@@ -2964,11 +2998,15 @@ $Script:EtwTelemetryAutoLoggers = @(
 )
 
 $Script:PowerLatencySettings = @(
-    @{ Name = "USB Selective Suspend";      Sub = "2a737441-1930-4402-8d77-b2bebba308a3"; Setting = "48e6b7a6-50f5-4782-a5d4-53bb8f07e226"; Value = 0 },
-    @{ Name = "USB 3 Link Power Mgmt";      Sub = "2a737441-1930-4402-8d77-b2bebba308a3"; Setting = "d4e98f31-5ffe-4ce1-be31-1b38b384c009"; Value = 0 },
-    @{ Name = "NVMe Primary Idle Timeout";  Sub = "0012ee47-9041-4b5d-9b77-535fba8b1442"; Setting = "d639518a-e56d-4345-8af2-b9f32fb26109"; Value = 0 },
+    @{ Name = "USB Selective Suspend";       Sub = "2a737441-1930-4402-8d77-b2bebba308a3"; Setting = "48e6b7a6-50f5-4782-a5d4-53bb8f07e226"; Value = 0 },
+    @{ Name = "USB 3 Link Power Mgmt";       Sub = "2a737441-1930-4402-8d77-b2bebba308a3"; Setting = "d4e98f31-5ffe-4ce1-be31-1b38b384c009"; Value = 0 },
+    @{ Name = "NVMe Primary Idle Timeout";   Sub = "0012ee47-9041-4b5d-9b77-535fba8b1442"; Setting = "d639518a-e56d-4345-8af2-b9f32fb26109"; Value = 0 },
     @{ Name = "NVMe Secondary Idle Timeout"; Sub = "0012ee47-9041-4b5d-9b77-535fba8b1442"; Setting = "d3d55efd-c1ff-424e-9dc3-441be7833010"; Value = 0 },
-    @{ Name = "Processor EPP";              Sub = "54533251-82be-4824-96c1-47b60b740d00"; Setting = "36687f9e-e3a5-4dbf-b1dc-15eb381c6863"; Value = 0 }
+    @{ Name = "Processor EPP";               Sub = "54533251-82be-4824-96c1-47b60b740d00"; Setting = "36687f9e-e3a5-4dbf-b1dc-15eb381c6863"; Value = 0 },
+    @{ Name = "Processor Throttle Max";      Sub = "54533251-82be-4824-96c1-47b60b740d00"; Setting = "bc5038f7-23e0-4960-96da-33abaf5935ec"; Value = 100 },
+    @{ Name = "Processor Idle Demote";       Sub = "54533251-82be-4824-96c1-47b60b740d00"; Setting = "4b92d758-5a24-4851-a470-815d78aee119"; Value = 100 },
+    @{ Name = "Processor Idle Promote";      Sub = "54533251-82be-4824-96c1-47b60b740d00"; Setting = "7b224883-b3cc-4d79-819f-8374152cbe7c"; Value = 100 },
+    @{ Name = "PCIe Link State Power Mgmt";  Sub = "501a4d13-42af-4429-9fd1-a8218c268e20"; Setting = "ee12f906-d277-404b-b6da-e5fa1a576df5"; Value = 0 }
 )
 
 function ConvertTo-RegistryKeyParts {
@@ -2988,10 +3026,23 @@ function ConvertTo-RegistryTypedValue {
             if ($n -gt [int]::MaxValue) { $n -= 4294967296 }
             return [int]$n
         }
-        "QWord"       { return [int64]$Value }
-        "Binary"      { return [byte[]]@($Value) }
-        "MultiString" { return [string[]]@($Value) }
-        default       { return [string]$Value }
+        "QWord" {
+            if ($Value -is [uint64] -and $Value -gt [uint64][int64]::MaxValue) {
+                return [BitConverter]::ToInt64([BitConverter]::GetBytes([uint64]$Value), 0)
+            }
+            return [int64]$Value
+        }
+        "Binary" {
+            if ($null -eq $Value) { return ,([byte[]]@()) }
+            $bytes = [byte[]]@($Value | ForEach-Object { [byte]$_ })
+            return ,$bytes
+        }
+        "MultiString" {
+            if ($null -eq $Value) { return ,([string[]]@()) }
+            $strs = [string[]]@($Value | ForEach-Object { [string]$_ })
+            return ,$strs
+        }
+        default { return [string]$Value }
     }
 }
 
@@ -3041,7 +3092,8 @@ function Set-RegistryTargets {
             } else {
                 $key = $root.CreateSubKey($sub)
                 $kind = [Microsoft.Win32.RegistryValueKind]$t.Kind
-                $key.SetValue($t.Name, (ConvertTo-RegistryTypedValue $t.Value $t.Kind), $kind)
+                $typedVal = ConvertTo-RegistryTypedValue $t.Value $t.Kind
+                $key.SetValue($t.Name, $typedVal, $kind)
                 $key.Close()
             }
             $applied++
@@ -3069,7 +3121,8 @@ function Restore-RegistryValueSnapshot {
             if ($e.Exists) {
                 $key = $root.CreateSubKey($sub)
                 $kind = [Microsoft.Win32.RegistryValueKind]$e.Kind
-                $key.SetValue($e.Name, (ConvertTo-RegistryTypedValue $e.Value $e.Kind), $kind)
+                $typedVal = ConvertTo-RegistryTypedValue $e.Value $e.Kind
+                $key.SetValue($e.Name, $typedVal, $kind)
                 $key.Close()
             } else {
                 $key = $root.OpenSubKey($sub, $true)
@@ -3176,6 +3229,23 @@ function Get-ExtendedGamingTargets {
         }
     }
 
+    # 6b. NVIDIA GeForce driver: telemetry suppression & per-core DPC distribution
+    if ($hw.GpuVendor -eq "NVIDIA") {
+        Add-T "HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Global\Startup" "SendTelemetryData" 0 "DWord" "NVIDIA"
+        Add-T "HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm" "RmGpsPsEnablePerCpuCoreDpc" 1 "DWord" "NVIDIA"
+        Add-T "HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\NVAPI" "RmGpsPsEnablePerCpuCoreDpc" 1 "DWord" "NVIDIA"
+        Add-T "HKLM:\SYSTEM\CurrentControlSet\Services\nvlddmkm\Global\NVTweak" "RmGpsPsEnablePerCpuCoreDpc" 1 "DWord" "NVIDIA"
+        foreach ($k in @(Get-NvidiaGpuDriverClassKeys)) {
+            $kp = if ($k -is [hashtable]) { $k["Path"] } else { $k.Path }
+            if ($kp) {
+                Add-T $kp "RmGpsPsEnablePerCpuCoreDpc" 1 "DWord" "NVIDIA"
+                if ($tuning -and $tuning.DisableNvidiaDynamicPstate -eq $true) {
+                    Add-T $kp "DisableDynamicPstate" 1 "DWord" "NVIDIA"
+                }
+            }
+        }
+    }
+
     # 7 & 8. Storage controller IRQ de-contention + USB HID idle-suspend suppression (single Enum walk)
     $storageClasses = @("{4d36e97b-e325-11ce-bfc1-08002be10318}", "{4d36e96a-e325-11ce-bfc1-08002be10318}")
     try {
@@ -3200,7 +3270,7 @@ function Get-ExtendedGamingTargets {
                                         $ap.Close()
                                     }
                                 }
-                                elseif ($bus -eq "USB" -and [string]$ik.GetValue("Service") -eq "HidUsb") {
+                                elseif ($bus -eq "USB" -and (@("HidUsb", "USBHUB3", "usbhub", "usbccgp") -contains [string]$ik.GetValue("Service"))) {
                                     $dp = $ik.OpenSubKey("Device Parameters")
                                     if ($dp) {
                                         if ($dp.GetValue("EnhancedPowerManagementEnabled") -eq 1) { Add-T $instPath "EnhancedPowerManagementEnabled" 0 "DWord" "USB" }
@@ -3261,6 +3331,21 @@ function Get-ExtendedGamingTargets {
     Add-T "HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy" "01" 0 "DWord" "Storage"
     Add-T "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\ReserveManager" "ShippedWithReserves" 0 "DWord" "Storage"
 
+    # 13. MMCSS Audio Low-Latency Task Alignment
+    $mmcssAudio = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Audio"
+    Add-T $mmcssAudio "Background Only" "False" "String" "MMCSS"
+    Add-T $mmcssAudio "Clock Rate" 10000 "DWord" "MMCSS"
+    Add-T $mmcssAudio "Priority" 6 "DWord" "MMCSS"
+    Add-T $mmcssAudio "Scheduling Category" "Medium" "String" "MMCSS"
+    Add-T $mmcssAudio "SFIO Priority" "High" "String" "MMCSS"
+
+    # 14. DirectX Kernel Preemption, Instant Shell Startup & Hotkey Interception Suppression
+    Add-T "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\Scheduler" "EnablePreemption" 1 "DWord" "Graphics"
+    Add-T "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" "StartupDelayInMSec" 0 "DWord" "Desktop"
+    Add-T "HKCU:\Control Panel\Accessibility\StickyKeys" "Flags" "506" "String" "Input"
+    Add-T "HKCU:\Control Panel\Accessibility\ToggleKeys" "Flags" "58" "String" "Input"
+    Add-T "HKCU:\Control Panel\Accessibility\Keyboard Response" "Flags" "122" "String" "Input"
+
     return $targets.ToArray()
 }
 
@@ -3271,7 +3356,7 @@ function Set-ExtendedGamingOptimizations {
         [Parameter(Mandatory = $false)] [string[]]$Whitelist
     )
 
-    Write-Host "[*] Applying v2.8 extended optimizations (FSE/VRR, MPO off, IFEO game boost, IRQ, USB HID, AMD ASPM, VBS, ETW, Maintenance)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying v3.2.0 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
     $targets = @(Get-ExtendedGamingTargets -HardwareProfile $HardwareProfile -Whitelist $Whitelist)
     $applied = Set-RegistryTargets -Targets $targets
     $groups = ($targets | ForEach-Object { $_.Group } | Sort-Object -Unique) -join ", "
@@ -3542,45 +3627,70 @@ function Get-Windows11DebloatConfig {
     [CmdletBinding()]
     param()
 
+    $isSystem = $false
+    try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
+
     $config = @{
-        GameDVR_Enabled         = $null
-        AppCaptureEnabled       = $null
-        AllowGameDVR            = $null
-        EdgeStartupBoost        = $null
-        EdgeBackgroundMode      = $null
-        DisableAIDataAnalysis   = $null
-        TurnOffWindowsCopilot   = $null
-        AllowNewsAndInterests   = $null
-        BingSearchEnabled       = $null
+        GameDVR_Enabled              = $null
+        AppCaptureEnabled            = $null
+        TurnOffWindowsCopilot        = $null
+        TaskbarDa                    = $null
+        BingSearchEnabled            = $null
+        DisableSearchBoxSuggestions  = $null
+        AllowGameDVR                 = $null
+        PresenceWriterActivation     = $null
+        EdgeStartupBoost             = $null
+        EdgeBackgroundMode           = $null
+        DisableAIDataAnalysis        = $null
+        TurnOffWindowsCopilotMachine = $null
+        WSAIFabricSvcStart           = $null
+        AllowNewsAndInterests        = $null
     }
 
     try {
-        $p = Get-ItemProperty -Path "HKCU:\System\GameConfigStore" -ErrorAction SilentlyContinue
-        if ($null -ne $p -and $null -ne $p.GameDVR_Enabled) { $config.GameDVR_Enabled = [int]$p.GameDVR_Enabled }
+        if (-not $isSystem) {
+            $p = Get-ItemProperty -Path "HKCU:\System\GameConfigStore" -ErrorAction SilentlyContinue
+            if ($null -ne $p -and $p.PSObject.Properties["GameDVR_Enabled"]) { $config.GameDVR_Enabled = [int]$p.GameDVR_Enabled }
 
-        $p = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -ErrorAction SilentlyContinue
-        if ($null -ne $p -and $null -ne $p.AppCaptureEnabled) { $config.AppCaptureEnabled = [int]$p.AppCaptureEnabled }
+            $p = Get-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -ErrorAction SilentlyContinue
+            if ($null -ne $p -and $p.PSObject.Properties["AppCaptureEnabled"]) { $config.AppCaptureEnabled = [int]$p.AppCaptureEnabled }
+
+            $p = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" -ErrorAction SilentlyContinue
+            if ($null -ne $p -and $p.PSObject.Properties["TurnOffWindowsCopilot"]) { $config.TurnOffWindowsCopilot = [int]$p.TurnOffWindowsCopilot }
+
+            $p = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -ErrorAction SilentlyContinue
+            if ($null -ne $p -and $p.PSObject.Properties["TaskbarDa"]) { $config.TaskbarDa = [int]$p.TaskbarDa }
+
+            $p = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -ErrorAction SilentlyContinue
+            if ($null -ne $p -and $p.PSObject.Properties["BingSearchEnabled"]) { $config.BingSearchEnabled = [int]$p.BingSearchEnabled }
+
+            $p = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -ErrorAction SilentlyContinue
+            if ($null -ne $p -and $p.PSObject.Properties["DisableSearchBoxSuggestions"]) { $config.DisableSearchBoxSuggestions = [int]$p.DisableSearchBoxSuggestions }
+        }
 
         $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -ErrorAction SilentlyContinue
-        if ($null -ne $p -and $null -ne $p.AllowGameDVR) { $config.AllowGameDVR = [int]$p.AllowGameDVR }
+        if ($null -ne $p -and $p.PSObject.Properties["AllowGameDVR"]) { $config.AllowGameDVR = [int]$p.AllowGameDVR }
+
+        $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsRuntime\ActivatableClassId\Windows.Gaming.GameBar.PresenceServer.Internal.PresenceWriter" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $p.PSObject.Properties["ActivationType"]) { $config.PresenceWriterActivation = [int]$p.ActivationType }
 
         $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -ErrorAction SilentlyContinue
         if ($null -ne $p) {
-            if ($null -ne $p.StartupBoostEnabled) { $config.EdgeStartupBoost = [int]$p.StartupBoostEnabled }
-            if ($null -ne $p.BackgroundModeEnabled) { $config.EdgeBackgroundMode = [int]$p.BackgroundModeEnabled }
+            if ($p.PSObject.Properties["StartupBoostEnabled"]) { $config.EdgeStartupBoost = [int]$p.StartupBoostEnabled }
+            if ($p.PSObject.Properties["BackgroundModeEnabled"]) { $config.EdgeBackgroundMode = [int]$p.BackgroundModeEnabled }
         }
 
         $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -ErrorAction SilentlyContinue
-        if ($null -ne $p -and $null -ne $p.DisableAIDataAnalysis) { $config.DisableAIDataAnalysis = [int]$p.DisableAIDataAnalysis }
+        if ($null -ne $p -and $p.PSObject.Properties["DisableAIDataAnalysis"]) { $config.DisableAIDataAnalysis = [int]$p.DisableAIDataAnalysis }
 
-        $p = Get-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" -ErrorAction SilentlyContinue
-        if ($null -ne $p -and $null -ne $p.TurnOffWindowsCopilot) { $config.TurnOffWindowsCopilot = [int]$p.TurnOffWindowsCopilot }
+        $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $p.PSObject.Properties["TurnOffWindowsCopilot"]) { $config.TurnOffWindowsCopilotMachine = [int]$p.TurnOffWindowsCopilot }
+
+        $p = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc" -ErrorAction SilentlyContinue
+        if ($null -ne $p -and $p.PSObject.Properties["Start"]) { $config.WSAIFabricSvcStart = [int]$p.Start }
 
         $p = Get-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -ErrorAction SilentlyContinue
-        if ($null -ne $p -and $null -ne $p.AllowNewsAndInterests) { $config.AllowNewsAndInterests = [int]$p.AllowNewsAndInterests }
-
-        $p = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" -ErrorAction SilentlyContinue
-        if ($null -ne $p -and $null -ne $p.BingSearchEnabled) { $config.BingSearchEnabled = [int]$p.BingSearchEnabled }
+        if ($null -ne $p -and $p.PSObject.Properties["AllowNewsAndInterests"]) { $config.AllowNewsAndInterests = [int]$p.AllowNewsAndInterests }
     } catch {
         Write-Verbose "Get-Windows11DebloatConfig notice: $($_.Exception.Message)"
     }
@@ -3714,7 +3824,10 @@ function Restore-Windows11DebloatOptimizations {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
-        [object]$DebloatConfig
+        [object]$DebloatConfig,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$UserOnly
     )
 
     Write-Host "[*] Restoring Windows 11 Debloat & Application settings..." -ForegroundColor Cyan
@@ -3723,58 +3836,107 @@ function Restore-Windows11DebloatOptimizations {
 
     if (-not $DebloatConfig) {
         $DebloatConfig = @{
-            GameDVR_Enabled         = 1
-            AppCaptureEnabled       = 1
-            AllowGameDVR            = 1
-            EdgeStartupBoost        = 1
-            EdgeBackgroundMode      = 1
-            DisableAIDataAnalysis   = 0
-            TurnOffWindowsCopilot   = 0
-            AllowNewsAndInterests   = 1
-            BingSearchEnabled       = 1
+            GameDVR_Enabled              = 1
+            AppCaptureEnabled            = 1
+            TurnOffWindowsCopilot        = $null
+            TaskbarDa                    = 1
+            BingSearchEnabled            = $null
+            DisableSearchBoxSuggestions  = $null
+            AllowGameDVR                 = $null
+            PresenceWriterActivation     = 1
+            EdgeStartupBoost             = $null
+            EdgeBackgroundMode           = $null
+            DisableAIDataAnalysis        = $null
+            TurnOffWindowsCopilotMachine = $null
+            WSAIFabricSvcStart           = $null
+            AllowNewsAndInterests        = $null
+        }
+    }
+
+    $getCfgVal = {
+        param([string]$Key)
+        if ($DebloatConfig -is [System.Collections.IDictionary]) {
+            if ($DebloatConfig.Contains($Key)) { return $DebloatConfig[$Key] }
+            return $null
+        }
+        $p = $DebloatConfig.PSObject.Properties[$Key]
+        if ($p) { return $p.Value }
+        return $null
+    }
+
+    $restoreDwordOrRemove = {
+        param([string]$Path, [string]$Name, $Value)
+        if ($null -ne $Value) {
+            if (-not (Test-Path -LiteralPath $Path)) { New-Item -Path $Path -Force -ErrorAction SilentlyContinue | Out-Null }
+            Set-ItemProperty -Path $Path -Name $Name -Value ([int]$Value) -Type DWord -Force -ErrorAction SilentlyContinue
+        } else {
+            Remove-ItemProperty -Path $Path -Name $Name -Force -ErrorAction SilentlyContinue
         }
     }
 
     try {
-        # Restore GameDVR
+        # 1. Restore GameDVR & Taskbar / Search / Copilot user hive settings
         if (-not $isSystem) {
-            if ($null -ne $DebloatConfig.GameDVR_Enabled) {
-                Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value $DebloatConfig.GameDVR_Enabled -Type DWord -Force -ErrorAction SilentlyContinue
+            $gdvr = & $getCfgVal "GameDVR_Enabled"
+            if ($null -ne $gdvr) {
+                $gdvrPath = "HKCU:\System\GameConfigStore"
+                if (-not (Test-Path -LiteralPath $gdvrPath)) { New-Item -Path $gdvrPath -Force -ErrorAction SilentlyContinue | Out-Null }
+                Set-ItemProperty -Path $gdvrPath -Name "GameDVR_Enabled" -Value ([int]$gdvr) -Type DWord -Force -ErrorAction SilentlyContinue
             }
-            if ($null -ne $DebloatConfig.AppCaptureEnabled) {
-                Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value $DebloatConfig.AppCaptureEnabled -Type DWord -Force -ErrorAction SilentlyContinue
+
+            $appCap = & $getCfgVal "AppCaptureEnabled"
+            if ($null -ne $appCap) {
+                $appCapPath = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR"
+                if (-not (Test-Path -LiteralPath $appCapPath)) { New-Item -Path $appCapPath -Force -ErrorAction SilentlyContinue | Out-Null }
+                Set-ItemProperty -Path $appCapPath -Name "AppCaptureEnabled" -Value ([int]$appCap) -Type DWord -Force -ErrorAction SilentlyContinue
             }
-        }
-        if ($null -ne $DebloatConfig.AllowGameDVR) {
-            Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Value $DebloatConfig.AllowGameDVR -Type DWord -Force -ErrorAction SilentlyContinue
-        } else {
-            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" -Name "AllowGameDVR" -Force -ErrorAction SilentlyContinue
+
+            & $restoreDwordOrRemove "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" "TurnOffWindowsCopilot" (& $getCfgVal "TurnOffWindowsCopilot")
+
+            $taskbarDa = & $getCfgVal "TaskbarDa"
+            if ($null -eq $taskbarDa) { $taskbarDa = 1 }
+            $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+            if (-not (Test-Path -LiteralPath $advPath)) { New-Item -Path $advPath -Force -ErrorAction SilentlyContinue | Out-Null }
+            Set-ItemProperty -Path $advPath -Name "TaskbarDa" -Value ([int]$taskbarDa) -Type DWord -Force -ErrorAction SilentlyContinue
+
+            & $restoreDwordOrRemove "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" "BingSearchEnabled" (& $getCfgVal "BingSearchEnabled")
+            & $restoreDwordOrRemove "HKCU:\Software\Policies\Microsoft\Windows\Explorer" "DisableSearchBoxSuggestions" (& $getCfgVal "DisableSearchBoxSuggestions")
         }
 
-        # Restore Edge
-        foreach ($k in @("HKLM:\SOFTWARE\Policies\Microsoft\Edge", "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended")) {
-            Remove-ItemProperty -Path $k -Name "StartupBoostEnabled" -Force -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path $k -Name "BackgroundModeEnabled" -Force -ErrorAction SilentlyContinue
-        }
+        if (-not $UserOnly) {
+            # 2. Restore GameDVR policy & GameBar PresenceWriter activation
+            & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" "AllowGameDVR" (& $getCfgVal "AllowGameDVR")
 
-        # Restore AI / Copilot
-        Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableAIDataAnalysis" -Force -ErrorAction SilentlyContinue
-        if (-not $isSystem) {
-            Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue
-        }
-        Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Force -ErrorAction SilentlyContinue
-        if (Get-Service -Name "WSAIFabricSvc" -ErrorAction SilentlyContinue) {
-            Set-Service -Name "WSAIFabricSvc" -StartupType Manual -ErrorAction SilentlyContinue
-        }
+            $presence = & $getCfgVal "PresenceWriterActivation"
+            if ($null -eq $presence) { $presence = 1 }
+            $presencePath = "HKLM:\SOFTWARE\Microsoft\WindowsRuntime\ActivatableClassId\Windows.Gaming.GameBar.PresenceServer.Internal.PresenceWriter"
+            if (-not (Test-Path -LiteralPath $presencePath)) { New-Item -Path $presencePath -Force -ErrorAction SilentlyContinue | Out-Null }
+            Set-ItemProperty -Path $presencePath -Name "ActivationType" -Value ([int]$presence) -Type DWord -Force -ErrorAction SilentlyContinue
 
-        # Restore Widgets & Bing
-        Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Force -ErrorAction SilentlyContinue
-        if (-not $isSystem) {
-            Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\Explorer" -Name "DisableSearchBoxSuggestions" -Force -ErrorAction SilentlyContinue
-        }
+            # 3. Restore Microsoft Edge policies
+            & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Edge" "StartupBoostEnabled" (& $getCfgVal "EdgeStartupBoost")
+            & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Edge" "BackgroundModeEnabled" (& $getCfgVal "EdgeBackgroundMode")
+            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended" -Name "StartupBoostEnabled" -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended" -Name "BackgroundModeEnabled" -Force -ErrorAction SilentlyContinue
 
-        # Restore basic Security Event Auditing
-        auditpol.exe /set /subcategory:"Logon" /success:enable /failure:enable 2>&1 | Out-Null
+            # 4. Restore AI / Copilot policies & WSAIFabricSvc startup
+            & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" "DisableAIDataAnalysis" (& $getCfgVal "DisableAIDataAnalysis")
+            & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" "TurnOffWindowsCopilot" (& $getCfgVal "TurnOffWindowsCopilotMachine")
+
+            $wsaiStart = & $getCfgVal "WSAIFabricSvcStart"
+            $wsaiRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc"
+            if ($null -ne $wsaiStart -and (Test-Path -LiteralPath $wsaiRegPath)) {
+                Set-ItemProperty -Path $wsaiRegPath -Name "Start" -Value ([int]$wsaiStart) -Type DWord -Force -ErrorAction SilentlyContinue
+            } elseif (Get-Service -Name "WSAIFabricSvc" -ErrorAction SilentlyContinue) {
+                Set-Service -Name "WSAIFabricSvc" -StartupType Manual -ErrorAction SilentlyContinue
+            }
+
+            # 5. Restore Widgets / News & Interests policy
+            & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" "AllowNewsAndInterests" (& $getCfgVal "AllowNewsAndInterests")
+
+            # 6. Restore basic Security Event Auditing
+            auditpol.exe /set /subcategory:"Logon" /success:enable /failure:enable 2>&1 | Out-Null
+        }
 
         Write-Host "  [+] Windows 11 components and debloat settings reverted to original state." -ForegroundColor Green
         return $true

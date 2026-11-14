@@ -2,20 +2,23 @@
 <html lang="ru" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ultra Gaming Mode v3.1.1</title>
+    <meta name="color-scheme" content="dark light" />
     <script>
       (function () {
         try {
-          var t = localStorage.getItem('ugm-theme');
-          document.documentElement.setAttribute(
-            'data-theme',
-            t === 'light' || t === 'dark' ? t : 'dark'
-          );
+          var stored = localStorage.getItem('ugm-theme');
+          var theme = stored === 'light' || stored === 'dark' ? stored : 'dark';
+          document.documentElement.setAttribute('data-theme', theme);
+          var meta = document.querySelector('meta[name="color-scheme"]');
+          if (meta) {
+            meta.setAttribute('content', theme);
+          }
         } catch (e) {}
       })();
     </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Панель управления · Ultra Gaming Mode v3.2.0</title>
   </head>
   <body>
     <div id="app"></div>

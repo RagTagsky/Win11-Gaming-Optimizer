@@ -1,169 +1,186 @@
 <script lang="ts">
-  import { Copy, Minus, Moon, Square, Sun, X, Zap } from '@lucide/svelte';
+  import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { Copy, Minus, Moon, Square, Sun, X, Zap } from '@lucide/svelte';
+  import { isTauri } from '../api';
   import type { ThemeMode } from '../types';
 
   interface Props {
-    title?: string;
     theme: ThemeMode;
     onToggleTheme: () => void;
   }
 
-  let { title = 'Ultra Gaming Mode', theme = 'dark', onToggleTheme }: Props = $props();
-
+  let { theme, onToggleTheme }: Props = $props();
   let isMaximized = $state(false);
 
-  function handleMouseDown(e: MouseEvent) {
-    if (e.button !== 0) return;
-    if (e.detail === 2) {
-      handleToggleMaximize(e);
-      return;
-    }
-    invoke('start_dragging').catch(() => {
-      getCurrentWindow().startDragging().catch(() => {});
-    });
-  }
+  onMount(() => {
+    if (!isTauri) return;
 
-  function handleMinimize(e?: Event) {
-    e?.preventDefault();
-    e?.stopPropagation();
-    invoke('minimize_window').catch(() => {
-      getCurrentWindow().minimize().catch(() => {});
-    });
-  }
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    const appWindow = getCurrentWindow();
 
-  function handleToggleMaximize(e?: Event) {
-    e?.preventDefault();
-    e?.stopPropagation();
-    invoke('toggle_maximize_window')
-      .then(() => {
-        isMaximized = !isMaximized;
+    void appWindow
+      .isMaximized()
+      .then((max) => {
+        if (!disposed) isMaximized = max;
       })
-      .catch(async () => {
+      .catch(() => {});
+
+    void appWindow
+      .onResized(async () => {
         try {
-          const win = getCurrentWindow();
-          await win.toggleMaximize();
-          isMaximized = await win.isMaximized();
-        } catch {}
-      });
+          const max = await appWindow.isMaximized();
+          if (!disposed) isMaximized = max;
+        } catch {
+          // ignore transient window query errors
+        }
+      })
+      .then((fn) => {
+        if (disposed) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  });
+
+  function startDragIfHeader(e: MouseEvent) {
+    if (!isTauri || e.button !== 0) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, a, input, [role="button"]')) return;
+    void getCurrentWindow().startDragging().catch(() => {});
   }
 
-  function handleClose(e?: Event) {
-    e?.preventDefault();
-    e?.stopPropagation();
-    invoke('close_window').catch(() => {
-      getCurrentWindow()
-        .destroy()
-        .catch(() => {
-          window.close();
-        });
-    });
+  async function handleMinimize() {
+    if (!isTauri) return;
+    try {
+      await invoke('minimize_window');
+    } catch {
+      void getCurrentWindow().minimize().catch(() => {});
+    }
+  }
+
+  async function handleToggleMaximize() {
+    if (!isTauri) return;
+    try {
+      isMaximized = await invoke<boolean>('toggle_maximize_window');
+    } catch {
+      try {
+        const win = getCurrentWindow();
+        await win.toggleMaximize();
+        isMaximized = await win.isMaximized();
+      } catch {
+        // ignore window control error
+      }
+    }
+  }
+
+  async function handleClose() {
+    if (!isTauri) return;
+    try {
+      await invoke('close_window');
+    } catch {
+      void getCurrentWindow().close().catch(() => {});
+    }
   }
 </script>
 
-<div
-  class="h-10 w-full flex items-center justify-between pl-3.5 pr-0 backdrop-blur-md border-b select-none z-50 fixed top-0 left-0 right-0 cursor-default transition-colors"
-  style="background-color: var(--bg-titlebar); border-color: var(--border-subtle);"
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<header
+  onmousedown={startDragIfHeader}
+  ondblclick={(e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target?.closest('button, a, input, [role="button"]')) {
+      void handleToggleMaximize();
+    }
+  }}
+  data-tauri-drag-region
+  class="fixed top-0 left-0 right-0 z-40 h-11 flex items-center justify-between gap-2 pl-3 pr-0 border-b border-[var(--border-subtle)] bg-[var(--bg-titlebar)] backdrop-blur-md select-none"
 >
-  <!-- Window Title & Branding (Draggable) -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    onmousedown={handleMouseDown}
-    class="flex items-center gap-2.5 h-full cursor-default select-none pr-3"
-  >
+  <div class="flex items-center gap-2.5 min-w-0" data-tauri-drag-region>
     <div
-      class="w-5 h-5 rounded-md flex items-center justify-center border pointer-events-none"
-      style="background-color: var(--accent-soft); border-color: var(--accent-border);"
+      class="w-7 h-7 rounded-lg bg-[var(--accent-solid)] text-white flex items-center justify-center shrink-0"
+      data-tauri-drag-region
     >
-      <Zap class="w-3.5 h-3.5" style="color: var(--accent-primary);" />
+      <Zap size={16} strokeWidth={2} aria-hidden="true" />
     </div>
     <span
-      class="text-xs font-semibold tracking-tight pointer-events-none"
-      style="color: var(--text-primary);"
+      class="text-sm font-semibold tracking-tight text-[var(--text-primary)] truncate"
+      data-tauri-drag-region
     >
-      {title}
+      Ultra Gaming Mode
     </span>
     <span
-      class="text-[11px] font-medium px-1.5 py-0.5 rounded border pointer-events-none"
-      style="background-color: var(--bg-elevated); color: var(--text-secondary); border-color: var(--border-subtle);"
+      class="max-[440px]:hidden shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
+      data-tauri-drag-region
     >
-      v3.1.1
+      v3.2.0
     </span>
   </div>
 
-  <!-- Draggable Center Spacer -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    onmousedown={handleMouseDown}
-    class="flex-1 h-full cursor-default"
-  ></div>
-
-  <!-- Theme Switcher & Native Window Controls -->
-  <div
-    class="flex items-center h-full relative z-50 pointer-events-auto"
-    style="-webkit-app-region: no-drag; app-region: no-drag;"
-  >
-    <!-- Dark / Light Mode Toggle -->
+  <div class="flex items-center h-full shrink-0">
     <button
       type="button"
-      onmousedown={(e) => e.stopPropagation()}
       onclick={onToggleTheme}
-      style="-webkit-app-region: no-drag; app-region: no-drag; background-color: var(--bg-elevated); border-color: var(--border-subtle); color: var(--text-secondary);"
-      class="flex items-center gap-1.5 px-2.5 py-1 mr-2 rounded-md border text-[11px] font-medium hover:opacity-90 transition-all cursor-pointer select-none"
+      class="ui-btn-ghost ui-pressable h-9 px-2.5 sm:px-3 mr-1 rounded-lg flex items-center gap-1.5 text-[0.8125rem] font-medium cursor-pointer"
+      aria-label={theme === 'dark'
+        ? 'Светлая тема — переключить оформление на светлое'
+        : 'Тёмная тема — переключить оформление на тёмное'}
       title={theme === 'dark' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
-      aria-label="Переключить тему оформления"
     >
       {#if theme === 'dark'}
-        <Sun class="w-3.5 h-3.5 pointer-events-none" style="color: var(--warn-primary);" />
-        <span style="color: var(--text-primary);">Светлая</span>
+        <Sun size={15} strokeWidth={1.75} aria-hidden="true" />
+        <span class="max-[360px]:hidden">Светлая</span>
       {:else}
-        <Moon class="w-3.5 h-3.5 pointer-events-none" style="color: var(--accent-primary);" />
-        <span style="color: var(--text-primary);">Тёмная</span>
+        <Moon size={15} strokeWidth={1.75} aria-hidden="true" />
+        <span class="max-[360px]:hidden">Тёмная</span>
       {/if}
     </button>
 
-    <!-- Minimize -->
-    <button
-      type="button"
-      onmousedown={(e) => e.stopPropagation()}
-      onclick={handleMinimize}
-      style="-webkit-app-region: no-drag; app-region: no-drag; color: var(--text-secondary);"
-      class="w-11 h-10 flex items-center justify-center hover:opacity-100 transition-colors cursor-pointer select-none"
-      title="Свернуть"
-      aria-label="Свернуть"
-    >
-      <Minus class="w-3.5 h-3.5 pointer-events-none" />
-    </button>
+    {#if isTauri}
+      <div class="flex items-center h-full border-l border-[var(--border-subtle)]">
+        <button
+          type="button"
+          onclick={handleMinimize}
+          class="ui-btn-ghost w-11 h-11 flex items-center justify-center cursor-pointer"
+          aria-label="Свернуть окно"
+          title="Свернуть"
+        >
+          <Minus size={16} strokeWidth={1.75} aria-hidden="true" />
+        </button>
 
-    <!-- Maximize / Restore -->
-    <button
-      type="button"
-      onmousedown={(e) => e.stopPropagation()}
-      onclick={handleToggleMaximize}
-      style="-webkit-app-region: no-drag; app-region: no-drag; color: var(--text-secondary);"
-      class="w-11 h-10 flex items-center justify-center hover:opacity-100 transition-colors cursor-pointer select-none"
-      title={isMaximized ? 'Восстановить' : 'Развернуть'}
-      aria-label={isMaximized ? 'Восстановить' : 'Развернуть'}
-    >
-      {#if isMaximized}
-        <Copy class="w-3 h-3 pointer-events-none" />
-      {:else}
-        <Square class="w-3 h-3 pointer-events-none" />
-      {/if}
-    </button>
+        <button
+          type="button"
+          onclick={handleToggleMaximize}
+          class="ui-btn-ghost w-11 h-11 flex items-center justify-center cursor-pointer"
+          aria-label={isMaximized ? 'Восстановить размер окна' : 'Развернуть окно'}
+          title={isMaximized ? 'Восстановить' : 'Развернуть'}
+        >
+          {#if isMaximized}
+            <Copy size={13} strokeWidth={1.75} class="scale-x-[-1]" aria-hidden="true" />
+          {:else}
+            <Square size={13} strokeWidth={1.75} aria-hidden="true" />
+          {/if}
+        </button>
 
-    <!-- Close -->
-    <button
-      type="button"
-      onmousedown={(e) => e.stopPropagation()}
-      onclick={handleClose}
-      style="-webkit-app-region: no-drag; app-region: no-drag; color: var(--text-secondary);"
-      class="w-11 h-10 flex items-center justify-center hover:text-white hover:bg-[#c42b1c] active:bg-[#b02619] transition-colors cursor-pointer select-none"
-      title="Закрыть"
-      aria-label="Закрыть"
-    >
-      <X class="w-4 h-4 pointer-events-none" />
-    </button>
+        <button
+          type="button"
+          onclick={handleClose}
+          class="ui-btn-ghost ui-btn-close w-11 h-11 flex items-center justify-center cursor-pointer"
+          aria-label="Закрыть приложение"
+          title="Закрыть"
+        >
+          <X size={16} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      </div>
+    {/if}
   </div>
-</div>
+</header>

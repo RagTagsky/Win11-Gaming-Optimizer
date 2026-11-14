@@ -602,7 +602,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.1.1") "Get-AppCurrentVersion returns expected suite version '3.1.1'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.2.0") "Get-AppCurrentVersion returns expected suite version '3.2.0'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -610,7 +610,7 @@ $vBare     = ConvertTo-SemVer "2.8"
 $vPadded   = ConvertTo-SemVer "2.8.0"
 $vPatch    = ConvertTo-SemVer "v2.8.1"
 $vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.1.1"
+$vMajor    = ConvertTo-SemVer "v3.2.0"
 $vSuffix   = ConvertTo-SemVer "v2.8-Universal"
 $vBuild    = ConvertTo-SemVer "v2.8.0+build123"
 $vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
@@ -627,7 +627,7 @@ Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer ret
 # 12.3 SemVer Comparison Contracts
 Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
 Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.1.1 is correctly recognized as newer than v2.8"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.0 is correctly recognized as newer than v2.8"
 Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
 $vOld = ConvertTo-SemVer "v2.7"
 Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
@@ -968,6 +968,220 @@ $restoredCnt = Restore-RegistryValueSnapshot -Snapshot $snapBefore -Hive "HKCU"
 $propAfter = Get-ItemProperty -LiteralPath $tempRegKey -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $tempRegKey -Recurse -Force -ErrorAction SilentlyContinue
 Assert-Test ($appliedCnt -eq 2 -and $valDword -eq 65536 -and $valStr -eq "0" -and $restoredCnt -eq 2 -and $null -eq $propAfter.FastSendDatagramThreshold) "Get-RegistryValueSnapshot / Set-RegistryTargets / Restore-RegistryValueSnapshot perform lossless round-trip"
+
+# ── 14.11 v3.1.1 Audit Fixes & Reversible Optimizations ─────────────────────
+# Config/tuning.json DisableNvidiaDynamicPstate switch
+Assert-Test ($tuningCfg.DisableNvidiaDynamicPstate -is [bool]) "Config\tuning.json declares boolean DisableNvidiaDynamicPstate switch"
+
+# PowerLatencySettings expanded to all 9 sub-settings
+$powerSettingNames = @($Script:PowerLatencySettings | ForEach-Object { $_.Name })
+Assert-Test ($Script:PowerLatencySettings.Count -eq 9) "PowerLatencySettings contains all 9 power latency settings"
+foreach ($reqPowerName in @("USB Selective Suspend", "Processor Throttle Max", "Processor Idle Demote", "Processor Idle Promote", "PCIe Link State Power Mgmt")) {
+    Assert-Test ($powerSettingNames -contains $reqPowerName) "PowerLatencySettings includes '$reqPowerName'"
+}
+Assert-Test ($null -ne $powerCfg -and $powerCfg.Settings.Count -eq 9) "Get-PowerLatencyConfig snapshots all 9 PowerLatencySettings entries ($($powerCfg.Settings.Count) captured)"
+
+# Complete 14-value Windows 11 debloat snapshot & restore
+$debloatSnap = Get-Windows11DebloatConfig
+$expectedDebloatKeys = @(
+    "GameDVR_Enabled", "AppCaptureEnabled", "TurnOffWindowsCopilot", "TaskbarDa",
+    "BingSearchEnabled", "DisableSearchBoxSuggestions", "AllowGameDVR",
+    "PresenceWriterActivation", "EdgeStartupBoost", "EdgeBackgroundMode",
+    "DisableAIDataAnalysis", "TurnOffWindowsCopilotMachine", "WSAIFabricSvcStart",
+    "AllowNewsAndInterests"
+)
+$allDebloatKeysPresent = $true
+foreach ($dk in $expectedDebloatKeys) {
+    if (-not $debloatSnap.ContainsKey($dk)) { $allDebloatKeysPresent = $false; break }
+}
+Assert-Test ($allDebloatKeysPresent -and $debloatSnap.Count -eq 14) "Get-Windows11DebloatConfig snapshots all 14 Windows 11 debloat keys ($($debloatSnap.Count) present)"
+Assert-Test (
+    $restoreDebloatDef -match 'TaskbarDa' -and
+    $restoreDebloatDef -match 'PresenceWriterActivation' -and
+    $restoreDebloatDef -match 'DisableSearchBoxSuggestions' -and
+    $restoreDebloatDef -match 'TurnOffWindowsCopilotMachine' -and
+    $restoreDebloatDef -match 'WSAIFabricSvcStart' -and
+    $restoreDebloatDef -match 'BingSearchEnabled' -and
+    $restoreDebloatDef -match 'PSObject\.Properties'
+) "Restore-Windows11DebloatOptimizations restores all 14 keys cleanly for both hashtable and PSCustomObject snapshots"
+
+# NVIDIA driver DPC/telemetry targets, MMCSS Audio, DirectX Preemption, USB Hub hierarchy & Accessibility Key Guard
+Assert-Test ($null -ne (Get-Command Get-NvidiaGpuDriverClassKeys -ErrorAction SilentlyContinue)) "Get-NvidiaGpuDriverClassKeys is exported from SystemOptimizer.ps1"
+$nvMockTargets = Get-ExtendedGamingTargets `
+    -HardwareProfile ([PSCustomObject]@{ GpuVendor = "NVIDIA"; LowRamProfile = $false; HddProfile = $false }) `
+    -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true; DisableNvidiaDynamicPstate = $true })
+
+$nvTelemetry = $nvMockTargets | Where-Object { $_.Path -match 'nvlddmkm\\Global\\Startup$' -and $_.Name -eq 'SendTelemetryData' }
+$nvPerCore   = @($nvMockTargets | Where-Object { $_.Name -eq 'RmGpsPsEnablePerCpuCoreDpc' -and $_.Value -eq 1 })
+Assert-Test ($null -ne $nvTelemetry -and $nvTelemetry.Value -eq 0) "NVIDIA driver target suppresses SendTelemetryData = 0"
+Assert-Test ($nvPerCore.Count -ge 3) "NVIDIA driver targets enable RmGpsPsEnablePerCpuCoreDpc = 1 across nvlddmkm / NVAPI / NVTweak"
+Assert-Test ($extDef -match 'Get-NvidiaGpuDriverClassKeys' -and $extDef -match 'DisableDynamicPstate') "Get-ExtendedGamingTargets gates DisableDynamicPstate behind TuningConfig.DisableNvidiaDynamicPstate"
+
+$audioBg    = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Background Only' }
+$audioClock = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Clock Rate' }
+$audioPrio  = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Priority' }
+$audioCat   = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Scheduling Category' }
+$audioSfio  = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'SFIO Priority' }
+Assert-Test (
+    $audioBg.Value -eq "False" -and $audioClock.Value -eq 10000 -and
+    $audioPrio.Value -eq 6 -and $audioCat.Value -eq "Medium" -and $audioSfio.Value -eq "High"
+) "MMCSS Tasks\Audio configured with low-latency Priority=6, Scheduling Category='Medium', SFIO Priority='High'"
+
+$dxPreempt  = $nvMockTargets | Where-Object { $_.Path -match 'GraphicsDrivers\\Scheduler$' -and $_.Name -eq 'EnablePreemption' }
+$shellDelay = $nvMockTargets | Where-Object { $_.Path -match 'Explorer\\Serialize$' -and $_.Name -eq 'StartupDelayInMSec' }
+$stickyKeys = $nvMockTargets | Where-Object { $_.Path -match 'Accessibility\\StickyKeys$' -and $_.Name -eq 'Flags' }
+$toggleKeys = $nvMockTargets | Where-Object { $_.Path -match 'Accessibility\\ToggleKeys$' -and $_.Name -eq 'Flags' }
+$filterKeys = $nvMockTargets | Where-Object { $_.Path -match 'Accessibility\\Keyboard Response$' -and $_.Name -eq 'Flags' }
+Assert-Test ($null -ne $dxPreempt -and $dxPreempt.Value -eq 1 -and $null -ne $shellDelay -and $shellDelay.Value -eq 0) "DirectX Kernel EnablePreemption=1 and Explorer StartupDelayInMSec=0 configured"
+Assert-Test ($stickyKeys.Value -eq "506" -and $toggleKeys.Value -eq "58" -and $filterKeys.Value -eq "122") "Accessibility StickyKeys ('506'), ToggleKeys ('58'), and Keyboard Response ('122') hotkey guard configured"
+Assert-Test ($extDef -match 'USBHUB3' -and $extDef -match 'usbhub' -and $extDef -match 'usbccgp' -and $extDef -match 'HidUsb') "USB idle-suspend suppression targets HidUsb, USBHUB3, usbhub, and usbccgp hub hierarchy"
+
+# NDIS RSC / WoL / PM Offload coverage across helper map & functions
+$ndisKeywords = @($Script:NetworkAdapterGamingMap | ForEach-Object { $_.Keyword })
+foreach ($kw in @("*FlowControl", "*InterruptModeration", "*EEE", "EnableGreenEthernet", "PowerSavingMode", "*RscIPv4", "*RscIPv6", "*WakeOnMagicPacket", "*WakeOnPattern", "*PMARPOffload", "*PMNSOffload")) {
+    Assert-Test ($ndisKeywords -contains $kw) "NetworkAdapterGamingMap includes NDIS property '$kw'"
+}
+$getNdisDef     = (Get-Command Get-NetworkAdapterGamingProperties).Definition
+$setNdisDef     = (Get-Command Set-NetworkGamingOptimizations).Definition
+$restoreNdisDef = (Get-Command Restore-NetworkGamingOptimizations).Definition
+Assert-Test (
+    $getNdisDef -match 'NetworkAdapterGamingMap' -and
+    $setNdisDef -match 'NetworkAdapterGamingMap' -and
+    $restoreNdisDef -match 'NetworkAdapterGamingMap'
+) "Get/Set/Restore-NetworkGamingOptimizations share NetworkAdapterGamingMap for all 11 NDIS properties"
+
+# Power scheme activation order & full snapshot coverage & ApplyTuning support
+$disableUserDef = (Get-Command Disable-UserStateAggressive).Definition
+$ultIdx = $disableUserDef.IndexOf("Enable-UltimatePerformance")
+$cpuIdx = $disableUserDef.IndexOf("Apply-CpuGamingOptimizations")
+Assert-Test ($ultIdx -ge 0 -and $cpuIdx -gt $ultIdx) "Disable-UserStateAggressive calls Enable-UltimatePerformance before Apply-CpuGamingOptimizations"
+
+$backupDef = (Get-Command New-SystemStateBackup).Definition
+Assert-Test ($backupDef -match 'DisableNvidiaDynamicPstate\s*=\s*\$true') "New-SystemStateBackup passes DisableNvidiaDynamicPstate = `$true to Get-ExtendedGamingTargets"
+Assert-Test ($ugmContent -match '"ApplyTuning"') "UltraGamingMode.ps1 exposes live -Action ApplyTuning workflow"
+
+# Behavioral Round-Trip: Binary & MultiString Registry Snapshot/Apply/Restore through JSON serialization
+$binRegKey = "HKCU:\Software\UGM_TestBin_" + ([Guid]::NewGuid().ToString("N"))
+try {
+    New-Item -Path "$binRegKey\UMD" -Force | Out-Null
+    Set-ItemProperty -Path "$binRegKey\UMD" -Name "ShaderCache" -Value ([byte[]](0x30, 0x00)) -Type Binary
+    Set-ItemProperty -Path $binRegKey -Name "MultiVal" -Value ([string[]]@("alpha", "beta")) -Type MultiString
+
+    $binTargets = @(
+        @{ Path = "$binRegKey\UMD"; Name = "ShaderCache"; Value = ([byte[]](0x32, 0x00)); Kind = "Binary" },
+        @{ Path = $binRegKey; Name = "MultiVal"; Value = ([string[]]@("gamma")); Kind = "MultiString" },
+        @{ Path = $binRegKey; Name = "DisableDynamicPstate"; Value = 1; Kind = "DWord" }
+    )
+    $binSnap = Get-RegistryValueSnapshot -Targets $binTargets
+    $binJsonLoaded = (@{ ExtendedRegistryConfig = $binSnap } | ConvertTo-Json -Depth 10 | ConvertFrom-Json).ExtendedRegistryConfig
+    $binApplied = Set-RegistryTargets -Targets $binTargets
+    $subMain = $binRegKey -replace '^HKCU:\\', ''
+    $kUmdApply = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("$subMain\UMD")
+    $appliedBytes = $kUmdApply.GetValue("ShaderCache")
+    $kUmdApply.Close()
+    $binRestored = Restore-RegistryValueSnapshot -Snapshot $binJsonLoaded -Hive "HKCU"
+
+    $kUmdRest = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("$subMain\UMD")
+    $restoredBytes = $kUmdRest.GetValue("ShaderCache")
+    $kUmdRest.Close()
+    $kMainRest = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subMain)
+    $restoredMulti = $kMainRest.GetValue("MultiVal")
+    $dynExistsAfter = $kMainRest.GetValueNames() -contains "DisableDynamicPstate"
+    $kMainRest.Close()
+
+    Assert-Test ($binApplied -eq 3 -and $appliedBytes.Count -eq 2 -and $appliedBytes[0] -eq 0x32 -and $appliedBytes[1] -eq 0x00) "Set-RegistryTargets writes REG_BINARY (ShaderCache) and REG_MULTI_SZ without CLR array unrolling"
+    Assert-Test ($binRestored -eq 3 -and $restoredBytes[0] -eq 0x30 -and $restoredBytes[1] -eq 0x00 -and ($restoredMulti -join ',') -eq 'alpha,beta' -and -not $dynExistsAfter) "Restore-RegistryValueSnapshot restores JSON-deserialized REG_BINARY, REG_MULTI_SZ, and deletes absent DisableDynamicPstate"
+} finally {
+    Remove-Item -LiteralPath $binRegKey -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Behavioral Round-Trip: 14-Key Debloat Snapshot/Restore + Two-Phase Non-Clobbering Order
+$debloatRoundTripOk = & {
+    $vReg = @{
+        "HKCU:\System\GameConfigStore" = @{ "GameDVR_Enabled" = 1 }
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" = @{ "AppCaptureEnabled" = 1 }
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" = @{ "TaskbarDa" = 0 }
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" = @{ "BingSearchEnabled" = 0 }
+        "HKCU:\Software\Policies\Microsoft\Windows\Explorer" = @{ "DisableSearchBoxSuggestions" = 1 }
+        "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" = @{ "AllowGameDVR" = 0 }
+        "HKLM:\SOFTWARE\Microsoft\WindowsRuntime\ActivatableClassId\Windows.Gaming.GameBar.PresenceServer.Internal.PresenceWriter" = @{ "ActivationType" = 1 }
+        "HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc" = @{ "Start" = 3 }
+        "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" = @{ "AllowNewsAndInterests" = 0 }
+    }
+    $vSvc = @{ "WSAIFabricSvc" = @{ StartupType = "Manual" }; "WSearch" = @{ StartupType = "Automatic" } }
+    function Test-Path { param([string]$Path, [string]$LiteralPath) $p = if ($LiteralPath) { $LiteralPath } else { $Path }; return $vReg.ContainsKey($p) }
+    function New-Item { param([string]$Path, [switch]$Force) if (-not $vReg.ContainsKey($Path)) { $vReg[$Path] = @{} }; return $null }
+    function Get-ItemProperty {
+        param([string]$Path, [string]$LiteralPath, [string]$Name)
+        $p = if ($LiteralPath) { $LiteralPath } else { $Path }
+        if (-not $vReg.ContainsKey($p)) { return $null }
+        $o = [PSCustomObject]@{}
+        foreach ($k in $vReg[$p].Keys) { $o | Add-Member -NotePropertyName $k -NotePropertyValue $vReg[$p][$k] }
+        return $o
+    }
+    function Set-ItemProperty {
+        param([string]$Path, [string]$LiteralPath, [string]$Name, $Value, [string]$Type, [switch]$Force)
+        $p = if ($LiteralPath) { $LiteralPath } else { $Path }
+        if (-not $vReg.ContainsKey($p)) { $vReg[$p] = @{} }
+        $vReg[$p][$Name] = $Value
+    }
+    function Remove-ItemProperty {
+        param([string]$Path, [string]$LiteralPath, [string]$Name, [switch]$Force)
+        $p = if ($LiteralPath) { $LiteralPath } else { $Path }
+        if ($vReg.ContainsKey($p)) { $null = $vReg[$p].Remove($Name) }
+    }
+    function Get-Service { param([string]$Name) if ($vSvc.ContainsKey($Name)) { return [PSCustomObject]@{ Name = $Name; Status = "Stopped" } } return $null }
+    function Stop-Service { param([string]$Name, [switch]$Force) }
+    function Start-Service { param([string]$Name) }
+    function Set-Service { param([string]$Name, [string]$StartupType) if ($vSvc.ContainsKey($Name)) { $vSvc[$Name].StartupType = $StartupType; if ($Name -eq "WSAIFabricSvc") { $vReg["HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc"]["Start"] = $(if ($StartupType -eq "Disabled") { 4 } else { 3 }) } } }
+    function auditpol.exe { }
+
+    $orig = Get-Windows11DebloatConfig
+    $jsonObj = $orig | ConvertTo-Json -Depth 5 | ConvertFrom-Json
+    $null = Set-Windows11DebloatOptimizations -All
+    # Simulate Two-Phase User restore order: Widgets restore (-SkipSystemPolicies) -> UserOnly Debloat restore
+    $null = Set-WindowsWidgetsAndSearchGamingState -Disable $false -SkipSystemPolicies
+    $null = Restore-Windows11DebloatOptimizations -DebloatConfig $jsonObj -UserOnly
+    $userOk = (
+        $vReg["HKCU:\Software\Microsoft\Windows\CurrentVersion\Search"]["BingSearchEnabled"] -eq 0 -and
+        $vReg["HKCU:\Software\Policies\Microsoft\Windows\Explorer"]["DisableSearchBoxSuggestions"] -eq 1 -and
+        $vReg["HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"]["TaskbarDa"] -eq 0 -and
+        -not $vReg["HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot"].ContainsKey("TurnOffWindowsCopilot")
+    )
+    # Full Restore-Windows11DebloatOptimizations also restores all HKLM keys cleanly
+    $null = Restore-Windows11DebloatOptimizations -DebloatConfig $jsonObj
+    $hklmOk = (
+        $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Dsh"]["AllowNewsAndInterests"] -eq 0 -and
+        $vReg["HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc"]["Start"] -eq 3 -and
+        -not $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Edge"].ContainsKey("StartupBoostEnabled") -and
+        -not $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended"].ContainsKey("BackgroundModeEnabled") -and
+        $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"]["AllowGameDVR"] -eq 0
+    )
+    return ($userOk -and $hklmOk)
+}
+Assert-Test ($debloatRoundTripOk) "Restore-Windows11DebloatOptimizations + -UserOnly/-SkipSystemPolicies faithfully round-trips all 14 keys from JSON PSCustomObject"
+
+$restoreSysDef = (Get-Command Restore-SystemState).Definition
+$widgetsIdx = $restoreSysDef.IndexOf("Set-WindowsWidgetsAndSearchGamingState")
+$debloatRestoreIdx = $restoreSysDef.IndexOf("Restore-Windows11DebloatOptimizations")
+Assert-Test ($widgetsIdx -ge 0 -and $debloatRestoreIdx -gt $widgetsIdx -and $userProfileDef -match 'Restore-Windows11DebloatOptimizations\s+-DebloatConfig') "Restore-SystemState runs Restore-Windows11DebloatOptimizations after Widgets restore and Restore-UserProfileState restores HKCU debloat keys"
+
+# Behavioral: -Action ApplyTuning safely no-ops on non-active state in isolated sandbox & GameDVR New-Item tolerates non-admin
+$sandboxRoot = Join-Path $env:TEMP ("UGM_TestApplyTuning_" + [Guid]::NewGuid().ToString("N"))
+try {
+    New-Item -ItemType Directory -Path (Join-Path $sandboxRoot "Config") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $sandboxRoot "Core") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $sandboxRoot "Backups") -Force | Out-Null
+    Copy-Item -LiteralPath $ugmPath -Destination $sandboxRoot
+    Copy-Item -Path (Join-Path $repoRoot "Core\*.ps1") -Destination (Join-Path $sandboxRoot "Core")
+    Copy-Item -Path (Join-Path $repoRoot "Config\*.json") -Destination (Join-Path $sandboxRoot "Config")
+    [System.IO.File]::WriteAllText((Join-Path $sandboxRoot "Backups\active_state.json"), '{"State":"Restored"}', (New-Object System.Text.UTF8Encoding($false)))
+    $applySandboxOut = & (Join-Path $sandboxRoot "UltraGamingMode.ps1") -Action ApplyTuning -SkipUpdateCheck *>&1 | Out-String
+    Assert-Test ($applySandboxOut -match "Current state is 'Restored'") "UltraGamingMode.ps1 -Action ApplyTuning cleanly skips live mutation when state is Restored"
+} finally {
+    Remove-Item -LiteralPath $sandboxRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+Assert-Test ($gameDvrDef -match 'AllowGameDVR' -and $gameDvrDef -match 'New-Item\s+-Path\s+\$policyPath\s+-Force\s+-ErrorAction\s+SilentlyContinue') "Set-DeepGameDVROptimizations HKLM policy creation guards non-elevated ApplyTuning runs with -ErrorAction SilentlyContinue"
 
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta

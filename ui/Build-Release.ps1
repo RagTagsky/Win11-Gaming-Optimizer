@@ -5,7 +5,7 @@
 param(
     [switch]$SkipBuild,
     [switch]$CreateGhRelease,
-    [string]$Tag = "v3.1.1"
+    [string]$Tag = "v3.2.0"
 )
 
 & (Join-Path $PSScriptRoot "..\Build-Release.ps1") @PSBoundParameters

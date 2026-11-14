@@ -28,6 +28,8 @@ pub struct TuningConfig {
     pub disable_fullscreen_optimizations: bool,
     #[serde(rename = "DisableMouseAccel")]
     pub disable_mouse_accel: bool,
+    #[serde(rename = "DisableNvidiaDynamicPstate", default)]
+    pub disable_nvidia_dynamic_pstate: bool,
     #[serde(rename = "EnableNetAdapterMsi")]
     pub enable_net_adapter_msi: bool,
     #[serde(rename = "InputBufferQueueSize")]
@@ -39,6 +41,7 @@ impl Default for TuningConfig {
         Self {
             disable_fullscreen_optimizations: true,
             disable_mouse_accel: false,
+            disable_nvidia_dynamic_pstate: false,
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
         }
@@ -422,7 +425,11 @@ fn get_workspace_root() -> PathBuf {
             }
         }
     }
-    PathBuf::from(r"C:\Users\ragtagsky\Documents\Workstation\E.Mode")
+    let dev_fallback = PathBuf::from(r"C:\Users\ragtagsky\Documents\Workstation\E.Mode");
+    if dev_fallback.join("UltraGamingMode.ps1").exists() {
+        return dev_fallback;
+    }
+    std::env::current_dir().unwrap_or_default()
 }
 
 fn resolve_powershell_exe() -> PathBuf {
@@ -465,12 +472,14 @@ fn write_tuning_to_disk(root: &PathBuf, cfg: &TuningConfig) -> Result<(), String
 fn resolve_profile_name(cfg: &TuningConfig) -> String {
     if cfg.disable_fullscreen_optimizations
         && !cfg.disable_mouse_accel
+        && !cfg.disable_nvidia_dynamic_pstate
         && cfg.enable_net_adapter_msi
         && cfg.input_buffer_queue_size == 100
     {
         "competitive".to_string()
     } else if !cfg.disable_fullscreen_optimizations
         && !cfg.disable_mouse_accel
+        && !cfg.disable_nvidia_dynamic_pstate
         && cfg.enable_net_adapter_msi
         && cfg.input_buffer_queue_size == 100
     {
@@ -672,6 +681,16 @@ fn get_tuning_config() -> Result<TuningConfig, String> {
     Ok(load_tuning_from_disk(&root))
 }
 
+fn should_trigger_live_tuning(raw_state: &str) -> bool {
+    let clean_state = raw_state.trim_start_matches('\u{feff}');
+    if let Ok(state_val) = serde_json::from_str::<serde_json::Value>(clean_state) {
+        if let Some(state_str) = state_val.get("State").and_then(|v| v.as_str()) {
+            return state_str == "Armed" || state_str == "GameMode_Active";
+        }
+    }
+    false
+}
+
 #[tauri::command]
 fn save_tuning_config(config: TuningConfig) -> Result<TuningConfig, String> {
     let root = get_workspace_root();
@@ -680,6 +699,29 @@ fn save_tuning_config(config: TuningConfig) -> Result<TuningConfig, String> {
         normalized.input_buffer_queue_size = 32;
     }
     write_tuning_to_disk(&root, &normalized)?;
+
+    let active_state_path = root.join("Backups").join("active_state.json");
+    if let Ok(raw_state) = std::fs::read_to_string(&active_state_path) {
+        if should_trigger_live_tuning(&raw_state) {
+            let script_path = root.join("UltraGamingMode.ps1");
+            let mut cmd = Command::new(resolve_powershell_exe());
+            cmd.current_dir(&root).args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                script_path.to_str().unwrap_or("UltraGamingMode.ps1"),
+                "-Action",
+                "ApplyTuning",
+                "-SkipUpdateCheck",
+            ]);
+            #[cfg(target_os = "windows")]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            let _ = cmd.spawn();
+        }
+    }
+
     Ok(normalized)
 }
 
@@ -780,6 +822,7 @@ async fn execute_mode_action(action: String, profile: String) -> Result<ActionRe
             "competitive" => {
                 current.disable_fullscreen_optimizations = true;
                 current.disable_mouse_accel = false;
+                current.disable_nvidia_dynamic_pstate = false;
                 current.enable_net_adapter_msi = true;
                 current.input_buffer_queue_size = 100;
                 let _ = write_tuning_to_disk(&root, &current);
@@ -787,6 +830,7 @@ async fn execute_mode_action(action: String, profile: String) -> Result<ActionRe
             "aaa" => {
                 current.disable_fullscreen_optimizations = false;
                 current.disable_mouse_accel = false;
+                current.disable_nvidia_dynamic_pstate = false;
                 current.enable_net_adapter_msi = true;
                 current.input_buffer_queue_size = 100;
                 let _ = write_tuning_to_disk(&root, &current);
@@ -984,13 +1028,14 @@ fn minimize_window(window: tauri::WebviewWindow) {
 }
 
 #[tauri::command]
-fn toggle_maximize_window(window: tauri::WebviewWindow) {
-    if let Ok(is_max) = window.is_maximized() {
-        if is_max {
-            let _ = window.unmaximize();
-        } else {
-            let _ = window.maximize();
-        }
+fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<bool, String> {
+    let is_max = window.is_maximized().map_err(|e| e.to_string())?;
+    if is_max {
+        window.unmaximize().map_err(|e| e.to_string())?;
+        Ok(false)
+    } else {
+        window.maximize().map_err(|e| e.to_string())?;
+        Ok(true)
     }
 }
 
@@ -1077,6 +1122,7 @@ mod tests {
         let comp = TuningConfig {
             disable_fullscreen_optimizations: true,
             disable_mouse_accel: false,
+            disable_nvidia_dynamic_pstate: false,
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
         };
@@ -1085,6 +1131,7 @@ mod tests {
         let aaa = TuningConfig {
             disable_fullscreen_optimizations: false,
             disable_mouse_accel: false,
+            disable_nvidia_dynamic_pstate: false,
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
         };
@@ -1093,14 +1140,25 @@ mod tests {
         let custom_mouse = TuningConfig {
             disable_fullscreen_optimizations: true,
             disable_mouse_accel: true,
+            disable_nvidia_dynamic_pstate: false,
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
         };
         assert_eq!(resolve_profile_name(&custom_mouse), "custom");
 
+        let custom_nvidia = TuningConfig {
+            disable_fullscreen_optimizations: true,
+            disable_mouse_accel: false,
+            disable_nvidia_dynamic_pstate: true,
+            enable_net_adapter_msi: true,
+            input_buffer_queue_size: 100,
+        };
+        assert_eq!(resolve_profile_name(&custom_nvidia), "custom");
+
         let custom_queue = TuningConfig {
             disable_fullscreen_optimizations: true,
             disable_mouse_accel: false,
+            disable_nvidia_dynamic_pstate: false,
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 120,
         };
@@ -1118,7 +1176,44 @@ mod tests {
         let serialized = serde_json::to_string(&cfg).expect("TuningConfig should serialize");
         assert!(serialized.contains("\"DisableFullscreenOptimizations\""));
         assert!(serialized.contains("\"DisableMouseAccel\""));
+        assert!(serialized.contains("\"DisableNvidiaDynamicPstate\""));
         assert!(serialized.contains("\"EnableNetAdapterMsi\""));
         assert!(serialized.contains("\"InputBufferQueueSize\""));
+    }
+
+    #[test]
+    fn test_live_tuning_trigger_and_disk_roundtrip() {
+        assert!(should_trigger_live_tuning(r#"{"State":"Armed"}"#));
+        assert!(should_trigger_live_tuning("\u{feff}{\"State\":\"GameMode_Active\"}"));
+        assert!(!should_trigger_live_tuning(r#"{"State":"Normal"}"#));
+        assert!(!should_trigger_live_tuning(r#"{"State":"Restored"}"#));
+        assert!(!should_trigger_live_tuning("{invalid"));
+
+        let temp_root = std::env::temp_dir().join(format!("ugm_rust_test_{}", std::process::id()));
+        let cfg_dir = temp_root.join("Config");
+        std::fs::create_dir_all(&cfg_dir).expect("create temp Config dir");
+
+        let cfg = TuningConfig {
+            disable_fullscreen_optimizations: false,
+            disable_mouse_accel: true,
+            disable_nvidia_dynamic_pstate: true,
+            enable_net_adapter_msi: false,
+            input_buffer_queue_size: 16,
+        };
+        write_tuning_to_disk(&temp_root, &cfg).expect("write_tuning_to_disk should succeed");
+
+        let raw_bytes = std::fs::read(cfg_dir.join("tuning.json")).expect("read tuning.json");
+        assert!(
+            !raw_bytes.starts_with(&[0xEF, 0xBB, 0xBF]),
+            "tuning.json must be pure UTF-8 without BOM"
+        );
+        let reloaded = load_tuning_from_disk(&temp_root);
+        assert_eq!(reloaded.disable_fullscreen_optimizations, false);
+        assert_eq!(reloaded.disable_mouse_accel, true);
+        assert_eq!(reloaded.disable_nvidia_dynamic_pstate, true);
+        assert_eq!(reloaded.enable_net_adapter_msi, false);
+        assert_eq!(reloaded.input_buffer_queue_size, 32);
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 }

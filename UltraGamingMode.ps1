@@ -17,7 +17,7 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate", "Debloat", "RestoreDebloat")]
+    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate", "Debloat", "RestoreDebloat", "ApplyTuning")]
     [string]$Action = "Status",
 
     [Parameter()]
@@ -48,7 +48,7 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 )
 
 if (-not $isAdmin) {
-    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus", "CheckUpdate", "Debloat", "RestoreDebloat")) {
+    if ($Action -in @("Status", "Diagnostic", "CleanMemory", "FlushShaderCache", "GpuMsiStatus", "KernelLatencyStatus", "CheckUpdate", "Debloat", "RestoreDebloat", "ApplyTuning")) {
         Write-Warning "Running in non-elevated mode. Operating with current user privileges."
     }
     elseif ($Action -eq "RestoreUser" -or ($Action -eq "Restore" -and ($Watchdog -or $Scope -eq "User"))) {
@@ -76,7 +76,7 @@ $whitelist  = (Get-Content -LiteralPath $whitelistPath -Raw -Encoding UTF8 | Con
 $startupCfg = Get-Content -LiteralPath $startupAppsPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 # ── Automatic Update Check on Direct Launch ───────────────────────────────────
-if (-not $SkipUpdateCheck -and -not $Watchdog -and -not $isSystem -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate")) {
+if (-not $SkipUpdateCheck -and -not $Watchdog -and -not $isSystem -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate", "ApplyTuning")) {
     $null = Invoke-AppUpdateWorkflow -Passive -TimeoutSeconds 2
 }
 
@@ -1052,5 +1052,83 @@ switch ($Action) {
         Write-Host "   KERNEL DPC, INPUT BUFFER & SYSTEM TIMER STATUS   " -ForegroundColor Magenta
         Write-Host "=====================================================" -ForegroundColor Magenta
         Show-LatencySubsystemStatus
+    }
+
+    "ApplyTuning" {
+        $stateFile = Join-Path (Join-Path $RootDir "Backups") "active_state.json"
+        if (-not (Test-Path -LiteralPath $stateFile)) {
+            Write-Host "[*] Tuning saved. No active gaming session; settings will apply on next Enable." -ForegroundColor Gray
+            break
+        }
+        $stateData = Get-ActiveStateSafe -Path $stateFile
+        if (-not $stateData -or $stateData.State -notin @("Armed", "GameMode_Active")) {
+            Write-Host "[*] Tuning saved. Current state is '$($stateData.State)'; live re-apply skipped." -ForegroundColor Gray
+            break
+        }
+
+        Write-Host "[*] Live-applying Config\tuning.json to active gaming session ($($stateData.State))..." -ForegroundColor Cyan
+        $tuningFile = Join-Path (Join-Path $RootDir "Config") "tuning.json"
+        $tuning = $null
+        if (Test-Path -LiteralPath $tuningFile) {
+            try { $tuning = Get-Content -LiteralPath $tuningFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
+        }
+        $qSize = 100
+        if ($tuning -and $null -ne $tuning.InputBufferQueueSize) {
+            try { $qSize = [Math]::Max(32, [int]$tuning.InputBufferQueueSize) } catch { $qSize = 100 }
+        }
+        $hw = if ($stateData.HardwareProfile) { $stateData.HardwareProfile } else { Get-HardwareProfile }
+
+        try {
+            if (-not $isSystem) {
+                Set-DeepGameDVROptimizations | Out-Null
+                if ($tuning -and $tuning.DisableFullscreenOptimizations -eq $false -and $stateData.GameDVRConfig) {
+                    $origFse = if ($stateData.GameDVRConfig -is [hashtable]) {
+                        $stateData.GameDVRConfig["GameDVR_FSEBehaviorMode"]
+                    } elseif ($stateData.GameDVRConfig.PSObject.Properties["GameDVR_FSEBehaviorMode"]) {
+                        $stateData.GameDVRConfig.GameDVR_FSEBehaviorMode
+                    } else { $null }
+                    if ($null -ne $origFse) {
+                        $configStorePath = "HKCU:\System\GameConfigStore"
+                        if (-not (Test-Path -LiteralPath $configStorePath)) { New-Item -Path $configStorePath -Force -ErrorAction SilentlyContinue | Out-Null }
+                        Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value ([int]$origFse) -Type DWord -Force -ErrorAction SilentlyContinue
+                    }
+                }
+            }
+
+            if ($isAdmin -or $isSystem) {
+                Set-InputBufferOptimizations -QueueSize $qSize | Out-Null
+                if ($tuning -and $tuning.EnableNetAdapterMsi -eq $false) {
+                    if ($stateData.NetAdapterMsiConfig) {
+                        Restore-NetAdapterMsiMode -MsiBackup @($stateData.NetAdapterMsiConfig) | Out-Null
+                    }
+                } else {
+                    $nicMsiBackup = @(Set-NetAdapterMsiMode)
+                    if ((-not $stateData.NetAdapterMsiConfig -or @($stateData.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
+                        Set-StatePropertySafe -StateObject $stateData -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
+                        Set-ActiveStateSafe -Path $stateFile -Data $stateData | Out-Null
+                    }
+                }
+            }
+
+            Set-ExtendedGamingOptimizations -HardwareProfile $hw -Whitelist $whitelist | Out-Null
+
+            if ($stateData.ExtendedRegistryConfig) {
+                if (-not $tuning -or $tuning.DisableMouseAccel -ne $true) {
+                    $mouseSnap = @($stateData.ExtendedRegistryConfig | Where-Object { $_.Name -in @("MouseSpeed", "MouseThreshold1", "MouseThreshold2") })
+                    if ($mouseSnap.Count -gt 0) {
+                        Restore-RegistryValueSnapshot -Snapshot $mouseSnap -Hive "HKCU" | Out-Null
+                    }
+                }
+                if (($isAdmin -or $isSystem) -and (-not $tuning -or $tuning.DisableNvidiaDynamicPstate -ne $true)) {
+                    $nvSnap = @($stateData.ExtendedRegistryConfig | Where-Object { $_.Name -eq "DisableDynamicPstate" })
+                    if ($nvSnap.Count -gt 0) {
+                        Restore-RegistryValueSnapshot -Snapshot $nvSnap -Hive "HKLM" | Out-Null
+                    }
+                }
+            }
+            Write-Host "[+] Live tuning applied cleanly." -ForegroundColor Green
+        } catch {
+            Write-Warning "Live ApplyTuning warning: $($_.Exception.Message)"
+        }
     }
 }

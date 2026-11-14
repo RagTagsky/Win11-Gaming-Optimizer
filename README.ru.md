@@ -1,14 +1,14 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode для Windows 11
-### *Native Desktop, Competitive Low-Latency & Universal Hardware Edition (v3.1.1)*
+### *Native Desktop, Fluent UI & Competitive Low-Latency Edition (v3.2.0)*
 
 **Высокоточный оптимизатор задержек (input latency), фреймтайма и универсальной аппаратной части с нулевым риском для Windows 10/11.**  
-Оснащен лаконичным нативным графическим интерфейсом для Windows 11 (Tauri v2 + Rust + Svelte 5) с поддержкой Темной и Светлой тем (Dark / Light Mode), временно выгружает фоновый мусор, приостанавливает синхронное сканирование диска Защитником, автоматически определяет и адаптируется к ЛЮБОМУ ПК (процессоры Intel/AMD, видеокарты NVIDIA/AMD/Intel, защита 8 ГБ ОЗУ Low-RAM Guard, 100% защита механических HDD от фризов), переводит GPU и PCIe сетевые карты в режим MSI Mode, ускоряет сетевой трафик через Winsock AFD Fast-Path (64KB), синхронизирует системные таймеры, активирует HAGS, обеспечивает аварийный ремонт компонентов в 1 клик и гарантирует 100% автоматическое безопасное восстановление при следующей перезагрузке.
+Оснащен доступным нативным графическим интерфейсом для Windows 11 (Tauri v2 + Rust + Svelte 5) в стиле Fluent с поддержкой Темной и Светлой тем (WCAG AA, системный High Contrast и `prefers-reduced-motion`), временно выгружает фоновый мусор, приостанавливает синхронное сканирование диска Защитником, автоматически определяет и адаптируется к ЛЮБОМУ ПК (процессоры Intel/AMD, видеокарты NVIDIA/AMD/Intel, защита 8 ГБ ОЗУ Low-RAM Guard, 100% защита механических HDD от фризов), переводит GPU и PCIe сетевые карты в режим MSI Mode, ускоряет сетевой трафик через Winsock AFD Fast-Path (64KB), синхронизирует системные таймеры, активирует HAGS, обеспечивает аварийный ремонт компонентов в 1 клик и гарантирует 100% автоматическое безопасное восстановление при следующей перезагрузке.
 
 [![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
 [![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Версия](https://img.shields.io/badge/Версия-v3.1.1--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
+[![Версия](https://img.shields.io/badge/Версия-v3.2.0--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
 [![Лицензия: MIT](https://img.shields.io/badge/Лицензия-MIT-success.svg?style=for-the-badge)](LICENSE)
 [![Zero-Risk Сторож](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#гарантия-безопасности-и-fail-safe-сторож)
 [![Универсальное оборудование](https://img.shields.io/badge/Платформа-Intel%20%2B%20AMD%20%7C%20NVIDIA-ED1C24?style=for-the-badge)](#универсальный-модуль-автоопределения-оборудования)
@@ -55,9 +55,9 @@
   - [16. Синхронизация системных таймеров BCDedit](#16-синхронизация-системных-таймеров-bcdedit)
   - [17. Высокопроизводительный стек TCP Gaming](#17-высокопроизводительный-стек-tcp-gaming)
   - [18. Аппаратное планирование GPU (HAGS)](#18-аппаратное-планирование-gpu-hags)
-  - [19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации сообщества (v3.1)](#19-тюнинг-фреймтайма-ring-0-ifeo-и-топовые-оптимизации-сообщества-v31)
+  - [19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации (v3.2.0)](#19-тюнинг-фреймтайма-ring-0-ifeo-и-топовые-оптимизации-v320)
 - [Быстрый старт](#быстрый-старт)
-  - [Вариант А: Нативное десктопное приложение GUI (v3.1 - рекомендуется)](#вариант-а-нативное-десктопное-приложение-gui-v31---рекомендуется)
+  - [Вариант А: Нативное десктопное приложение GUI (v3.2.0 - рекомендуется)](#вариант-а-нативное-десктопное-приложение-gui-v320---рекомендуется)
   - [Вариант Б: Интерактивное меню TUI](#вариант-б-интерактивное-меню-tui)
   - [Вариант В: Использование через PowerShell CLI](#вариант-в-использование-через-powershell-cli)
 - [Справочник меню и команд CLI](#справочник-меню-и-команд-cli)
@@ -76,7 +76,7 @@
 - **Потерям плавности на границах кадров (Frame Boundary Spikes):** Вторичные системные потоки перехватывают ядра ЦП у основного потока рендеринга.
 - **Провалам 1% Low FPS:** Ощутимые подергивания картинки и "тяжелый" прицел даже при высоком среднем FPS.
 
-**Ultra Gaming Mode v3.1** устраняет эти проблемы без деструктивного вмешательства в систему. В отличие от сомнительных твикеров и скриптов-деблоатеров, которые ломают систему навсегда, ломают доступ к микрофону или вызывают черные экраны на мониторах DisplayPort, Ultra Gaming Mode использует **обратимый цикл на базе снимков состояния**:
+**Ultra Gaming Mode v3.2.0** устраняет эти проблемы без деструктивного вмешательства в систему. В отличие от сомнительных твикеров и скриптов-деблоатеров, которые ломают систему навсегда, ломают доступ к микрофону или вызывают черные экраны на мониторах DisplayPort, Ultra Gaming Mode использует **обратимый цикл на базе снимков состояния**:
 
 ```
 [Штатная Windows] ──(Подготовка)──> [Снимок системы JSON] ──(Перезагрузка)──> [Ultra Gaming Mode]
@@ -89,7 +89,7 @@
 
 ## 🛠️ Универсальный модуль автоопределения оборудования
 
-Ultra Gaming Mode v3.1 оснащен автономным движком обнаружения аппаратной конфигурации (`Get-HardwareProfile`), который детально опрашивает архитектуру вашего ПК на этапе диагностики, подготовки к запуску и в момент загрузки. Вместо применения слепых универсальных твиков оптимизатор точно определяет топологию процессора, шину видеокарты, объем оперативной памяти и типы накопителей, подстраивая системные и драйверные оптимизации под физические параметры конкретного ПК.
+Ultra Gaming Mode v3.2.0 оснащен автономным движком обнаружения аппаратной конфигурации (`Get-HardwareProfile`), который детально опрашивает архитектуру вашего ПК на этапе диагностики, подготовки к запуску и в момент загрузки. Вместо применения слепых универсальных твиков оптимизатор точно определяет топологию процессора, шину видеокарты, объем оперативной памяти и типы накопителей, подстраивая системные и драйверные оптимизации под физические параметры конкретного ПК.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -306,8 +306,8 @@ Ultra Gaming Mode v3.1 оснащен автономным движком обн
 - Применяет команду `fsutil behavior set disablelastaccess 1`, запрещая Windows обновлять отметку времени последнего доступа к файлам при каждом чтении, снижая паразитную нагрузку на SSD во время потоковой загрузки игровых текстур.
 - Применяет `fsutil behavior set disable8dot3 1`, отключая генерацию коротких имен формата DOS 8.3 для ускорения чтения директорий. Обе настройки сохраняются в снимке и корректно восстанавливаются в штатном режиме.
 
-### 11. Твики физических сетевых карт (FlowControl, InterruptModeration и MSI Mode)
-- Для физических Ethernet и Wi-Fi адаптеров автоматически отключает `*FlowControl` (устраняет искусственные паузы передачи, вызывающие спайки пинга) и `*InterruptModeration` (мгновенно передает входящие пакеты процессору для минимально возможной сетевой задержки).
+### 11. Твики физических сетевых карт (FlowControl, InterruptModeration, RSC, WoL и MSI Mode)
+- Для физических Ethernet и Wi-Fi адаптеров автоматически отключает `*FlowControl` (устраняет искусственные паузы передачи, вызывающие спайки пинга), `*InterruptModeration` (мгновенно передает входящие пакеты процессору для минимально возможной сетевой задержки), Receive Segment Coalescing (`*RscIPv4`, `*RscIPv6`), Wake-on-LAN (`*WakeOnMagicPacket`, `*WakeOnPattern`) и Power Management Offloads (`*PMARPOffload`, `*PMNSOffload`) наряду с `*EEE`, `EnableGreenEthernet` и `PowerSavingMode`. Все 11 NDIS-свойств сохраняются в снимке через единую карту и корректно откатываются.
 - **MSI Mode для PCIe сетевых адаптеров (`EnableNetAdapterMsi`):** Автоматически переводит физические PCIe сетевые контроллеры (`^PCI\\`) в режим Message Signaled Interrupts (`MSISupported = 1` в ветке `Device Parameters\Interrupt Management\MessageSignaledInterruptProperties`), избавляя сетевую карту от разделения устаревших линий прерываний IRQ с USB и аудиоконтроллерами.
 - **Железная безопасность:** Полностью игнорирует и защищает адаптеры Apple Mobile Device Ethernet (`Ethernet 2` для USB-модема iPhone) и туннели Wintun (`wwan99`).
 
@@ -341,7 +341,7 @@ Ultra Gaming Mode v3.1 оснащен автономным движком обн
   - `ecncapability=disabled`: Отключает Explicit Congestion Notification (явное уведомление о перегрузке сети), предотвращая сброс или задержку пакетов на игровых маршрутизаторах, некорректно обрабатывающих флаги ECN.
   - `rss=enabled`: Включает Receive Side Scaling, распределяя сетевые прерывания по разным ядрам процессора.
 - **Тюнинг TCP для игровых адаптеров:** Устанавливает `TcpAckFrequency = 1` (мгновенное подтверждение приема пакетов без задержки) и `TCPNoDelay = 1` (отключение алгоритма Нагла) для всех физических игровых интерфейсов в `HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces`.
-- **Локализационная независимость через CIM:** Определение параметров TCP-стека выполняет прямой запрос через CIM-командлеты (`Get-NetTCPSetting` и `Get-NetOffloadGlobalSetting`) с поддержкой русскоязычного/англоязычного `netsh` и резервного ключа реестра `Tcp1323Opts`.
+- **Устойчивое к локализации определение через `netsh` и реестр:** Инспекция состояния (`Get-TcpStackConfig`) опрашивает `netsh int tcp show global`, разбирая как английский (`enabled`), так и русскоязычный (`включено`) вывод, совместно с резервным чтением ключа реестра `HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Tcp1323Opts` для TCP Timestamps.
 - **Полная изоляция виртуальных и мобильных интерфейсов:** Жестко исключает сетевой адаптер Apple Mobile Device (`Ethernet 2` для USB-модема iPhone) и туннели Wintun (`wwan99`), предотвращая сбои раздачи интернета со смартфона и работу VPN.
 
 ### 18. Аппаратное планирование GPU (HAGS)
@@ -351,39 +351,40 @@ Ultra Gaming Mode v3.1 оснащен автономным движком обн
 - Автоматически отключается на видеокартах AMD RDNA2/Polaris (`HwSchMode = 1`), устраняя задокументированные микрозаикания в движке Source 2 (CS2).
 - Полностью резервируется в снимке `active_state.json` и восстанавливается при выходе.
 
-### 19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации сообщества (v3.1)
+### 19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации (v3.2.0)
 - **Winsock AFD Fast-Path (64 КБ) и NDIS Multi-Core RSS:** Устанавливает `FastSendDatagramThreshold = 65536`, `FastCopyReceiveThreshold = 65536`, `DefaultSendWindow = 65536` и `DefaultReceiveWindow = 65536` в ветке `HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters`, позволяя игровым UDP-пакетам размером до 64 КБ проходить через сокеты без внутренней буферизации ядра, а также включает `MaxNumRssCpus = 4` в `Services\NDIS\Parameters` для распределения сетевых прерываний по ядрам процессора.
 - **Отключение телеметрии питания ядра и консолидация процессов:** Отключает фоновую телеметрию энергопотребления (`DisableTaggedEnergyLogging = 1`, `TelemetryMaxApplication = 0`, `TelemetryMaxTagPerApplication = 0` в `Control\Power\EnergyEstimation\TaggedEnergy`), коалесценцию таймеров (`CoalescingTimerInterval = 0`) и гибридный быстрый запуск (`HiberbootEnabled = 0`), а также объединяет системные процессы `svchost.exe` (`SvcHostSplitThresholdInKB = 67108864` на ПК с >= 16 ГБ ОЗУ; автоматически пропускается на `LowRamProfile`).
 - **Анти-статтер AMD Radeon DXNAVI и блокировка глубокого сна GPU:** Наряду с отключением энергосбережения шины PCIe (`EnableAspmL0s = 0`, `EnableAspmL1 = 0`) и удержанием кэша шейдеров AMD UMD в режиме `Always On (0x32, 0x00)`, задает `StutterMode = 0` и `PP_SclkDeepSleepDisable = 1` в ветках драйвера AMD (`{4d36e968-e325-11ce-bfc1-08002be10318}`), устраняя микрофризы от сброса частот DXNAVI.
-- **DirectX Flip Model и мгновенный отклик рабочего стола:** Активирует продвинутый режим DirectX Flip Model и VRR (`DirectXUserGlobalSettings = SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;`), отключает фоновый опрос беспроводных дисплеев Miracast (`PlatformSupportMiracast = 0`), ускоряет отклик интерфейса (`MenuShowDelay = 0`, `LowLevelHooksTimeout = 5000`, `MouseHoverTime = 10`) и блокирует фоновую дисковую активность Storage Sense (`01 = 0`) и ReserveManager (`ShippedWithReserves = 0`).
+- **NVIDIA GeForce: отключение телеметрии, Per-Core DPC и фиксация P-State:** Автоматически обнаруживает ветки драйвера NVIDIA (`VEN_10DE` / `NVIDIA`), отключает телеметрию `nvlddmkm` (`SendTelemetryData = 0`), распределяет обработку DPC видеокарты по ядрам процессора (`RmGpsPsEnablePerCpuCoreDpc = 1` в `nvlddmkm`, `NVAPI`, `NVTweak` и ключе класса драйвера) и предоставляет обратимый переключатель `DisableNvidiaDynamicPstate` (`DisableDynamicPstate = 1`).
+- **DirectX Flip Model, Preemption и защита клавиш (Accessibility Guard):** Активирует DirectX Flip Model и VRR (`DirectXUserGlobalSettings = SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;`), включает вытеснение планировщика DirectX (`EnablePreemption = 1`), отключает опрос беспроводных дисплеев Miracast (`PlatformSupportMiracast = 0`), убирает задержку автозапуска оболочки (`StartupDelayInMSec = 0`), отключает всплывающие окна залипания клавиш StickyKeys (`"506"`), ToggleKeys (`"58"`) и FilterKeys (`"122"`), ускоряет отклик интерфейса (`MenuShowDelay = 0`, `LowLevelHooksTimeout = 5000`, `MouseHoverTime = 10`) и блокирует фоновую активность Storage Sense (`01 = 0`) и ReserveManager (`ShippedWithReserves = 0`).
 - **Устранение критических дефектов сторонних твикеров:** Обнаруживает и сбрасывает инверсию приоритетов, оставленную удаленными оптимизаторами (например, `GameModeX`). Возвращает критические системные серверы интерфейса и шрифтов (`fontdrvhost.exe`, `sihost.exe`, `lsass.exe`, `ctfmon.exe`), застрявшие на приоритете Idle (4) или Low I/O, обратно в Normal, устраняя причину подвисаний при рендеринге текста и кадров.
 - **Ring-0 IFEO приоритеты для 16 соревновательных игр:** Предварительно регистрирует параметры запуска в ядре NT (`CpuPriorityClass = 3` [High], `IoPriority = 3` [High], `PagePriority = 5`) для таких игр, как *Counter-Strike 2* (`cs2.exe`), *Deadlock* (`project8.exe`), *Dota 2* (`dota2.exe`), *Fortnite*, *Apex Legends*, *Rust*, *Cyberpunk 2077* и *Elden Ring*. Поскольку ядро назначает их при создании процесса, приоритеты начинают действовать до того, как античит ограничит права доступа к дескрипторам процесса.
 - **Разгрузка шины прерываний (PCIe IRQ De-Contention):** Переводит контроллеры NVMe и SATA накопителей с High (`DevicePriority = 3`) на Normal (`DevicePriority = 2`), оставляя монопольный высокий приоритет прерываний исключительно за игровой видеокартой (`DevicePriority = 3`). Это исключает прерывание кадрового рендеринга дисковыми операциями на шине PCIe.
-- **Блокировка спящего режима USB HID:** Отключает агрессивное энергосбережение USB (`EnhancedPowerManagementEnabled = 0`, `AllowIdleIrpInD3 = 0`) на игровых мышах и клавиатурах, устраняя микрозасыпания сенсора при быстрых движениях (фликах).
-- **Приоритет мультимедийного планировщика MMCSS Tasks\Games:** Устанавливает `Priority = 6` (категория Medium), поднимая приоритет игрового аудио и кадров над фоновыми задачами при сохранении стабильности DWM.
-- **Блокировка фонового обслуживания Windows и сжатия ОЗУ:** Отключает Windows Automatic Maintenance на время игры (`MaintenanceDisabled = 1`) и отключает сжатие памяти (`Disable-MMAgent -mc -prelaunch` на системах с >= 16 ГБ RAM), освобождая такты процессора и кэш L3 процессоров Ryzen.
+- **Блокировка спящего режима иерархии USB Hub / HID:** Отключает агрессивное энергосбережение USB (`EnhancedPowerManagementEnabled = 0`, `AllowIdleIrpInD3 = 0`) по всей цепочке устройств `HidUsb`, `USBHUB3`, `usbhub` и `usbccgp`, устраняя провалы частоты опроса и засыпание контроллеров при быстрых движениях мыши.
+- **Расширенные настройки схемы электропитания (9 параметров) и порядок активации:** Безусловно активирует схему Ultimate Performance перед тюнингом ЦП и применяет 9 AC-параметров снижения задержки (`USB Selective Suspend`, `USB 3 Link Power Mgmt`, `NVMe Primary/Secondary Idle Timeout`, `Processor EPP`, `Processor Throttle Max = 100`, `Processor Idle Demote/Promote = 100%` и `PCIe Link State Power Mgmt = 0`).
+- **Приоритет мультимедийного планировщика MMCSS `Tasks\Games` и `Tasks\Audio`:** Настраивает задачи `Games` и `Audio` (`Priority = 6`, `Scheduling Category = "Medium"`, для Audio `SFIO Priority = "High"`, `Clock Rate = 10000`), поднимая приоритет игрового рендеринга и звука при сохранении стабильности DWM.
+- **Блокировка фонового обслуживания, сжатия ОЗУ, полный откат 14 ключей Debloat и горячее применение `-Action ApplyTuning`:** Отключает Windows Automatic Maintenance (`MaintenanceDisabled = 1`), отключает сжатие памяти (`Disable-MMAgent -mc -prelaunch` на >= 16 ГБ RAM), сохраняет и полностью откатывает все 14 ключей деблоата Windows 11 (`TaskbarDa`, `PresenceWriterActivation`, `DisableSearchBoxSuggestions`, `TurnOffWindowsCopilotMachine`, `WSAIFabricSvcStart` и др.), а при изменении `Config\tuning.json` в активном режиме автоматически применяет настройки через `-Action ApplyTuning`.
 - **Точный баланс черного и белого списков:** 207 неиспользуемых фоновых служб отключаются на время игровой сессии, в то время как 90 критических компонентов системы, ввода, звука, античитов и создания скриншотов (`CaptureService`, `cbdhsvc`) находятся под строгой защитой.
 ---
 
 ## 🚀 Быстрый старт
 
-### Вариант А: Нативное десктопное приложение GUI (v3.1 - рекомендуется)
+### Вариант А: Нативное десктопное приложение GUI (v3.2.0 - рекомендуется)
 
-Ultra Gaming Mode v3.1 оснащен чистым, человечным и понятным десктопным интерфейсом для Windows 11 на базе **Tauri v2 (Rust)** и **Svelte 5** без визуального шума и с полноценной поддержкой **Темной и Светлой тем (Dark / Light Mode)** (переключатель темы в заголовке окна сохраняет выбор в `localStorage` и синхронизируется с системной рамкой окна Windows):
+Ultra Gaming Mode v3.2.0 оснащен доступным десктопным интерфейсом в стиле Fluent для Windows 11 на базе **Tauri v2 (Rust)** и **Svelte 5** со сбалансированной **Темной и Светлой темами** (переключатель `Светлая` / `Тёмная` в заголовке окна сохраняет выбор в `localStorage` и синхронизируется с нативной рамкой DWM), контрастностью по WCAG AA / 1.4.11, поддержкой системного High Contrast (`forced-colors: active`), `prefers-reduced-motion`, навигацией по вкладкам с клавиатуры (`role="tablist"` + стрелки/`Home`/`End`), явными баннерами ошибок `role="alert"` и сохранением состояния вкладок:
 
 1. Запустите **`UltraGamingMode.exe`** из корневой папки (приложение автоматически запросит права Администратора через системный UAC).
-2. **Вкладка «Панель управления»**:
-   - Отображает текущий статус системы, понятные карточки оборудования (процессор, видеокарта, память, накопитель) и оперативные метрики (ОЗУ, фоновые службы, разрешение системного таймера, статус GPU MSI).
-   - Выберите профиль (`Киберспорт`, `AAA и стриминг` или `Пользовательский`), при необходимости зафиксируйте таймер `0.500 мс` или очистите ОЗУ и нажмите **«Включить игровой режим»** (или **«Вернуть штатный режим»** для возврата).
-3. **Вкладка «Службы (207)»**:
-   - Позволяет просматривать и фильтровать все **207** отключаемых фоновых служб по категориям (Телеметрия, Xbox, Печать, Сеть, Система), а также изучить **90** защищенных служб из белого списка (античиты, звук, сеть, скриншоты).
+2. **Вкладка «Обзор»**:
+   - Отображает текущий статус системы (`Обычный`, `Подготовка к перезагрузке`, `Игровой режим`, `Применяется`, `Ошибка`), полные карточки оборудования (ЦП, GPU, ОЗУ, Дисплей/MPO, задержка DPC и разрешение таймера) с копируемыми характеристиками и главную кнопку **«Включить игровой режим»** / **«Вернуть штатный режим»**.
+   - Позволяет выбрать профиль оптимизации (`Киберспорт`, `AAA и стриминг` или `Пользовательский`) и зафиксировать системный таймер `0.5 мс`.
+3. **Вкладка «Службы»**:
+   - Позволяет искать и фильтровать все **207** отключаемых фоновых служб по переведенным категориям (`Телеметрия`, `Xbox`, `Печать`, `Сеть`, `Система`) со сбросом фильтров, а также просматривать **90** защищенных служб из белого списка.
 4. **Вкладка «Настройки»**:
-   - Позволяет в один клик управлять параметрами `Config\tuning.json`: классический полноэкранный режим (`DisableFullscreenOptimizations`), режим MSI для сетевой карты PCIe (`EnableNetAdapterMsi`), прямой ввод мыши `1:1` (`DisableMouseAccel`) и размер очереди буфера ввода (`InputBufferQueueSize`: `64`, `100`, `150` или `200` пакетов), а также просматривать автоматические правила ядра и планировщика.
+   - Понятные позитивные переключатели для `Config\tuning.json` без двойных отрицаний и с копируемыми техническими ключами: классический полноэкранный режим (`DisableFullscreenOptimizations`), прерывания MSI для сетевой карты (`EnableNetAdapterMsi`), точная мышь `1:1` (`DisableMouseAccel`) и фиксация частоты GPU NVIDIA (`DisableNvidiaDynamicPstate`).
+   - Настройка размера очереди буфера ввода (`InputBufferQueueSize`) через пресеты (`64`, `100`, `150`, `200`) или ручной валидируемый числовой ввод (`32–4096` пакетов) с откатом при ошибке сохранения и фоновым применением через `-Action ApplyTuning` при активном или подготовленном режиме.
 5. **Вкладка «Обслуживание»**:
-   - **Сброс видеодрайвера и MPO**: Восстанавливает композицию DWM, устраняет мерцание экрана в Deadlock/CS2 и пересобирает кэш DisplayPort / FreeSync.
-   - **Восстановление служб, поиска и «Ножниц» (`PrtSc`)**: Возвращает работу поиска Windows (клавиша `Win` и ввод с клавиатуры), скриншотов `PrtSc` (`CaptureService`, `cbdhsvc`, права AppContainer), диспетчера печати и микрофона.
-   - **Очистка кэша шейдеров и ОЗУ**: Удаляет устаревший кэш шейдеров DirectX / Vulkan / AMD / NVIDIA / Intel и освобождает кэш памяти Standby List на лету.
-   - **Диагностика и самопроверка**: Запуск полной диагностики оборудования и таймеров либо всех 286 модульных тестов целостности движка в один клик.
+   - **Быстрое обслуживание и диагностика**: очистка кэша ОЗУ (`Standby List`), проверка целостности JSON-конфигурации (`Проверить конфиги`) и восстановление служб из снимка (`Восстановить службы`).
+   - **Глубокий сброс и компоненты Windows 11 (с подтверждением)**: защищенные модальным окном (`ConfirmDialog`) очистка кэша шейдеров GPU (AMD / NVIDIA / Intel / DirectX), сброс графического стека (DWM / дисплей) и обратимая оптимизация / откат Win11 Debloat, а также журнал событий с подтверждением очистки.
 
 ---
 
@@ -401,7 +402,7 @@ Ultra Gaming Mode v3.1 оснащен чистым, человечным и по
 
 ```
 ============================================================
-           ULTRA GAMING MODE CONTROLLER  v3.1
+           ULTRA GAMING MODE CONTROLLER  v3.2.0
             Universal Hardware Adaptive Suite
 ============================================================
 
@@ -424,11 +425,12 @@ Ultra Gaming Mode v3.1 оснащен чистым, человечным и по
 
   [1] Reset DisplayPort & Monitor Topology Cache
   [2] Repair Microphone, Steam & Audio Services
-  [3] Purge GPU Shader Cache (AMD / DirectX / Vulkan)
+  [3] Purge Universal GPU Shader Cache (AMD / NVIDIA / Intel / DirectX)
   [4] Check & Toggle VBS / Core Isolation
   [5] Check GPU MSI & IRQ Priority Status
   [6] Check Kernel DPC, Input Buffer & Timer Status
   [7] View Full Mode Status
+  [8] Check for Updates (GitHub)
   [0] <-- Back to Main Menu
 ============================================================
 ```
@@ -499,7 +501,9 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 | **`[5]`** | `-Action GpuMsiStatus` | Показывает вендора видеокарты, статус режима Message Signaled Interrupts (MSI) и приоритет прерываний (`DevicePriority = 3`). |
 | **`[6]`** | `-Action KernelLatencyStatus` | Показывает параметры DPC ядра (`DisablePagingExecutive`, `ThreadDpcEnable`, `Win32PrioritySeparation`), размеры очередей ввода мыши/клавиатуры (`mouclass`/`kbdclass`), таймеры BCDedit (`disabledynamictick`, `tscsyncpolicy`), параметры TCP и статус HAGS. |
 | **`[7]`** | `-Action Status` | Показывает текущий статус системы, адаптивные бейджи оборудования (ЦП, GPU, Low-RAM Guard, HDD Thrash Guard, Kernel DPC, Input Buffer, Dynamic Tick, HAGS), число активных служб, состояние Core Parking, GPU MSI и VBS. |
+| **`[8]`** | `-Action CheckUpdate` | Проверяет наличие обновлений на GitHub напрямую из подменю расширенных инструментов. |
 | **`[0]`** | `<-- Back` | Возврат в главное меню. |
+| *(CLI/GUI)* | `-Action ApplyTuning` | Применяет настройки `Config\tuning.json` (`FSE`, `MouseAccel`, `DisableNvidiaDynamicPstate`, `NetAdapterMsi`, `InputBufferQueueSize`) на лету, если режим находится в состоянии `Armed` или `GameMode_Active`. |
 ---
 
 ## 📂 Структура проекта
@@ -507,22 +511,24 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
-├── UltraGamingMode.exe              # Нативное десктопное приложение GUI (v3.1.1, Tauri v2, Темная/Светлая темы)
+├── UltraGamingMode.exe              # Нативное десктопное приложение GUI (v3.2.0, Tauri v2, Fluent Темная/Светлая темы)
 ├── UltraGamingMode.bat              # Интерактивное меню с автоматическим запросом прав
 ├── UltraGamingMode.ps1              # Основной оркестратор и контроллер PowerShell
+├── Build-Release.ps1                # Автоматическая сборка Tauri, упаковка .bin/ и генерация SHA256SUMS
 ├── README.md                        # Документация и тесты на английском языке
 ├── README.ru.md                     # Документация и тесты на русском языке
+├── RELEASE_NOTES.md                 # Подробный список изменений релиза
 ├── LICENSE                          # Открытая лицензия MIT
 │
 ├── ui/                              # Фронтенд нативного приложения и Rust бэкенд Tauri
-│   ├── src/                         # Svelte 5 (Runes) + Tailwind CSS + Lucide Icons (Dark & Light Mode)
-│   └── src-tauri/                   # Ядро на Rust с поддержкой смены темной и светлой темы окна
+│   ├── src/                         # Svelte 5 (Runes) + Tailwind CSS v4 + Lucide Icons + ConfirmDialog
+│   └── src-tauri/                   # Ядро на Rust с поддержкой смены темы окна и модульными тестами
 │
 ├── Config/
 │   ├── services_blacklist.json      # 207 фоновых служб под отключение
 │   ├── services_whitelist.json      # 90 строго защищенных компонентов
 │   ├── startup_apps.json            # Правила автозагрузки и фонового софта
-│   └── tuning.json                  # Настройки FSE, акселерации мыши, NIC MSI и буфера ввода
+│   └── tuning.json                  # Настройки FSE, акселерации мыши, P-State NVIDIA, NIC MSI и буфера ввода
 │
 ├── Core/
 │   ├── ServiceManager.ps1           # Безопасное управление службами с защитой белого списка
@@ -530,7 +536,7 @@ Win11-Gaming-Optimizer/
 │   └── SystemOptimizer.ps1          # Управление питанием, MMCSS, сетью, RAM и Защитником
 │
 ├── Tests/
-│   └── Verify-UniversalEngine.ps1   # 286 автоматических модульных тестов движка и симуляции оборудования
+│   └── Verify-UniversalEngine.ps1   # 325 автоматических модульных тестов движка и симуляции оборудования
 │
 └── Backups/
     └── active_state.json            # Динамический снимок текущей сессии (автоматический)

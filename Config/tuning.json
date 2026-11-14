@@ -1,6 +1,7 @@
 {
   "DisableFullscreenOptimizations": true,
   "DisableMouseAccel": false,
+  "DisableNvidiaDynamicPstate": false,
   "EnableNetAdapterMsi": true,
   "InputBufferQueueSize": 100
 }
