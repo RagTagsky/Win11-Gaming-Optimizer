@@ -1,3 +1,23 @@
+# ⚡ Ultra Gaming Mode v3.2.3 — Unified `Program Files` Installers & Runtime
+
+**Ultra Gaming Mode v3.2.3** unifies all installation targets and standalone runtime extraction under **`C:\Program Files\UltraGamingMode`** (`perMachine`) and updates both **NSIS (`UltraGamingMode-Setup.exe`)** and **MSI (`UltraGamingMode.msi`)** finish-page launch handling for `requireAdministrator` UAC elevation.
+
+---
+
+## 📦 What's Changed in v3.2.3
+
+- **Unified `Program Files` Installation (`ui/src-tauri/tauri.conf.json`, `ui/src-tauri/src/lib.rs`):**
+  - Switched NSIS (`UltraGamingMode-Setup.exe`) `installMode` to `"perMachine"` so **both** `UltraGamingMode-Setup.exe` and `UltraGamingMode.msi` install to **`C:\Program Files\UltraGamingMode\`** with All Users Start Menu / Desktop shortcuts and `HKLM` registration (no split between `%LOCALAPPDATA%` and `Program Files`).
+  - Pinned MSI `upgradeCode` (`7630b84c-95f6-58d0-8c30-969d061c38b0`) across releases.
+  - Updated `standalone_runtime_candidates()` so standalone portable `UltraGamingMode.exe` also materializes scripts, JSON configs, and `Backups\` into **`%ProgramFiles%\UltraGamingMode`** first (`ProgramW6432` / `ProgramFiles`) with `*S-1-5-11:(OI)(CI)M` write ACLs on `Backups\` for post-reboot `RunOnce` recovery, keeping `%ProgramData%\UltraGamingMode` as fallback if unprivileged.
+- **UAC-Compatible Installer Templates (`ui/src-tauri/templates/installer.nsi`, `ui/src-tauri/templates/main.wxs`):**
+  - Replaced `nsis_tauri_utils::RunAsUser` (`CreateProcessWithTokenW` without elevation) with `ExecShell "open"` in the custom NSIS template so launching `UltraGamingMode.exe` from the Finish page or `/R` silent relaunch works cleanly with the `requireAdministrator` manifest.
+  - Updated the WiX MSI template to read `HKLM` (`perMachine` NSIS key) for `PrevInstallDirNoName` and launch via `WixShellExec` (`WixCA`) on the Finish dialog so UAC elevation succeeds instead of hitting Error `740` / `1721`.
+
+---
+
+## 🔧 Previous Fixes in v3.2.2
+
 # ⚡ Ultra Gaming Mode v3.2.2 — WebView2 Self-Termination Fix & Blank-Window Prevention
 
 **Ultra Gaming Mode v3.2.2** resolves the solid white window crash triggered after enabling Gaming Mode or during WebView2 initialization on Windows 11, keeping the **Tauri v2 + Svelte 5** GUI alive and responsive throughout every operation.

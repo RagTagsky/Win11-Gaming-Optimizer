@@ -602,7 +602,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.2.2") "Get-AppCurrentVersion returns expected suite version '3.2.2'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.2.3") "Get-AppCurrentVersion returns expected suite version '3.2.3'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -610,7 +610,7 @@ $vBare     = ConvertTo-SemVer "2.8"
 $vPadded   = ConvertTo-SemVer "2.8.0"
 $vPatch    = ConvertTo-SemVer "v2.8.1"
 $vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.2.2"
+$vMajor    = ConvertTo-SemVer "v3.2.3"
 $vSuffix   = ConvertTo-SemVer "v2.8-Universal"
 $vBuild    = ConvertTo-SemVer "v2.8.0+build123"
 $vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
@@ -627,7 +627,7 @@ Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer ret
 # 12.3 SemVer Comparison Contracts
 Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
 Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.2 is correctly recognized as newer than v2.8"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.3 is correctly recognized as newer than v2.8"
 Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
 $vOld = ConvertTo-SemVer "v2.7"
 Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
@@ -1188,6 +1188,18 @@ try {
     Remove-Item -LiteralPath $sandboxRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 Assert-Test ($gameDvrDef -match 'AllowGameDVR' -and $gameDvrDef -match 'New-Item\s+-Path\s+\$policyPath\s+-Force\s+-ErrorAction\s+SilentlyContinue') "Set-DeepGameDVROptimizations HKLM policy creation guards non-elevated ApplyTuning runs with -ErrorAction SilentlyContinue"
+
+$tauriConfPath = Join-Path $repoRoot "ui\src-tauri\tauri.conf.json"
+$rustLibPath   = Join-Path $repoRoot "ui\src-tauri\src\lib.rs"
+if ((Test-Path -LiteralPath $tauriConfPath) -and (Test-Path -LiteralPath $rustLibPath)) {
+    $tauriConfJson = Get-Content -LiteralPath $tauriConfPath -Raw | ConvertFrom-Json
+    Assert-Test ($tauriConfJson.bundle.windows.nsis.installMode -eq "perMachine") "tauri.conf.json configures NSIS installMode=perMachine for Program Files installation"
+    Assert-Test ([string]$tauriConfJson.bundle.windows.nsis.template -eq "templates/installer.nsi" -and [string]$tauriConfJson.bundle.windows.wix.template -eq "templates/main.wxs") "tauri.conf.json wires custom UAC-compatible NSIS and WiX installer templates"
+    Assert-Test (Test-Path -LiteralPath (Join-Path $repoRoot "ui\src-tauri\templates\installer.nsi")) "Custom NSIS template exists in ui/src-tauri/templates/installer.nsi"
+    Assert-Test (Test-Path -LiteralPath (Join-Path $repoRoot "ui\src-tauri\templates\main.wxs")) "Custom WiX template exists in ui/src-tauri/templates/main.wxs"
+    $rustLibRaw = Get-Content -LiteralPath $rustLibPath -Raw
+    Assert-Test ($rustLibRaw -match 'ProgramW6432' -and $rustLibRaw -match 'ProgramFiles') "Rust standalone_runtime_candidates prioritizes Program Files before ProgramData"
+}
 
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta

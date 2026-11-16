@@ -570,6 +570,13 @@ fn standalone_runtime_candidates() -> Vec<PathBuf> {
     let mut out = Vec::new();
     #[cfg(target_os = "windows")]
     {
+        if let Some(pf) = std::env::var_os("ProgramW6432")
+            .or_else(|| std::env::var_os("ProgramFiles"))
+        {
+            out.push(PathBuf::from(pf).join("UltraGamingMode"));
+        } else {
+            out.push(PathBuf::from(r"C:\Program Files\UltraGamingMode"));
+        }
         if let Some(pd) = std::env::var_os("ProgramData")
             .or_else(|| std::env::var_os("ALLUSERSPROFILE"))
         {
@@ -1579,5 +1586,20 @@ mod tests {
         );
         #[cfg(not(target_os = "windows"))]
         assert!(!decoded.is_empty());
+    }
+
+    #[test]
+    fn test_standalone_runtime_candidates_prioritize_program_files() {
+        let candidates = standalone_runtime_candidates();
+        assert!(!candidates.is_empty());
+        #[cfg(target_os = "windows")]
+        {
+            let first = candidates[0].to_string_lossy().to_lowercase();
+            assert!(
+                first.contains("program files") && first.ends_with("ultragamingmode"),
+                "Expected Program Files candidate first, got: {}",
+                candidates[0].display()
+            );
+        }
     }
 }
