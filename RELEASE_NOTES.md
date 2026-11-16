@@ -1,3 +1,33 @@
+# ⚡ Ultra Gaming Mode v3.3.0 — Security Hardening & Interactive Process/Service Manager
+
+**Ultra Gaming Mode v3.3.0** closes LPE/ACL, path resolution, IPC validation, and process-termination vulnerabilities identified during the full security audit, and introduces interactive **Process & Service Management** directly inside the Desktop GUI.
+
+---
+
+## 🔒 Security Audit Remediations
+
+- **LPE / ACL & Runtime Path Hardening (`ui/src-tauri/src/lib.rs`, `Core/StateEngine.ps1`):**
+  - Scoped the interactive user write ACL (`*S-1-5-11:(OI)(CI)M`) strictly to `Backups\QuarantinedShortcuts\User` instead of all of `Backups\`, preventing unprivileged modification of `active_state.json` or `ProgramData` quarantined shortcuts prior to `SYSTEM` execution. Added `.user_restored` fallback marker, startup key-name validation, and reparse-point checks.
+  - Restricted `is_dev_repo_root` CWD/ancestor discovery and `%LOCALAPPDATA%`/`%TEMP%` runtime fallbacks to debug/test builds only so release binaries resolve strictly to `Program Files` / `ProgramData`.
+  - Replaced `LoadLibraryA("ntdll.dll")` with `GetModuleHandleA("ntdll.dll")` and pinned `resolve_powershell_exe()` fallback to `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`.
+- **IPC Input Validation, Config Persistence & CSP (`ui/src-tauri/src/lib.rs`, `ui/src-tauri/tauri.conf.json`):**
+  - Enforced strict allowlists for `execute_mode_action` (`Enable`/`Restore`, `competitive`/`aaa`/`custom`), clamped `InputBufferQueueSize` (`32..=1024`), configured an explicit Tauri Content Security Policy (`csp`), and switched `services_blacklist.json` / `services_whitelist.json` / `startup_apps.json` to `preserve_if_exists: true`.
+- **Identifier & Critical OS Protection (`Core/ServiceManager.ps1`, `Core/StateEngine.ps1`, `ui/src-tauri/src/lib.rs`):**
+  - Added `Test-IsProtectedProcess` (`CRITICAL_PROTECTED_PROCESSES`) and `Test-SafeServiceName` / `IMMUTABLE_CORE_SERVICES`, rejecting registry path traversal (`..`, `\`, `/`), wildcards (`*`, `?`), command metacharacters, and termination/disabling of critical Windows components (`lsass`, `csrss`, `winlogon`, `dwm`, `svchost`, `RpcSs`, `Audiosrv`, `UltraGamingMode`, `msedgewebview2`).
+
+---
+
+## ✨ New Feature: Interactive Process & Service Control
+
+- **Processes Tab (`Процессы` — `ProcessesView.svelte`, Win32 Toolhelp32 + TOCTOU-guarded `TerminateProcess`):**
+  - Live enumeration of running Windows processes (PID, RAM usage in MB, protection/blacklist status), confirmation-guarded termination, and 1-click management of `BlacklistProcesses` and `ProtectedStartupNames` in `Config\startup_apps.json`.
+- **Enhanced Services Tab (`Службы` — `ServicesView.svelte`, SCM `EnumServicesStatusExW` + `-Action ServiceControl`):**
+  - Live service running state and startup type badges, Start/Stop controls, adding custom services to blacklist or whitelist, and moving/removing non-core entries cleanly.
+
+---
+
+## 📦 Previous Release v3.2.3
+
 # ⚡ Ultra Gaming Mode v3.2.3 — Unified `Program Files` Installers & Runtime
 
 **Ultra Gaming Mode v3.2.3** unifies all installation targets and standalone runtime extraction under **`C:\Program Files\UltraGamingMode`** (`perMachine`) and updates both **NSIS (`UltraGamingMode-Setup.exe`)** and **MSI (`UltraGamingMode.msi`)** finish-page launch handling for `requireAdministrator` UAC elevation.

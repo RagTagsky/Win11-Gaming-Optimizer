@@ -602,7 +602,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.2.3") "Get-AppCurrentVersion returns expected suite version '3.2.3'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.3.0") "Get-AppCurrentVersion returns expected suite version '3.3.0'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -610,7 +610,7 @@ $vBare     = ConvertTo-SemVer "2.8"
 $vPadded   = ConvertTo-SemVer "2.8.0"
 $vPatch    = ConvertTo-SemVer "v2.8.1"
 $vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.2.3"
+$vMajor    = ConvertTo-SemVer "v3.3.0"
 $vSuffix   = ConvertTo-SemVer "v2.8-Universal"
 $vBuild    = ConvertTo-SemVer "v2.8.0+build123"
 $vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
@@ -627,7 +627,7 @@ Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer ret
 # 12.3 SemVer Comparison Contracts
 Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
 Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.3 is correctly recognized as newer than v2.8"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.3.0 is correctly recognized as newer than v2.8"
 Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
 $vOld = ConvertTo-SemVer "v2.7"
 Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
@@ -1199,6 +1199,54 @@ if ((Test-Path -LiteralPath $tauriConfPath) -and (Test-Path -LiteralPath $rustLi
     Assert-Test (Test-Path -LiteralPath (Join-Path $repoRoot "ui\src-tauri\templates\main.wxs")) "Custom WiX template exists in ui/src-tauri/templates/main.wxs"
     $rustLibRaw = Get-Content -LiteralPath $rustLibPath -Raw
     Assert-Test ($rustLibRaw -match 'ProgramW6432' -and $rustLibRaw -match 'ProgramFiles') "Rust standalone_runtime_candidates prioritizes Program Files before ProgramData"
+    Assert-Test (-not [string]::IsNullOrWhiteSpace([string]$tauriConfJson.app.security.csp)) "tauri.conf.json declares non-null Content Security Policy (CSP)"
+    Assert-Test ($rustLibRaw -match 'QuarantinedShortcuts"\)\.join\("User"\)' -and $rustLibRaw -match 'kill_process' -and $rustLibRaw -match 'control_service') "lib.rs restricts Backups write ACL to User quarantine folder and exposes interactive process/service IPC"
+}
+
+# ── 15. Security Audit Hardening & Process/Service Guard Verification ─────────
+Write-Host "`n[Test Group 15] Security Audit Hardening & Interactive Process/Service Guards:" -ForegroundColor Cyan
+
+Assert-Test ((Test-IsProtectedProcess -ProcessId 0) -eq $true) "Test-IsProtectedProcess blocks PID 0 (System Idle Process)"
+Assert-Test ((Test-IsProtectedProcess -ProcessId 4) -eq $true) "Test-IsProtectedProcess blocks PID 4 (System Kernel)"
+Assert-Test ((Test-IsProtectedProcess -ProcessId $PID -ProcessName "powershell") -eq $true) "Test-IsProtectedProcess blocks current host `$PID"
+
+foreach ($critProc in @("lsass", "lsass.exe", "csrss", "winlogon", "dwm", "explorer", "svchost", "UltraGamingMode", "vgk", "EasyAntiCheat")) {
+    Assert-Test ((Test-IsProtectedProcess -ProcessName $critProc) -eq $true) "Test-IsProtectedProcess strictly protects critical OS/app process '$critProc'"
+}
+Assert-Test ((Test-IsProtectedProcess -ProcessName "Discord") -eq $false) "Test-IsProtectedProcess permits non-critical third-party app 'Discord'"
+Assert-Test ((Test-IsProtectedProcess -ProcessName "Spotify.exe") -eq $false) "Test-IsProtectedProcess permits non-critical third-party app 'Spotify.exe'"
+Assert-Test ((Test-IsProtectedProcess -ProcessName "..\evil") -eq $true) "Test-IsProtectedProcess rejects path traversal process names"
+
+Assert-Test ((Stop-ProcessSafe -ProcessId $PID 3>$null) -eq $false) "Stop-ProcessSafe refuses to terminate current host `$PID"
+Assert-Test ((Stop-ProcessSafe -ProcessName "lsass" 3>$null) -eq $false) "Stop-ProcessSafe refuses to terminate critical process 'lsass'"
+Assert-Test ((Stop-ProcessSafe -ProcessName "csrss.exe" 3>$null) -eq $false) "Stop-ProcessSafe refuses to terminate critical process 'csrss.exe'"
+
+Assert-Test ((Test-SafeServiceName -ServiceName "DiagTrack") -eq $true) "Test-SafeServiceName accepts valid identifier 'DiagTrack'"
+Assert-Test ((Test-SafeServiceName -ServiceName "AMD External Events Utility") -eq $true) "Test-SafeServiceName accepts spaced service name"
+Assert-Test ((Test-SafeServiceName -ServiceName "svc*") -eq $false) "Test-SafeServiceName rejects wildcard pattern 'svc*'"
+Assert-Test ((Test-SafeServiceName -ServiceName "..\Evil") -eq $false) "Test-SafeServiceName rejects registry path traversal '..\Evil'"
+Assert-Test ((Test-SafeServiceName -ServiceName "a;calc.exe") -eq $false) "Test-SafeServiceName rejects command separator injection"
+
+Assert-Test ((Set-ServiceStateSafe -ServiceName "..\Evil" -StartupType "Disabled" 3>$null) -eq $false) "Set-ServiceStateSafe rejects registry traversal identifier"
+Assert-Test ((Set-ServiceStateSafe -ServiceName "RpcSs" -StartupType "Disabled" -Whitelist @() 3>$null) -eq $false) "Set-ServiceStateSafe protects immutable core service 'RpcSs' even when whitelist is empty"
+
+$svcControlBlockedAudio = $false
+try { $null = Invoke-ServiceControlSafe -ServiceName "Audiosrv" -Operation "Stop" -Whitelist @("Audiosrv") } catch { $svcControlBlockedAudio = $true }
+Assert-Test $svcControlBlockedAudio "Invoke-ServiceControlSafe blocks Stop on whitelisted service 'Audiosrv'"
+
+$svcControlBlockedCore = $false
+try { $null = Invoke-ServiceControlSafe -ServiceName "RpcSs" -Operation "Disabled" -Whitelist @() } catch { $svcControlBlockedCore = $true }
+Assert-Test $svcControlBlockedCore "Invoke-ServiceControlSafe blocks Disabled on immutable core service 'RpcSs'"
+
+$svcControlBlockedTraversal = $false
+try { $null = Invoke-ServiceControlSafe -ServiceName "bad*svc" -Operation "Start" -Whitelist @() } catch { $svcControlBlockedTraversal = $true }
+Assert-Test $svcControlBlockedTraversal "Invoke-ServiceControlSafe rejects unsafe wildcard service name"
+
+$procViewPath = Join-Path $repoRoot "ui\src\lib\components\ProcessesView.svelte"
+$svcViewPath  = Join-Path $repoRoot "ui\src\lib\components\ServicesView.svelte"
+if ((Test-Path -LiteralPath (Join-Path $repoRoot "ui\src")) -and (Test-Path -LiteralPath $procViewPath)) {
+    Assert-Test (Test-Path -LiteralPath $procViewPath) "ProcessesView.svelte exists for interactive process management UI"
+    Assert-Test ((Get-Content -LiteralPath $svcViewPath -Raw) -match 'onControlService' -and (Get-Content -LiteralPath $svcViewPath -Raw) -match 'onUpdateServiceList') "ServicesView.svelte exposes interactive service control and list mutation handlers"
 }
 
 # ── Summary ────────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "3.2.3"
+$Script:APP_VERSION = "3.3.0"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -139,6 +139,21 @@ function Get-GamingScheduledTaskTargets {
     return $list
 }
 
+$Script:CriticalProtectedProcesses = @(
+    "System", "Idle", "Registry", "Secure System", "Memory Compression",
+    "smss", "csrss", "wininit", "services", "lsass", "lsm", "svchost",
+    "fontdrvhost", "dwm", "winlogon", "LogonUI", "sihost", "taskhostw",
+    "explorer", "ShellExperienceHost", "StartMenuExperienceHost",
+    "SearchHost", "TextInputHost", "LockApp", "RuntimeBroker",
+    "ApplicationFrameHost", "dllhost", "conhost", "OpenConsole",
+    "WindowsTerminal", "ctfmon", "audiodg", "spoolsv",
+    "MsMpEng", "NisSrv", "SecurityHealthService", "SecurityHealthSystray",
+    "SgrmBroker", "WmiPrvSE", "unsecapp", "TrustedInstaller", "TiWorker",
+    "msiexec", "powershell", "pwsh", "cmd", "UltraGamingMode",
+    "com.ultragamingmode.optimizer", "vgk", "vgc", "EasyAntiCheat",
+    "EasyAntiCheat_EOS", "BEService", "FACEIT", "steam", "steamservice", "steamwebhelper"
+)
+
 function Test-ShouldStopWebViewProcess {
     [CmdletBinding()]
     param(
@@ -156,6 +171,126 @@ function Test-ShouldStopWebViewProcess {
     return ($CommandLine -match '(?i)(Widgets\.exe|WidgetService\.exe|WindowsWebExperiencePack)')
 }
 
+function Test-IsProtectedProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$ProcessName = "",
+
+        [Parameter(Mandatory = $false)]
+        [int]$ProcessId = -1,
+
+        [Parameter(Mandatory = $false)]
+        [string]$CommandLine = ""
+    )
+
+    if ($ProcessId -ge 0 -and ($ProcessId -le 4 -or $ProcessId -eq $PID)) {
+        return $true
+    }
+    if ([string]::IsNullOrWhiteSpace($ProcessName)) {
+        return $true
+    }
+    $clean = ($ProcessName.Trim() -replace '(?i)\.exe$', '')
+    if ([string]::IsNullOrWhiteSpace($clean) -or ($clean -notmatch '^[A-Za-z0-9_.\- ]{1,128}$') -or ($clean -match '\.\.')) {
+        return $true
+    }
+    foreach ($crit in $Script:CriticalProtectedProcesses) {
+        if ($clean -ieq $crit.Trim()) {
+            return $true
+        }
+    }
+    if ($clean -ieq 'msedgewebview2') {
+        return (-not (Test-ShouldStopWebViewProcess -CommandLine $CommandLine))
+    }
+    return $false
+}
+
+function Stop-ProcessSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [int]$ProcessId = -1,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ProcessName = ""
+    )
+
+    if ($ProcessId -ge 0 -and ($ProcessId -le 4 -or $ProcessId -eq $PID)) {
+        Write-Warning "Refusing to terminate protected system/self PID: $ProcessId"
+        return $false
+    }
+
+    $targetProc = $null
+    if ($ProcessId -gt 0) {
+        $targetProc = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+        if (-not $targetProc) {
+            Write-Warning "Process PID $ProcessId not found."
+            return $false
+        }
+        $actualClean = ($targetProc.ProcessName -replace '(?i)\.exe$', '')
+        if ([string]::IsNullOrWhiteSpace($ProcessName)) {
+            $ProcessName = $actualClean
+        } else {
+            $expectedClean = ($ProcessName.Trim() -replace '(?i)\.exe$', '')
+            if ($actualClean -ine $expectedClean) {
+                Write-Warning "PID $ProcessId process name mismatch ('$actualClean' vs '$expectedClean'). Aborting."
+                return $false
+            }
+            $ProcessName = $expectedClean
+        }
+    }
+
+    $cmdLine = ""
+    if (($ProcessName.Trim() -replace '(?i)\.exe$', '') -ieq 'msedgewebview2' -and $ProcessId -gt 0) {
+        try {
+            $cim = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+            if ($cim) { $cmdLine = [string]$cim.CommandLine }
+        } catch {}
+    }
+
+    if (Test-IsProtectedProcess -ProcessName $ProcessName -ProcessId $ProcessId -CommandLine $cmdLine) {
+        Write-Warning "Blocked termination of protected OS/application process: '$ProcessName' (PID: $ProcessId)"
+        return $false
+    }
+
+    if ($targetProc) {
+        try {
+            Stop-Process -Id $targetProc.Id -Force -ErrorAction Stop
+            Write-Host "  [x] Terminated process: $($targetProc.ProcessName) (PID: $($targetProc.Id))" -ForegroundColor Yellow
+            return $true
+        } catch {
+            Write-Warning "Failed to terminate PID $($targetProc.Id): $($_.Exception.Message)"
+            return $false
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ProcessName)) {
+        $clean = ($ProcessName.Trim() -replace '(?i)\.exe$', '')
+        $procs = @(Get-Process -Name $clean -ErrorAction SilentlyContinue)
+        if ($procs.Count -eq 0) { return $false }
+        $killedAny = $false
+        foreach ($p in $procs) {
+            $pCmd = ""
+            if ($clean -ieq 'msedgewebview2') {
+                try {
+                    $c = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" -ErrorAction SilentlyContinue
+                    if ($c) { $pCmd = [string]$c.CommandLine }
+                } catch {}
+            }
+            if (Test-IsProtectedProcess -ProcessName $clean -ProcessId $p.Id -CommandLine $pCmd) {
+                continue
+            }
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction Stop
+                Write-Host "  [x] Terminated process: $clean (PID: $($p.Id))" -ForegroundColor Yellow
+                $killedAny = $true
+            } catch {}
+        }
+        return $killedAny
+    }
+    return $false
+}
+
 function Stop-BlacklistedProcesses {
     [CmdletBinding()]
     param(
@@ -165,13 +300,20 @@ function Stop-BlacklistedProcesses {
 
     $webViewCmdLines = $null
     foreach ($name in $ProcessNames) {
-        if ([string]::IsNullOrWhiteSpace($name) -or $name -ieq 'UltraGamingMode') {
+        if ([string]::IsNullOrWhiteSpace($name)) {
             continue
         }
-        $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
+        $cleanName = ($name.Trim() -replace '(?i)\.exe$', '')
+        if ($cleanName -notmatch '^[A-Za-z0-9_.\- ]{1,128}$' -or $cleanName -match '\.\.') {
+            continue
+        }
+        if ($cleanName -ine 'msedgewebview2' -and (Test-IsProtectedProcess -ProcessName $cleanName)) {
+            continue
+        }
+        $procs = Get-Process -Name $cleanName -ErrorAction SilentlyContinue
         if (-not $procs) { continue }
 
-        if ($name -ieq 'msedgewebview2' -and $null -eq $webViewCmdLines) {
+        if ($cleanName -ieq 'msedgewebview2' -and $null -eq $webViewCmdLines) {
             $webViewCmdLines = @{}
             try {
                 Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
@@ -181,16 +323,13 @@ function Stop-BlacklistedProcesses {
         }
 
         foreach ($p in $procs) {
-            if ($p.Id -eq $PID) { continue }
-            if ($name -ieq 'msedgewebview2') {
-                $cmdLine = if ($webViewCmdLines.ContainsKey([int]$p.Id)) { $webViewCmdLines[[int]$p.Id] } else { '' }
-                if (-not (Test-ShouldStopWebViewProcess -CommandLine $cmdLine)) {
-                    continue
-                }
+            $cmdLine = if ($cleanName -ieq 'msedgewebview2' -and $webViewCmdLines.ContainsKey([int]$p.Id)) { $webViewCmdLines[[int]$p.Id] } else { '' }
+            if (Test-IsProtectedProcess -ProcessName $cleanName -ProcessId $p.Id -CommandLine $cmdLine) {
+                continue
             }
             try {
                 Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-                Write-Host "  [x] Terminated running bloat process: $name (PID: $($p.Id))" -ForegroundColor Yellow
+                Write-Host "  [x] Terminated running bloat process: $cleanName (PID: $($p.Id))" -ForegroundColor Yellow
             }
             catch {
                 Write-Verbose "Could not terminate process $($p.Id): $($_.Exception.Message)"
@@ -215,6 +354,11 @@ function New-SystemStateBackup {
     )
 
     Write-Host "`n[*] Creating pre-gaming system snapshot..." -ForegroundColor Cyan
+
+    $staleMarker = Join-Path (Join-Path (Join-Path $Script:BackupDir "QuarantinedShortcuts") "User") ".user_restored"
+    if (Test-Path -LiteralPath $staleMarker) {
+        Remove-Item -LiteralPath $staleMarker -Force -ErrorAction SilentlyContinue
+    }
 
     $transparencyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
     $origTransparency = 1
@@ -783,7 +927,9 @@ function Restore-QuarantinedShortcuts {
         if (-not (Test-Path -LiteralPath $UserStartup)) {
             New-Item -ItemType Directory -Path $UserStartup -Force | Out-Null
         }
-        Get-ChildItem -LiteralPath $userDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem -LiteralPath $userDir -File -Force -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -ne '.user_restored' -and -not ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+        } | ForEach-Object {
             $destName = $_.Name -replace '\.ugm_backup$', ''
             Move-Item -LiteralPath $_.FullName -Destination (Join-Path $UserStartup $destName) -Force -ErrorAction SilentlyContinue
             Write-Host "  [+] Restored user startup shortcut: $destName" -ForegroundColor Green
@@ -799,7 +945,9 @@ function Restore-QuarantinedShortcuts {
         if (-not (Test-Path -LiteralPath $CommonStartup)) {
             New-Item -ItemType Directory -Path $CommonStartup -Force | Out-Null
         }
-        Get-ChildItem -LiteralPath $commonDir -File -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem -LiteralPath $commonDir -File -Force -ErrorAction SilentlyContinue | Where-Object {
+            -not ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
+        } | ForEach-Object {
             $destName = $_.Name -replace '\.ugm_backup$', ''
             Move-Item -LiteralPath $_.FullName -Destination (Join-Path $CommonStartup $destName) -Force -ErrorAction SilentlyContinue
             Write-Host "  [+] Restored common startup shortcut: $destName" -ForegroundColor Green
@@ -813,7 +961,7 @@ function Restore-QuarantinedShortcuts {
     # 3. Restore unsegregated and legacy shortcuts sitting directly in the root of QuarantineDir
     # (e.g. from prior versions or backups like active_state.json)
     $rootFiles = Get-ChildItem -LiteralPath $QuarantineDir -File -Force -ErrorAction SilentlyContinue | Where-Object {
-        $_.Extension -in @(".lnk", ".url", ".ugm_backup")
+        $_.Extension -in @(".lnk", ".url", ".ugm_backup") -and -not ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
     }
     if ($rootFiles -and $rootFiles.Count -gt 0) {
         Write-Host "  [*] Scanning unsegregated / legacy shortcuts in quarantine root..." -ForegroundColor Cyan
@@ -1008,7 +1156,17 @@ function Restore-UserProfileState {
         } else {
             Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restoring_UserDone"
         }
-        Set-ActiveStateSafe -Data $latest | Out-Null
+        $saved = Set-ActiveStateSafe -Data $latest
+        if (-not $saved) {
+            $userMarkerDir = Join-Path (Join-Path $Script:BackupDir "QuarantinedShortcuts") "User"
+            try {
+                if (-not (Test-Path -LiteralPath $userMarkerDir)) {
+                    New-Item -ItemType Directory -Path $userMarkerDir -Force -ErrorAction SilentlyContinue | Out-Null
+                }
+                $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+                [System.IO.File]::WriteAllText((Join-Path $userMarkerDir ".user_restored"), "1", $utf8NoBom)
+            } catch {}
+        }
     }
 
     return $true
@@ -1119,15 +1277,17 @@ function Restore-SystemState {
         }
     }
 
-    # Restore HKLM & HKLM-WOW64 Run items
+    # Restore HKLM & HKLM-WOW64 Run items (validate names to prevent path traversal/corruption)
     if ($stateData -and $stateData.StartupItems) {
         Write-Host "`n[*] Restoring system registry startup items (HKLM)..." -ForegroundColor Cyan
         foreach ($item in $stateData.StartupItems) {
             if ($item.Scope -notin @("HKLM", "HKLM32")) { continue }
+            $itemName = [string]$item.Name
+            if ([string]::IsNullOrWhiteSpace($itemName) -or ($itemName -match '[\\/\r\n]') -or ($itemName -match '\.\.')) { continue }
             $hive = $Script:RunHives[$item.Scope]
             if ($hive -and (Test-Path -LiteralPath $hive)) {
-                Set-ItemProperty -Path $hive -Name $item.Name -Value $item.Value -Force -ErrorAction SilentlyContinue
-                Write-Host "  [+] Restored startup entry: $($item.Name) [$($item.Scope)]" -ForegroundColor Green
+                Set-ItemProperty -LiteralPath $hive -Name $itemName -Value $item.Value -Force -ErrorAction SilentlyContinue
+                Write-Host "  [+] Restored startup entry: $itemName [$($item.Scope)]" -ForegroundColor Green
             }
         }
     }
@@ -1300,6 +1460,11 @@ function Restore-SystemState {
 
     $latest = Get-ActiveStateSafe
     if ($latest) {
+        $userMarkerFile = Join-Path (Join-Path (Join-Path $Script:BackupDir "QuarantinedShortcuts") "User") ".user_restored"
+        if (Test-Path -LiteralPath $userMarkerFile) {
+            Set-StatePropertySafe -StateObject $latest -Name "UserRestored" -Value $true
+            Remove-Item -LiteralPath $userMarkerFile -Force -ErrorAction SilentlyContinue
+        }
         Set-StatePropertySafe -StateObject $latest -Name "SystemRestored" -Value $true
         if ($Scope -eq "All") {
             Set-StatePropertySafe -StateObject $latest -Name "State" -Value "Restored"

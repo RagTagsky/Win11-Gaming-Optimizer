@@ -1,7 +1,7 @@
 [package]
 name = "ultra-gaming-mode"
-version = "3.2.3"
-description = "Ultra Gaming Mode v3.2.3 Native Desktop Application"
+version = "3.3.0"
+description = "Ultra Gaming Mode v3.3.0 Native Desktop Application"
 authors = ["Ultra Gaming Mode Team"]
 edition = "2021"
 build = "build.rs"

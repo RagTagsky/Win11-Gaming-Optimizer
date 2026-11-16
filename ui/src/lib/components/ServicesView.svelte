@@ -4,16 +4,57 @@
     FilterX,
     ListFilter,
     Loader2,
+    Lock,
+    Play,
+    Plus,
     RefreshCw,
     Search,
     ShieldAlert,
     ShieldCheck,
+    Square,
+    Trash2,
     X
   } from '@lucide/svelte';
-  import type { BlacklistServiceItem, ServiceCategory } from '../types';
+  import type {
+    BlacklistServiceItem,
+    ListMutationOperation,
+    ServiceCategory,
+    ServiceControlOperation,
+    ServiceListType
+  } from '../types';
 
   export type ServiceViewMode = 'blacklist' | 'whitelist';
   export type ServiceCategoryFilter = 'all' | ServiceCategory;
+
+  const IMMUTABLE_CORE_SET = new Set([
+    'rpcss',
+    'dcomlaunch',
+    'rpceptmapper',
+    'plugplay',
+    'power',
+    'lsm',
+    'samss',
+    'eventlog',
+    'bfe',
+    'mpssvc',
+    'profsvc',
+    'usermanager',
+    'cryptsvc',
+    'keyiso',
+    'vaultsvc',
+    'coremessagingregistrar',
+    'systemeventsbroker',
+    'brokerinfrastructure',
+    'nsi',
+    'dhcp',
+    'dnscache',
+    'winmgmt',
+    'schedule',
+    'trustedinstaller',
+    'audiosrv',
+    'audioendpointbuilder',
+    'mmcss'
+  ]);
 
   interface Props {
     blacklist: BlacklistServiceItem[];
@@ -22,11 +63,21 @@
     searchQuery: string;
     selectedCategory: ServiceCategoryFilter;
     isLoading: boolean;
+    busyService: string | null;
     loadError: string | null;
     onViewModeChange: (mode: ServiceViewMode) => void;
     onSearchChange: (value: string) => void;
     onCategoryChange: (category: ServiceCategoryFilter) => void;
     onRetry: () => void;
+    onControlService: (serviceName: string, operation: ServiceControlOperation) => Promise<void> | void;
+    onUpdateServiceList: (params: {
+      listType: ServiceListType;
+      serviceName: string;
+      displayName?: string;
+      category?: ServiceCategory;
+      reason?: string;
+      operation: ListMutationOperation;
+    }) => Promise<void> | void;
   }
 
   let {
@@ -36,12 +87,19 @@
     searchQuery,
     selectedCategory,
     isLoading,
+    busyService,
     loadError,
     onViewModeChange,
     onSearchChange,
     onCategoryChange,
-    onRetry
+    onRetry,
+    onControlService,
+    onUpdateServiceList
   }: Props = $props();
+
+  let newServiceName = $state('');
+  let newServiceReason = $state('');
+  let newServiceCategory = $state<ServiceCategory>('System');
 
   const CATEGORY_LABELS: Record<ServiceCategoryFilter, string> = {
     all: 'Все',
@@ -60,6 +118,36 @@
     'Network',
     'System'
   ];
+
+  const ADD_CATEGORIES: ServiceCategory[] = [
+    'System',
+    'Telemetry',
+    'Xbox',
+    'Print',
+    'Network'
+  ];
+
+  function statusLabel(status?: string): string {
+    if (status === 'Running') return 'Работает';
+    if (status === 'Stopped') return 'Остановлена';
+    if (status === 'StartPending') return 'Запуск…';
+    if (status === 'StopPending') return 'Остановка…';
+    if (status === 'Paused') return 'Пауза';
+    if (status === 'NotInstalled') return 'Не установлена';
+    return '';
+  }
+
+  function startTypeLabel(startType?: string): string {
+    if (startType === 'Automatic') return 'Авто';
+    if (startType === 'Manual') return 'Вручную';
+    if (startType === 'Disabled') return 'Откл.';
+    return '';
+  }
+
+  function isImmutableCore(name: string): boolean {
+    const clean = name.trim().toLowerCase().replace(/_[0-9a-f]+$/, '');
+    return IMMUTABLE_CORE_SET.has(name.trim().toLowerCase()) || IMMUTABLE_CORE_SET.has(clean);
+  }
 
   const normalizedQuery = $derived(searchQuery.trim().toLowerCase());
 
@@ -92,6 +180,23 @@
     onSearchChange('');
     onCategoryChange('all');
   }
+
+  async function handleAddServiceSubmit(e: SubmitEvent) {
+    e.preventDefault();
+    const cleanedName = newServiceName.trim();
+    if (!cleanedName) return;
+
+    await onUpdateServiceList({
+      listType: viewMode,
+      serviceName: cleanedName,
+      category: viewMode === 'blacklist' ? newServiceCategory : undefined,
+      reason: viewMode === 'blacklist' ? (newServiceReason.trim() || 'Добавлено пользователем') : undefined,
+      operation: 'add'
+    });
+
+    newServiceName = '';
+    newServiceReason = '';
+  }
 </script>
 
 <div class="space-y-4">
@@ -103,7 +208,7 @@
           Контроль системных служб Windows
         </h1>
         <p class="text-sm text-[var(--text-secondary)]">
-          Временная приостановка фоновых служб во время игры и защищённый белый список ядра ОС.
+          Управление службами в реальном времени, добавление своих служб и защищённый белый список ядра ОС.
         </p>
       </div>
 
@@ -189,6 +294,51 @@
         {/if}
       </div>
     </div>
+
+    <!-- Inline Add Service Form -->
+    <form onsubmit={handleAddServiceSubmit} class="flex flex-col sm:flex-row gap-2 pt-1">
+      <label for="new-service-name" class="sr-only">Системное имя службы</label>
+      <input
+        id="new-service-name"
+        type="text"
+        autocomplete="off"
+        spellcheck={false}
+        bind:value={newServiceName}
+        placeholder={viewMode === 'blacklist'
+          ? 'Имя службы для чёрного списка (например: DiagTrack)…'
+          : 'Имя службы для защиты в белом списке…'}
+        class="ui-input flex-1 rounded-xl px-3.5 py-2 min-h-10 text-sm"
+      />
+      {#if viewMode === 'blacklist'}
+        <label for="new-service-reason" class="sr-only">Причина добавления</label>
+        <input
+          id="new-service-reason"
+          type="text"
+          autocomplete="off"
+          bind:value={newServiceReason}
+          placeholder="Примечание (опционально)…"
+          class="ui-input sm:w-52 rounded-xl px-3.5 py-2 min-h-10 text-sm"
+        />
+        <label for="new-service-cat" class="sr-only">Категория</label>
+        <select
+          id="new-service-cat"
+          bind:value={newServiceCategory}
+          class="ui-input rounded-xl px-3 py-2 min-h-10 text-sm bg-[var(--bg-elevated)]"
+        >
+          {#each ADD_CATEGORIES as cat (cat)}
+            <option value={cat}>{CATEGORY_LABELS[cat]}</option>
+          {/each}
+        </select>
+      {/if}
+      <button
+        type="submit"
+        disabled={!newServiceName.trim() || busyService !== null}
+        class="ui-btn-primary ui-pressable rounded-xl px-4 py-2 min-h-10 text-[0.8125rem] font-medium inline-flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      >
+        <Plus size={15} strokeWidth={2} aria-hidden="true" />
+        <span>Добавить</span>
+      </button>
+    </form>
 
     <!-- Category Filters (only in Blacklist view) -->
     {#if viewMode === 'blacklist'}
@@ -285,6 +435,9 @@
             svc.DisplayName.trim().length > 0 &&
             svc.DisplayName.trim() !== svc.Reason.trim() &&
             svc.DisplayName.trim() !== svc.Name.trim()}
+          {@const sLabel = statusLabel(svc.Status)}
+          {@const stLabel = startTypeLabel(svc.StartType)}
+          {@const isRowBusy = busyService === svc.Name}
           <li class="p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div class="min-w-0 flex-1 space-y-1">
               <div class="flex flex-wrap items-baseline gap-2">
@@ -297,6 +450,15 @@
                 >
                   {svc.Name}
                 </code>
+                {#if sLabel}
+                  <span
+                    class="inline-flex items-center rounded-full px-2 py-0.5 text-[0.7rem] font-medium border {svc.Status === 'Running'
+                      ? 'bg-[var(--status-active-soft)] text-[var(--status-active-text)] border-[var(--status-active-border)]'
+                      : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border-subtle)]'}"
+                  >
+                    {sLabel}{stLabel ? ` · ${stLabel}` : ''}
+                  </span>
+                {/if}
               </div>
 
               {#if showDisplay}
@@ -306,12 +468,68 @@
               {/if}
             </div>
 
-            <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <div class="flex flex-wrap items-center gap-1.5 shrink-0">
               <span
-                class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
+                class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)] mr-1"
               >
                 {CATEGORY_LABELS[svc.Category] ?? svc.Category}
               </span>
+
+              {#if svc.Status && svc.Status !== 'NotInstalled'}
+                <button
+                  type="button"
+                  disabled={busyService !== null}
+                  onclick={() =>
+                    onControlService(
+                      svc.Name,
+                      svc.Status === 'Running' ? 'Stop' : 'Start'
+                    )}
+                  class="{svc.Status === 'Running'
+                    ? 'ui-btn-warn'
+                    : 'ui-btn-secondary'} ui-pressable rounded-lg px-2.5 py-1.5 min-h-8 text-xs font-medium inline-flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                >
+                  {#if isRowBusy}
+                    <Loader2 size={12} strokeWidth={2} class="ui-spin" aria-hidden="true" />
+                  {:else if svc.Status === 'Running'}
+                    <Square size={12} strokeWidth={2} aria-hidden="true" />
+                  {:else}
+                    <Play size={12} strokeWidth={2} aria-hidden="true" />
+                  {/if}
+                  <span>{svc.Status === 'Running' ? 'Стоп' : 'Запуск'}</span>
+                </button>
+              {/if}
+
+              <button
+                type="button"
+                disabled={busyService !== null}
+                onclick={() =>
+                  onUpdateServiceList({
+                    listType: 'whitelist',
+                    serviceName: svc.Name,
+                    operation: 'add'
+                  })}
+                title="Перенести службу в защищённый белый список"
+                class="ui-btn-secondary ui-pressable rounded-lg px-2.5 py-1.5 min-h-8 text-xs font-medium inline-flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+              >
+                <ShieldCheck size={12} strokeWidth={1.75} aria-hidden="true" />
+                <span>Защитить</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={busyService !== null}
+                onclick={() =>
+                  onUpdateServiceList({
+                    listType: 'blacklist',
+                    serviceName: svc.Name,
+                    operation: 'remove'
+                  })}
+                aria-label={`Удалить ${svc.Name} из списка оптимизируемых`}
+                title="Удалить из чёрного списка"
+                class="ui-btn-ghost w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--status-danger-text)] disabled:opacity-50 cursor-pointer"
+              >
+                <Trash2 size={14} strokeWidth={1.75} aria-hidden="true" />
+              </button>
             </div>
           </li>
         {/each}
@@ -341,26 +559,54 @@
     {:else}
       <div class="ui-card rounded-2xl p-4 sm:p-5 space-y-3">
         <p class="text-[0.8125rem] text-[var(--text-secondary)]">
-          Эти критически важные системные компоненты защищены от остановки в любом профиле.
+          Эти критически важные системные компоненты защищены от остановки в любом профиле. Системное ядро отмечено замком.
         </p>
 
         <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
           {#each filteredWhitelist as svcName (svcName)}
+            {@const coreLocked = isImmutableCore(svcName)}
             <li
-              class="rounded-xl px-3.5 py-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center gap-2.5 min-w-0"
+              class="rounded-xl px-3.5 py-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-between gap-2 min-w-0"
             >
-              <ShieldCheck
-                size={15}
-                strokeWidth={1.75}
-                class="text-[var(--status-active-text)] shrink-0"
-                aria-hidden="true"
-              />
-              <code
-                translate="no"
-                class="font-mono text-[0.8125rem] font-medium text-[var(--text-primary)] break-all select-text"
-              >
-                {svcName}
-              </code>
+              <div class="flex items-center gap-2 min-w-0">
+                <ShieldCheck
+                  size={15}
+                  strokeWidth={1.75}
+                  class="text-[var(--status-active-text)] shrink-0"
+                  aria-hidden="true"
+                />
+                <code
+                  translate="no"
+                  class="font-mono text-[0.8125rem] font-medium text-[var(--text-primary)] break-all select-text truncate"
+                >
+                  {svcName}
+                </code>
+              </div>
+
+              {#if coreLocked}
+                <span
+                  title="Критическая служба ядра ОС (удаление заблокировано)"
+                  class="text-[var(--text-muted)] shrink-0"
+                >
+                  <Lock size={13} strokeWidth={1.75} aria-hidden="true" />
+                </span>
+              {:else}
+                <button
+                  type="button"
+                  disabled={busyService !== null}
+                  onclick={() =>
+                    onUpdateServiceList({
+                      listType: 'whitelist',
+                      serviceName: svcName,
+                      operation: 'remove'
+                    })}
+                  aria-label={`Удалить ${svcName} из белого списка`}
+                  title="Удалить из белого списка"
+                  class="ui-btn-ghost w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-[var(--text-muted)] hover:text-[var(--status-danger-text)] cursor-pointer"
+                >
+                  <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              {/if}
             </li>
           {/each}
         </ul>

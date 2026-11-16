@@ -17,12 +17,22 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate", "Debloat", "RestoreDebloat", "ApplyTuning")]
+    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate", "Debloat", "RestoreDebloat", "ApplyTuning", "ServiceControl", "StopProcess")]
     [string]$Action = "Status",
 
     [Parameter()]
     [ValidateSet("All", "System", "User")]
     [string]$Scope = "All",
+
+    [Parameter()]
+    [string]$TargetName = "",
+
+    [Parameter()]
+    [ValidateSet("Start", "Stop", "Automatic", "Manual", "Disabled")]
+    [string]$ServiceOperation = "Stop",
+
+    [Parameter()]
+    [int]$TargetPid = -1,
 
     [switch]$Watchdog,
 
@@ -76,7 +86,7 @@ $whitelist  = (Get-Content -LiteralPath $whitelistPath -Raw -Encoding UTF8 | Con
 $startupCfg = Get-Content -LiteralPath $startupAppsPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 # ── Automatic Update Check on Direct Launch ───────────────────────────────────
-if (-not $SkipUpdateCheck -and -not $Watchdog -and -not $isSystem -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate", "ApplyTuning")) {
+if (-not $SkipUpdateCheck -and -not $Watchdog -and -not $isSystem -and $Action -notin @("ApplyBootMode", "RestoreUser", "CheckUpdate", "ApplyTuning", "ServiceControl", "StopProcess")) {
     $null = Invoke-AppUpdateWorkflow -Passive -TimeoutSeconds 2
 }
 
@@ -1129,6 +1139,30 @@ switch ($Action) {
             Write-Host "[+] Live tuning applied cleanly." -ForegroundColor Green
         } catch {
             Write-Warning "Live ApplyTuning warning: $($_.Exception.Message)"
+        }
+    }
+
+    "ServiceControl" {
+        if ([string]::IsNullOrWhiteSpace($TargetName)) {
+            Write-Error "TargetName is required for ServiceControl."
+            exit 1
+        }
+        try {
+            $null = Invoke-ServiceControlSafe -ServiceName $TargetName -Operation $ServiceOperation -Whitelist $whitelist
+        } catch {
+            Write-Error $_.Exception.Message
+            exit 1
+        }
+    }
+
+    "StopProcess" {
+        if ($TargetPid -le 0 -and [string]::IsNullOrWhiteSpace($TargetName)) {
+            Write-Error "TargetPid or TargetName is required for StopProcess."
+            exit 1
+        }
+        $killed = Stop-ProcessSafe -ProcessId $TargetPid -ProcessName $TargetName
+        if (-not $killed) {
+            exit 1
         }
     }
 }

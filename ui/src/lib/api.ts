@@ -6,7 +6,14 @@ import type {
   HardwareInfo,
   TuningConfig,
   ServicesLists,
-  RepairType
+  RepairType,
+  LiveProcessesSnapshot,
+  ProcessConfigLists,
+  ProcessListType,
+  ServiceListType,
+  ListMutationOperation,
+  ServiceControlOperation,
+  ServiceCategory
 } from './types';
 
 export interface SystemStatus {
@@ -81,41 +88,65 @@ const PREVIEW_SERVICES: ServicesLists = {
       Name: 'DiagTrack',
       DisplayName: 'Функциональные возможности для подключенных пользователей и телеметрия',
       Category: 'Telemetry',
-      Reason: 'Диагностическая телеметрия (Microsoft)'
+      Reason: 'Диагностическая телеметрия (Microsoft)',
+      Status: 'Running',
+      StartType: 'Automatic'
     },
     {
       Name: 'SysMain',
       DisplayName: 'SysMain (Superfetch)',
       Category: 'System',
-      Reason: 'Фоновая предзагрузка данных в ОЗУ (конкуренция за диск и память)'
+      Reason: 'Фоновая предзагрузка данных в ОЗУ (конкуренция за диск и память)',
+      Status: 'Running',
+      StartType: 'Automatic'
     },
     {
       Name: 'XblAuthManager',
       DisplayName: 'Диспетчер проверки подлинности Xbox Live',
       Category: 'Xbox',
-      Reason: 'Служба авторизации Xbox Live'
+      Reason: 'Служба авторизации Xbox Live',
+      Status: 'Stopped',
+      StartType: 'Manual'
     },
     {
       Name: 'Spooler',
       DisplayName: 'Диспетчер печати',
       Category: 'Print',
-      Reason: 'Фоновая очередь печати (не требуется в играх)'
+      Reason: 'Фоновая очередь печати (не требуется в играх)',
+      Status: 'Running',
+      StartType: 'Automatic'
     },
     {
       Name: 'WSearch',
       DisplayName: 'Windows Search',
       Category: 'System',
-      Reason: 'Фоновая индексация файлов (высокий I/O диска)'
+      Reason: 'Фоновая индексация файлов (высокий I/O диска)',
+      Status: 'Running',
+      StartType: 'Automatic'
     },
     {
       Name: 'SSDPSRV',
       DisplayName: 'Обнаружение SSDP',
       Category: 'Network',
-      Reason: 'Сетевое обнаружение UPnP-устройств в фоне'
+      Reason: 'Сетевое обнаружение UPnP-устройств в фоне',
+      Status: 'Stopped',
+      StartType: 'Manual'
     }
   ],
   whitelist: ['AudioSrv', 'Audiosrv', 'Dhcp', 'Dnscache', 'EventLog', 'PlugPlay', 'Power', 'Winmgmt']
 };
+
+let previewBlacklistProcesses = ['Discord', 'Spotify', 'Widgets', 'chrome'];
+let previewProtectedStartupNames = ['ctfmon', 'AMDNoiseSuppression', 'SecurityHealthSystray'];
+let previewProcesses = [
+  { pid: 4, name: 'System', memoryMb: 0.2, isProtected: true },
+  { pid: 812, name: 'csrss', memoryMb: 6.4, isProtected: true },
+  { pid: 940, name: 'lsass', memoryMb: 21.8, isProtected: true },
+  { pid: 4120, name: 'UltraGamingMode', memoryMb: 84.5, isProtected: true },
+  { pid: 11240, name: 'chrome', memoryMb: 412.6, isProtected: false },
+  { pid: 13804, name: 'Discord', memoryMb: 268.1, isProtected: false },
+  { pid: 15220, name: 'Spotify', memoryMb: 194.0, isProtected: false }
+];
 
 export async function fetchSystemStatus(): Promise<SystemStatus> {
   if (isTauri) {
@@ -168,6 +199,164 @@ export async function saveTuningConfig(config: TuningConfig): Promise<TuningConf
 export async function fetchServicesLists(): Promise<ServicesLists> {
   if (isTauri) {
     return await invoke<ServicesLists>('get_services_lists');
+  }
+  return {
+    blacklist: PREVIEW_SERVICES.blacklist.map((item) => ({ ...item })),
+    whitelist: [...PREVIEW_SERVICES.whitelist]
+  };
+}
+
+export async function fetchRunningProcesses(): Promise<LiveProcessesSnapshot> {
+  if (isTauri) {
+    return await invoke<LiveProcessesSnapshot>('get_running_processes');
+  }
+  return {
+    processes: previewProcesses.map((p) => ({
+      ...p,
+      isBlacklisted: previewBlacklistProcesses.some((b) => b.toLowerCase() === p.name.toLowerCase()),
+      isStartupProtected: previewProtectedStartupNames.some(
+        (s) => s.toLowerCase() === p.name.toLowerCase()
+      )
+    })),
+    blacklistProcesses: [...previewBlacklistProcesses],
+    protectedStartupNames: [...previewProtectedStartupNames]
+  };
+}
+
+export async function killProcess(pid: number, name: string): Promise<ActionResult> {
+  if (isTauri) {
+    try {
+      return await invoke<ActionResult>('kill_process', { pid, name });
+    } catch (err) {
+      return {
+        success: false,
+        message: formatIpcError(err)
+      };
+    }
+  }
+  const target = previewProcesses.find((p) => p.pid === pid);
+  if (!target || target.isProtected) {
+    return { success: false, message: `Процесс «${name}» защищён ОС.` };
+  }
+  previewProcesses = previewProcesses.filter((p) => p.pid !== pid);
+  return { success: true, message: `Предпросмотр: процесс «${name}» (PID ${pid}) завершён.` };
+}
+
+export async function updateProcessList(
+  listType: ProcessListType,
+  processName: string,
+  operation: ListMutationOperation
+): Promise<ProcessConfigLists> {
+  if (isTauri) {
+    return await invoke<ProcessConfigLists>('update_process_list', {
+      listType,
+      processName,
+      operation
+    });
+  }
+  const clean = processName.trim().replace(/\.exe$/i, '');
+  if (listType === 'blacklist') {
+    if (operation === 'add') {
+      if (!previewBlacklistProcesses.some((x) => x.toLowerCase() === clean.toLowerCase())) {
+        previewBlacklistProcesses = [...previewBlacklistProcesses, clean];
+      }
+    } else {
+      previewBlacklistProcesses = previewBlacklistProcesses.filter(
+        (x) => x.toLowerCase() !== clean.toLowerCase()
+      );
+    }
+  } else {
+    if (operation === 'add') {
+      if (!previewProtectedStartupNames.some((x) => x.toLowerCase() === clean.toLowerCase())) {
+        previewProtectedStartupNames = [...previewProtectedStartupNames, clean];
+      }
+    } else {
+      previewProtectedStartupNames = previewProtectedStartupNames.filter(
+        (x) => x.toLowerCase() !== clean.toLowerCase()
+      );
+    }
+  }
+  return {
+    blacklistProcesses: [...previewBlacklistProcesses],
+    protectedStartupNames: [...previewProtectedStartupNames]
+  };
+}
+
+export async function controlService(
+  serviceName: string,
+  operation: ServiceControlOperation
+): Promise<ActionResult> {
+  if (isTauri) {
+    try {
+      return await invoke<ActionResult>('control_service', { serviceName, operation });
+    } catch (err) {
+      return {
+        success: false,
+        message: formatIpcError(err)
+      };
+    }
+  }
+  const item = PREVIEW_SERVICES.blacklist.find(
+    (s) => s.Name.toLowerCase() === serviceName.toLowerCase()
+  );
+  if (item) {
+    if (operation === 'Start') item.Status = 'Running';
+    else if (operation === 'Stop') item.Status = 'Stopped';
+    else item.StartType = operation;
+  }
+  return {
+    success: true,
+    message: `Предпросмотр: служба «${serviceName}» -> ${operation}.`
+  };
+}
+
+export async function updateServiceList(params: {
+  listType: ServiceListType;
+  serviceName: string;
+  displayName?: string;
+  category?: ServiceCategory;
+  reason?: string;
+  operation: ListMutationOperation;
+}): Promise<ServicesLists> {
+  if (isTauri) {
+    return await invoke<ServicesLists>('update_service_list', {
+      listType: params.listType,
+      serviceName: params.serviceName,
+      displayName: params.displayName ?? null,
+      category: params.category ?? null,
+      reason: params.reason ?? null,
+      operation: params.operation
+    });
+  }
+  const clean = params.serviceName.trim();
+  if (params.listType === 'blacklist') {
+    if (params.operation === 'add') {
+      PREVIEW_SERVICES.blacklist.push({
+        Name: clean,
+        DisplayName: params.displayName?.trim() || params.reason?.trim() || clean,
+        Category: params.category ?? 'System',
+        Reason: params.reason?.trim() || 'Добавлено пользователем',
+        Status: 'Stopped',
+        StartType: 'Manual'
+      });
+    } else {
+      PREVIEW_SERVICES.blacklist = PREVIEW_SERVICES.blacklist.filter(
+        (s) => s.Name.toLowerCase() !== clean.toLowerCase()
+      );
+    }
+  } else {
+    if (params.operation === 'add') {
+      if (!PREVIEW_SERVICES.whitelist.some((w) => w.toLowerCase() === clean.toLowerCase())) {
+        PREVIEW_SERVICES.whitelist.push(clean);
+      }
+      PREVIEW_SERVICES.blacklist = PREVIEW_SERVICES.blacklist.filter(
+        (s) => s.Name.toLowerCase() !== clean.toLowerCase()
+      );
+    } else {
+      PREVIEW_SERVICES.whitelist = PREVIEW_SERVICES.whitelist.filter(
+        (w) => w.toLowerCase() !== clean.toLowerCase()
+      );
+    }
   }
   return {
     blacklist: PREVIEW_SERVICES.blacklist.map((item) => ({ ...item })),

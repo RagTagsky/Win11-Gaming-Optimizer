@@ -6,9 +6,17 @@ export type ModeAction = 'Enable' | 'Restore';
 
 export type ThemeMode = 'dark' | 'light';
 
-export type TabId = 'dashboard' | 'services' | 'tweaks' | 'repair';
+export type TabId = 'dashboard' | 'processes' | 'services' | 'tweaks' | 'repair';
 
 export type ServiceCategory = 'Xbox' | 'Print' | 'Telemetry' | 'Network' | 'System';
+
+export type ServiceControlOperation = 'Start' | 'Stop' | 'Automatic' | 'Manual' | 'Disabled';
+
+export type ServiceListType = 'blacklist' | 'whitelist';
+
+export type ProcessListType = 'blacklist' | 'protected';
+
+export type ListMutationOperation = 'add' | 'remove';
 
 export type RepairType =
   | 'display'
@@ -43,11 +51,32 @@ export interface BlacklistServiceItem {
   Category: ServiceCategory;
   Reason: string;
   Status?: string;
+  StartType?: string;
 }
 
 export interface ServicesLists {
   blacklist: BlacklistServiceItem[];
   whitelist: string[];
+}
+
+export interface ProcessItem {
+  pid: number;
+  name: string;
+  memoryMb: number;
+  isProtected: boolean;
+  isBlacklisted: boolean;
+  isStartupProtected: boolean;
+}
+
+export interface ProcessConfigLists {
+  blacklistProcesses: string[];
+  protectedStartupNames: string[];
+}
+
+export interface LiveProcessesSnapshot {
+  processes: ProcessItem[];
+  blacklistProcesses: string[];
+  protectedStartupNames: string[];
 }
 
 export interface LogEntry {
@@ -58,7 +87,15 @@ export interface LogEntry {
 }
 
 export interface ErrorBannerState {
-  source: 'status' | 'tuning' | 'services' | 'action' | 'repair' | 'timer' | 'clipboard';
+  source:
+    | 'status'
+    | 'tuning'
+    | 'processes'
+    | 'services'
+    | 'action'
+    | 'repair'
+    | 'timer'
+    | 'clipboard';
   title: string;
   detail: string;
 }

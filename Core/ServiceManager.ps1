@@ -1,3 +1,32 @@
+$Script:ImmutableCoreServices = @(
+    "RpcSs", "DcomLaunch", "RpcEptMapper", "PlugPlay", "Power", "LSM",
+    "SamSs", "EventLog", "BFE", "mpssvc", "ProfSvc", "UserManager",
+    "CryptSvc", "KeyIso", "VaultSvc", "CoreMessagingRegistrar",
+    "SystemEventsBroker", "BrokerInfrastructure", "nsi", "Dhcp",
+    "Dnscache", "Winmgmt", "Schedule", "TrustedInstaller",
+    "Audiosrv", "AudioEndpointBuilder", "MMCSS"
+)
+
+function Test-SafeServiceName {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$ServiceName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ServiceName)) {
+        return $false
+    }
+    $trimmed = $ServiceName.Trim()
+    if ($trimmed.Length -gt 128) {
+        return $false
+    }
+    if ($trimmed -match '(\.\.|[\\/\*\?\[\]"'';&|<>`])') {
+        return $false
+    }
+    return ($trimmed -match '^[A-Za-z0-9_.\- ]{1,128}$')
+}
+
 function Set-ServiceStateSafe {
     [CmdletBinding()]
     param (
@@ -8,8 +37,14 @@ function Set-ServiceStateSafe {
         [switch]$IsRestoring
     )
 
+    if (-not (Test-SafeServiceName -ServiceName $ServiceName)) {
+        Write-Warning "Rejected unsafe service identifier '$ServiceName'."
+        return $false
+    }
+
     $baseInputName = $ServiceName -replace '_[0-9a-fA-F]+$', ''
-    if (-not $IsRestoring -and $Whitelist -and (($Whitelist -contains $ServiceName) -or ($Whitelist -contains $baseInputName))) {
+    $isCoreImmutable = ($Script:ImmutableCoreServices -contains $ServiceName) -or ($Script:ImmutableCoreServices -contains $baseInputName)
+    if (-not $IsRestoring -and ($isCoreImmutable -or ($Whitelist -and (($Whitelist -contains $ServiceName) -or ($Whitelist -contains $baseInputName))))) {
         Write-Warning "Service '$ServiceName' is protected by the Whitelist. Skipping modification."
         return $false
     }
@@ -27,7 +62,8 @@ function Set-ServiceStateSafe {
     }
 
     $resolvedBaseName = $ServiceName -replace '_[0-9a-fA-F]+$', ''
-    if (-not $IsRestoring -and $Whitelist -and (($Whitelist -contains $ServiceName) -or ($Whitelist -contains $resolvedBaseName))) {
+    $isResolvedImmutable = ($Script:ImmutableCoreServices -contains $ServiceName) -or ($Script:ImmutableCoreServices -contains $resolvedBaseName)
+    if (-not $IsRestoring -and ($isResolvedImmutable -or ($Whitelist -and (($Whitelist -contains $ServiceName) -or ($Whitelist -contains $resolvedBaseName))))) {
         Write-Warning "Service '$ServiceName' is protected by the Whitelist. Skipping modification."
         return $false
     }
@@ -46,18 +82,18 @@ function Set-ServiceStateSafe {
     }
     catch {
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
-        if (Test-Path $regPath) {
+        if (Test-Path -LiteralPath $regPath) {
             try {
-                Set-ItemProperty -Path $regPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction Stop
+                Set-ItemProperty -LiteralPath $regPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction Stop
                 if ($ServiceName -match '^(.+)_[0-9a-fA-F]+$') {
                     $baseRegPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$($Matches[1])"
-                    if (Test-Path $baseRegPath) {
-                        Set-ItemProperty -Path $baseRegPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction SilentlyContinue
+                    if (Test-Path -LiteralPath $baseRegPath) {
+                        Set-ItemProperty -LiteralPath $baseRegPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction SilentlyContinue
                     }
                 } else {
                     $instanceRegPaths = Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\$($ServiceName)_*" -ErrorAction SilentlyContinue
                     foreach ($instReg in $instanceRegPaths) {
-                        Set-ItemProperty -Path $instReg.PSPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction SilentlyContinue
+                        Set-ItemProperty -LiteralPath $instReg.PSPath -Name "Start" -Value $startVal -Type DWord -Force -ErrorAction SilentlyContinue
                     }
                 }
                 Write-Host "  [+] Service '$ServiceName' configured via Direct Registry ($StartupType / Start=$startVal)." -ForegroundColor Green
@@ -85,5 +121,73 @@ function Set-ServiceStateSafe {
     }
 
     return $configured
+}
+
+function Invoke-ServiceControlSafe {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("Start", "Stop", "Automatic", "Manual", "Disabled")]
+        [string]$Operation,
+
+        [Parameter(Mandatory = $false)]
+        [string[]]$Whitelist = @()
+    )
+
+    if (-not (Test-SafeServiceName -ServiceName $ServiceName)) {
+        throw "Invalid service identifier: '$ServiceName'"
+    }
+
+    $baseName = $ServiceName -replace '_[0-9a-fA-F]+$', ''
+    $isProtected = ($Script:ImmutableCoreServices -contains $ServiceName) -or
+                   ($Script:ImmutableCoreServices -contains $baseName) -or
+                   ($Whitelist -and (($Whitelist -contains $ServiceName) -or ($Whitelist -contains $baseName)))
+
+    if ($Operation -in @("Stop", "Disabled") -and $isProtected) {
+        throw "Service '$ServiceName' is protected by the Whitelist / Core OS and cannot be stopped or disabled."
+    }
+
+    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if (-not $svc) {
+        $matching = @(Get-Service -Name "$($ServiceName)_*", "$($ServiceName)[0-9]*" -ErrorAction SilentlyContinue)
+        if ($matching.Count -gt 0) {
+            $svc = $matching[0]
+            $ServiceName = $svc.Name
+        } else {
+            throw "Service '$ServiceName' was not found on this system."
+        }
+    }
+
+    switch ($Operation) {
+        "Start" {
+            if ($svc.StartType -eq "Disabled") {
+                Set-Service -Name $ServiceName -StartupType Manual -ErrorAction Stop
+            }
+            if ($svc.Status -ne "Running") {
+                Start-Service -Name $ServiceName -ErrorAction Stop
+            }
+            Write-Host "Service '$ServiceName' started successfully."
+            return $true
+        }
+        "Stop" {
+            if ($svc.Status -ne "Stopped") {
+                Stop-Service -Name $ServiceName -Force -ErrorAction Stop
+            }
+            Write-Host "Service '$ServiceName' stopped successfully."
+            return $true
+        }
+        { $_ -in @("Automatic", "Manual", "Disabled") } {
+            $ok = Set-ServiceStateSafe -ServiceName $ServiceName -StartupType $Operation -Whitelist $Whitelist -IsRestoring:($Operation -ne "Disabled")
+            if (-not $ok) {
+                throw "Failed to set startup type of service '$ServiceName' to $Operation."
+            }
+            Write-Host "Service '$ServiceName' startup type set to $Operation."
+            return $true
+        }
+    }
+    return $false
 }
 

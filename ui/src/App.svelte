@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
+    Activity,
     AlertCircle,
     LayoutDashboard,
     ListChecks,
@@ -11,6 +12,10 @@
   } from '@lucide/svelte';
   import TitleBar from './lib/components/TitleBar.svelte';
   import DashboardView from './lib/components/DashboardView.svelte';
+  import ProcessesView, {
+    type ProcessFilterMode,
+    type ProcessViewMode
+  } from './lib/components/ProcessesView.svelte';
   import ServicesView, {
     type ServiceCategoryFilter,
     type ServiceViewMode
@@ -21,28 +26,39 @@
   import ConfirmDialog from './lib/components/ConfirmDialog.svelte';
   import {
     buildProfileTuningPreset,
+    controlService,
     executeEmergencyRepair,
     executeModeAction,
+    fetchRunningProcesses,
     fetchServicesLists,
     fetchSystemStatus,
     fetchTuningConfig,
     formatIpcError,
     isTauri,
+    killProcess,
     lockTimerResolution,
     resolveProfileFromTuning,
     saveTuningConfig,
-    setWindowTheme
+    setWindowTheme,
+    updateProcessList,
+    updateServiceList
   } from './lib/api';
   import type {
     BlacklistServiceItem,
     ConfirmDialogRequest,
     ErrorBannerState,
     HardwareInfo,
+    ListMutationOperation,
     LogEntry,
     ModeAction,
     ModeState,
     OptimizationProfile,
+    ProcessItem,
+    ProcessListType,
     RepairType,
+    ServiceCategory,
+    ServiceControlOperation,
+    ServiceListType,
     TabId,
     ThemeMode,
     TuningConfig
@@ -50,6 +66,7 @@
 
   const TAB_META: Array<{ id: TabId; label: string }> = [
     { id: 'dashboard', label: 'Обзор' },
+    { id: 'processes', label: 'Процессы' },
     { id: 'services', label: 'Службы' },
     { id: 'tweaks', label: 'Настройки' },
     { id: 'repair', label: 'Обслуживание' }
@@ -81,7 +98,7 @@
 
   let theme = $state<ThemeMode>(getInitialTheme());
   let currentTab = $state<TabId>('dashboard');
-  let tabButtons = $state<Array<HTMLButtonElement | null>>([null, null, null, null]);
+  let tabButtons = $state<Array<HTMLButtonElement | null>>([null, null, null, null, null]);
 
   // System Status & Mode
   let mode = $state<ModeState>('Normal');
@@ -95,6 +112,17 @@
   let timerLocked = $state(false);
   let isTimerLocking = $state(false);
 
+  // Processes Tab State (persists across tabs)
+  let processes = $state<ProcessItem[]>([]);
+  let blacklistProcesses = $state<string[]>([]);
+  let protectedStartupNames = $state<string[]>([]);
+  let processesViewMode = $state<ProcessViewMode>('live');
+  let processesFilterMode = $state<ProcessFilterMode>('all');
+  let processesSearchQuery = $state('');
+  let isProcessesLoading = $state(true);
+  let processBusyKey = $state<string | null>(null);
+  let processesError = $state<string | null>(null);
+
   // Services Tab State (persists across tabs)
   let blacklist = $state<BlacklistServiceItem[]>([]);
   let whitelist = $state<string[]>([]);
@@ -102,6 +130,7 @@
   let servicesSearchQuery = $state('');
   let servicesCategory = $state<ServiceCategoryFilter>('all');
   let isServicesLoading = $state(true);
+  let busyService = $state<string | null>(null);
   let servicesError = $state<string | null>(null);
 
   // Tuning Config State (persists across tabs, serialized save)
@@ -240,6 +269,29 @@
     }
   }
 
+  async function loadProcesses(silent = false) {
+    if (!silent) {
+      isProcessesLoading = true;
+    }
+    try {
+      const snap = await fetchRunningProcesses();
+      processes = snap.processes;
+      blacklistProcesses = snap.blacklistProcesses;
+      protectedStartupNames = snap.protectedStartupNames;
+      processesError = null;
+      clearErrorIfSource('processes');
+    } catch (err) {
+      const detail = formatIpcError(err);
+      processesError = detail;
+      if (!silent) {
+        setError('processes', 'Ошибка сканирования процессов Windows', detail);
+        addLog('error', `Сбой чтения процессов: ${detail}`);
+      }
+    } finally {
+      isProcessesLoading = false;
+    }
+  }
+
   async function loadServices() {
     isServicesLoading = true;
     try {
@@ -285,7 +337,7 @@
         ? 'Интерфейс подключён к модулю управления Windows.'
         : 'Запущен предпросмотр интерфейса вне среды Tauri.'
     );
-    await Promise.all([loadSystemStatus(), loadServices(), loadTuning()]);
+    await Promise.all([loadSystemStatus(), loadServices(), loadTuning(), loadProcesses()]);
     if (blacklist.length > 0) {
       addLog(
         'info',
@@ -558,9 +610,150 @@
     liveAnnouncement = 'Журнал событий очищен.';
   }
 
+  async function handleKillProcess(proc: ProcessItem) {
+    if (processBusyKey !== null || proc.isProtected) return;
+    const approved = await requestConfirm({
+      title: `Завершить процесс «${proc.name}»?`,
+      description: `Вы собираетесь принудительно завершить процесс ${proc.name} (PID ${proc.pid}). Несохранённые данные в этом приложении будут потеряны.`,
+      confirmLabel: 'Завершить процесс',
+      cancelLabel: 'Отмена',
+      tone: 'danger'
+    });
+    if (!approved) return;
+
+    processBusyKey = `kill:${proc.pid}`;
+    try {
+      const res = await killProcess(proc.pid, proc.name);
+      if (res.success) {
+        clearErrorIfSource('processes');
+        addLog('success', res.message);
+        liveAnnouncement = res.message;
+        await loadProcesses(true);
+      } else {
+        setError('processes', 'Не удалось завершить процесс', res.message);
+        addLog('error', res.message);
+      }
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('processes', 'Сбой завершения процесса', detail);
+      addLog('error', detail);
+    } finally {
+      processBusyKey = null;
+    }
+  }
+
+  async function handleUpdateProcessList(
+    listType: ProcessListType,
+    processName: string,
+    operation: ListMutationOperation
+  ) {
+    if (processBusyKey !== null) return;
+    processBusyKey = `proc:${processName}`;
+    try {
+      const updated = await updateProcessList(listType, processName, operation);
+      blacklistProcesses = updated.blacklistProcesses;
+      protectedStartupNames = updated.protectedStartupNames;
+      clearErrorIfSource('processes');
+      const targetLabel = listType === 'blacklist' ? 'чёрного списка' : 'исключений';
+      const actionLabel = operation === 'add' ? 'добавлен в список' : 'удалён из списка';
+      const msg = `Процесс «${processName}» ${actionLabel} (${targetLabel}).`;
+      addLog('success', msg);
+      liveAnnouncement = msg;
+      await loadProcesses(true);
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('processes', 'Ошибка обновления правил процессов', detail);
+      addLog('error', detail);
+    } finally {
+      processBusyKey = null;
+    }
+  }
+
+  async function handleControlService(serviceName: string, operation: ServiceControlOperation) {
+    if (busyService !== null) return;
+    if (operation === 'Stop' || operation === 'Disabled') {
+      const approved = await requestConfirm({
+        title: `Остановить службу «${serviceName}»?`,
+        description:
+          operation === 'Stop'
+            ? `Служба «${serviceName}» будет немедленно остановлена. При необходимости её можно запустить снова в этой же вкладке.`
+            : `Тип запуска службы «${serviceName}» будет переключён на «Отключена».`,
+        confirmLabel: operation === 'Stop' ? 'Остановить' : 'Отключить',
+        cancelLabel: 'Отмена',
+        tone: 'warn'
+      });
+      if (!approved) return;
+    }
+
+    busyService = serviceName;
+    try {
+      const res = await controlService(serviceName, operation);
+      if (res.success) {
+        clearErrorIfSource('services');
+        addLog('success', res.message);
+        liveAnnouncement = res.message;
+        await loadServices();
+      } else {
+        setError('services', `Не удалось управлять службой «${serviceName}»`, res.message);
+        addLog('error', res.message);
+      }
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('services', `Сбой управления службой «${serviceName}»`, detail);
+      addLog('error', detail);
+    } finally {
+      busyService = null;
+    }
+  }
+
+  async function handleUpdateServiceList(params: {
+    listType: ServiceListType;
+    serviceName: string;
+    displayName?: string;
+    category?: ServiceCategory;
+    reason?: string;
+    operation: ListMutationOperation;
+  }) {
+    if (busyService !== null) return;
+    if (params.listType === 'whitelist' && params.operation === 'remove') {
+      const approved = await requestConfirm({
+        title: `Убрать «${params.serviceName}» из белого списка?`,
+        description:
+          'Снятие защиты позволит добавлять эту службу в оптимизируемый список. Критические службы ОС всё равно останутся защищены на уровне бэкенда.',
+        confirmLabel: 'Убрать защиту',
+        cancelLabel: 'Отмена',
+        tone: 'warn'
+      });
+      if (!approved) return;
+    }
+
+    busyService = params.serviceName;
+    try {
+      const updated = await updateServiceList(params);
+      blacklist = updated.blacklist;
+      whitelist = updated.whitelist;
+      clearErrorIfSource('services');
+      const scopeLabel =
+        params.listType === 'blacklist' ? 'оптимизируемых служб' : 'белого списка';
+      const msg =
+        params.operation === 'add'
+          ? `Служба «${params.serviceName}» добавлена в список (${scopeLabel}).`
+          : `Служба «${params.serviceName}» удалена из списка (${scopeLabel}).`;
+      addLog('success', msg);
+      liveAnnouncement = msg;
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('services', 'Ошибка обновления списков служб', detail);
+      addLog('error', detail);
+    } finally {
+      busyService = null;
+    }
+  }
+
   function handleRetryFromGlobalBanner() {
     if (!globalError) return;
     if (globalError.source === 'status') void loadSystemStatus();
+    else if (globalError.source === 'processes') void loadProcesses();
     else if (globalError.source === 'services') void loadServices();
     else if (globalError.source === 'tuning') void loadTuning();
   }
@@ -574,7 +767,11 @@
 
     if (nextIndex !== null) {
       e.preventDefault();
-      currentTab = TAB_META[nextIndex].id;
+      const targetTab = TAB_META[nextIndex].id;
+      currentTab = targetTab;
+      if (targetTab === 'processes') {
+        void loadProcesses(true);
+      }
       tabButtons[nextIndex]?.focus();
     }
   }
@@ -591,7 +788,7 @@
       <div
         role="tablist"
         aria-label="Разделы управления"
-        class="grid grid-cols-2 sm:grid-cols-4 gap-1.5"
+        class="grid grid-cols-2 sm:grid-cols-5 gap-1.5"
       >
         {#each TAB_META as tab, index (tab.id)}
           {@const selected = currentTab === tab.id}
@@ -603,12 +800,19 @@
             aria-selected={selected}
             aria-controls="panel-{tab.id}"
             tabindex={selected ? 0 : -1}
-            onclick={() => (currentTab = tab.id)}
+            onclick={() => {
+              currentTab = tab.id;
+              if (tab.id === 'processes') {
+                void loadProcesses(true);
+              }
+            }}
             onkeydown={(e) => handleTabKeyDown(e, index)}
             class="ui-tab ui-pressable rounded-xl px-3 py-2.5 min-h-10 text-sm font-medium flex items-center justify-center gap-2 cursor-pointer"
           >
             {#if tab.id === 'dashboard'}
               <LayoutDashboard size={16} strokeWidth={1.75} aria-hidden="true" />
+            {:else if tab.id === 'processes'}
+              <Activity size={16} strokeWidth={1.75} aria-hidden="true" />
             {:else if tab.id === 'services'}
               <ListChecks size={16} strokeWidth={1.75} aria-hidden="true" />
             {:else if tab.id === 'tweaks'}
@@ -618,7 +822,7 @@
             {/if}
 
             <span>
-              {tab.label}{#if tab.id === 'services' && blacklist.length > 0}&nbsp;<span class="tabular-nums opacity-85">({blacklist.length})</span>{/if}
+              {tab.label}{#if tab.id === 'services' && blacklist.length > 0}&nbsp;<span class="tabular-nums opacity-85">({blacklist.length})</span>{:else if tab.id === 'processes' && processes.length > 0}&nbsp;<span class="tabular-nums opacity-85">({processes.length})</span>{/if}
             </span>
           </button>
         {/each}
@@ -650,7 +854,7 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-2 shrink-0">
-            {#if globalError.source === 'status' || globalError.source === 'services' || globalError.source === 'tuning'}
+            {#if globalError.source === 'status' || globalError.source === 'processes' || globalError.source === 'services' || globalError.source === 'tuning'}
               <button
                 type="button"
                 onclick={handleRetryFromGlobalBanner}
@@ -712,6 +916,31 @@
       </div>
 
       <div
+        id="panel-processes"
+        role="tabpanel"
+        aria-labelledby="tab-processes"
+        hidden={currentTab !== 'processes'}
+      >
+        <ProcessesView
+          {processes}
+          {blacklistProcesses}
+          {protectedStartupNames}
+          viewMode={processesViewMode}
+          filterMode={processesFilterMode}
+          searchQuery={processesSearchQuery}
+          isLoading={isProcessesLoading}
+          busyKey={processBusyKey}
+          loadError={processesError}
+          onViewModeChange={(m) => (processesViewMode = m)}
+          onFilterModeChange={(f) => (processesFilterMode = f)}
+          onSearchChange={(q) => (processesSearchQuery = q)}
+          onRefresh={() => loadProcesses()}
+          onKillProcess={handleKillProcess}
+          onUpdateList={handleUpdateProcessList}
+        />
+      </div>
+
+      <div
         id="panel-services"
         role="tabpanel"
         aria-labelledby="tab-services"
@@ -724,11 +953,14 @@
           searchQuery={servicesSearchQuery}
           selectedCategory={servicesCategory}
           isLoading={isServicesLoading}
+          {busyService}
           loadError={servicesError}
           onViewModeChange={(m) => (servicesViewMode = m)}
           onSearchChange={(q) => (servicesSearchQuery = q)}
           onCategoryChange={(c) => (servicesCategory = c)}
           onRetry={loadServices}
+          onControlService={handleControlService}
+          onUpdateServiceList={handleUpdateServiceList}
         />
       </div>
 
