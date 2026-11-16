@@ -1,22 +1,26 @@
-# ⚡ Ultra Gaming Mode v3.2.1 — Self-Contained Portable & Installer Runtime
+# ⚡ Ultra Gaming Mode v3.2.2 — WebView2 Self-Termination Fix & Blank-Window Prevention
 
-**Ultra Gaming Mode v3.2.1** makes both the standalone **`UltraGamingMode.exe`** and the **`UltraGamingMode-Setup.exe` (NSIS)** / **`UltraGamingMode.msi` (MSI)** installers 100% self-contained out of the box—requiring zero repository files or external folders on any Windows 10/11 PC.
-
----
-
-## 🔧 What's Fixed in v3.2.1
-
-- **All Scripts & Configs Embedded Inside `UltraGamingMode.exe`:** Compiled `UltraGamingMode.ps1`, `UltraGamingMode.bat`, `Core\*.ps1`, `Config\*.json`, and `Tests\Verify-UniversalEngine.ps1` directly into the Rust/Tauri executable. Launching the standalone `.exe` anywhere (`Desktop`, `Downloads`, USB drive, another PC) automatically materializes the runtime into `%ProgramData%\UltraGamingMode` (preserving user-edited `Config\tuning.json` and `Backups\`) without cluttering the launch folder.
-- **Included Inside NSIS & MSI Installers (`bundle.resources`):** Bundled `UltraGamingMode.ps1`, `UltraGamingMode.bat`, `Core\*.ps1`, `Config\*.json`, and `Tests\Verify-UniversalEngine.ps1` directly inside `UltraGamingMode-Setup.exe` and `UltraGamingMode.msi` so every file is present alongside `UltraGamingMode.exe` immediately after installation (`%LOCALAPPDATA%\UltraGamingMode\` or `Program Files\UltraGamingMode\`), with `Backups\` permissions configured cleanly for Boot-3 `HKLM\RunOnce` user-session restoration.
-- **Clean Cyrillic / OEM Output Decoding:** Added line-by-line UTF-8, UTF-16LE, and Win32 OEM (`GetOEMCP` + `MultiByteToWideChar`) decoding for PowerShell stdout/stderr in Rust, eliminating garbled mojibake in error banners and console logs when localized Windows PowerShell errors occur.
-- **Explicit Service List Error Reporting & Standalone Self-Test Fix:** Removed silent `Ok(...)` swallowing in `get_services_lists` when config JSON files fail to read/parse, and updated `Tests\Verify-UniversalEngine.ps1` root detection (`ProjectRoot`) to pass identically in packaged standalone/installed environments as well as `.git` clones (**325/325** PowerShell tests + **6/6** Rust unit tests).
+**Ultra Gaming Mode v3.2.2** resolves the solid white window crash triggered after enabling Gaming Mode or during WebView2 initialization on Windows 11, keeping the **Tauri v2 + Svelte 5** GUI alive and responsive throughout every operation.
 
 ---
 
-## ✨ Highlights from v3.2.0 (Included in v3.2.1)
+## 🔧 What's Fixed in v3.2.2
 
-- **Fluent UI Overhaul & WCAG AA Accessibility (`ui/`):** Balanced Dark/Light theme system (`Fluent-баланс`), `@media (prefers-contrast: more)`, Windows High Contrast (`forced-colors: active`), `prefers-reduced-motion` gating, WAI-ARIA `tablist` arrow-key navigation, `ConfirmDialog` `<dialog>` modals for destructive/system actions, `role="alert"` IPC error banners, validated numeric queue sizing (`32–4096`) with rollback, and flicker-free DWM theme sync.
-- **Core Low-Latency & Safety Engine:** Lossless `REG_BINARY` / `REG_MULTI_SZ` snapshot round-trips, live `-Action ApplyTuning`, full 14-key Win11 Debloat rollback, NVIDIA GeForce DPC & opt-in P-State control, 9 power latency settings, 11 NDIS properties, USB hub idle-suspend suppression, MMCSS `Tasks\Audio`, and DirectX `EnablePreemption`.
+- **Protected UI WebView2 & Windows Search Processes (`Config/startup_apps.json`, `Core/StateEngine.ps1`):**
+  - Removed indiscriminate `"msedgewebview2"` killing from `BlacklistProcesses` (which previously terminated `UltraGamingMode.exe`'s own WebView2 renderer process during `-Action Enable`, causing the window to go blank white!).
+  - Added `Test-ShouldStopWebViewProcess` and PID/name guards inside `Stop-BlacklistedProcesses` so even explicit WebView2 sweeps strictly protect `UltraGamingMode`, `SearchHost`, `TextInputHost`, `StartMenuExperienceHost`, `ShellExperienceHost`, and `LockApp`, targeting only Windows Widgets hosts.
+- **Zero-Flash Dark Window Background & Boot Guard (`ui/src-tauri/tauri.conf.json`, `ui/index.html`, `ui/src-tauri/src/lib.rs`):**
+  - Configured explicit dark `"backgroundColor": "#0c0e12"` on the main Tauri window and pre-CSS theme background styling in `index.html`, synchronized via `window.set_background_color(...)` on Dark/Light toggle.
+  - Added an early `index.html` boot error fallback panel inside `#app` so uncaught startup exceptions never leave a blank window.
+- **Non-Blocking Async IPC Commands (`ui/src-tauri/src/lib.rs`):**
+  - Moved `get_system_status`, `get_tuning_config`, `save_tuning_config`, `get_services_lists`, `lock_timer_resolution`, `execute_mode_action`, and `execute_emergency_repair` onto `tauri::async_runtime::spawn_blocking` and warmed up the standalone workspace in a background thread during `.setup()`, preventing WebView2 UI thread stalls on startup.
+
+---
+
+## ✨ Highlights from v3.2.1 (Included in v3.2.2)
+
+- **Self-Contained `UltraGamingMode.exe` & `NSIS`/`MSI` Installers:** All 10 runtime scripts, JSON configs, and self-tests are embedded inside `UltraGamingMode.exe` (`include_bytes!` -> `%ProgramData%\UltraGamingMode`) AND packaged cleanly inside `UltraGamingMode-Setup.exe` & `UltraGamingMode.msi` (`bundle.resources`), with UTF-8/UTF-16LE/Win32 OEM (`GetOEMCP`) error decoding.
+- **Fluent UI Overhaul & Extended Optimizer:** `Fluent-баланс` Dark/Light theme system with WCAG AA / High Contrast, ARIA keyboard navigation, modal `<dialog>` confirmations, lossless `REG_BINARY`/`REG_MULTI_SZ` snapshot recovery, live `-Action ApplyTuning`, and 14-key Win11 Debloat rollback.
 
 ---
 
@@ -29,4 +33,4 @@ Built via `Build-Release.ps1`:
 
 ---
 
-**Full Changelog**: https://github.com/RagTagsky/Win11-Gaming-Optimizer/compare/v3.2.0...v3.2.1
+**Full Changelog**: https://github.com/RagTagsky/Win11-Gaming-Optimizer/compare/v3.2.1...v3.2.2

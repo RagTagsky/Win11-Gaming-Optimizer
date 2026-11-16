@@ -1,14 +1,14 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode для Windows 11
-### *Native Desktop, Fluent UI & Competitive Low-Latency Edition (v3.2.1)*
+### *Native Desktop, Fluent UI & Competitive Low-Latency Edition (v3.2.2)*
 
 **Высокоточный оптимизатор задержек (input latency), фреймтайма и универсальной аппаратной части с нулевым риском для Windows 10/11.**  
 Оснащен доступным нативным графическим интерфейсом для Windows 11 (Tauri v2 + Rust + Svelte 5) в стиле Fluent с поддержкой Темной и Светлой тем (WCAG AA, системный High Contrast и `prefers-reduced-motion`), временно выгружает фоновый мусор, приостанавливает синхронное сканирование диска Защитником, автоматически определяет и адаптируется к ЛЮБОМУ ПК (процессоры Intel/AMD, видеокарты NVIDIA/AMD/Intel, защита 8 ГБ ОЗУ Low-RAM Guard, 100% защита механических HDD от фризов), переводит GPU и PCIe сетевые карты в режим MSI Mode, ускоряет сетевой трафик через Winsock AFD Fast-Path (64KB), синхронизирует системные таймеры, активирует HAGS, обеспечивает аварийный ремонт компонентов в 1 клик и гарантирует 100% автоматическое безопасное восстановление при следующей перезагрузке.
 
 [![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
 [![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Версия](https://img.shields.io/badge/Версия-v3.2.1--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
+[![Версия](https://img.shields.io/badge/Версия-v3.2.2--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
 [![Лицензия: MIT](https://img.shields.io/badge/Лицензия-MIT-success.svg?style=for-the-badge)](LICENSE)
 [![Zero-Risk Сторож](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#гарантия-безопасности-и-fail-safe-сторож)
 [![Универсальное оборудование](https://img.shields.io/badge/Платформа-Intel%20%2B%20AMD%20%7C%20NVIDIA-ED1C24?style=for-the-badge)](#универсальный-модуль-автоопределения-оборудования)
@@ -55,9 +55,9 @@
   - [16. Синхронизация системных таймеров BCDedit](#16-синхронизация-системных-таймеров-bcdedit)
   - [17. Высокопроизводительный стек TCP Gaming](#17-высокопроизводительный-стек-tcp-gaming)
   - [18. Аппаратное планирование GPU (HAGS)](#18-аппаратное-планирование-gpu-hags)
-  - [19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации (v3.2.1)](#19-тюнинг-фреймтайма-ring-0-ifeo-и-топовые-оптимизации-v321)
+  - [19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации (v3.2.2)](#19-тюнинг-фреймтайма-ring-0-ifeo-и-топовые-оптимизации-v322)
 - [Быстрый старт](#быстрый-старт)
-  - [Вариант А: Нативное десктопное приложение GUI (v3.2.1 - рекомендуется)](#вариант-а-нативное-десктопное-приложение-gui-v321---рекомендуется)
+  - [Вариант А: Нативное десктопное приложение GUI (v3.2.2 - рекомендуется)](#вариант-а-нативное-десктопное-приложение-gui-v322---рекомендуется)
   - [Вариант Б: Интерактивное меню TUI](#вариант-б-интерактивное-меню-tui)
   - [Вариант В: Использование через PowerShell CLI](#вариант-в-использование-через-powershell-cli)
 - [Справочник меню и команд CLI](#справочник-меню-и-команд-cli)
@@ -76,7 +76,7 @@
 - **Потерям плавности на границах кадров (Frame Boundary Spikes):** Вторичные системные потоки перехватывают ядра ЦП у основного потока рендеринга.
 - **Провалам 1% Low FPS:** Ощутимые подергивания картинки и "тяжелый" прицел даже при высоком среднем FPS.
 
-**Ultra Gaming Mode v3.2.1** устраняет эти проблемы без деструктивного вмешательства в систему. В отличие от сомнительных твикеров и скриптов-деблоатеров, которые ломают систему навсегда, ломают доступ к микрофону или вызывают черные экраны на мониторах DisplayPort, Ultra Gaming Mode использует **обратимый цикл на базе снимков состояния**:
+**Ultra Gaming Mode v3.2.2** устраняет эти проблемы без деструктивного вмешательства в систему. В отличие от сомнительных твикеров и скриптов-деблоатеров, которые ломают систему навсегда, ломают доступ к микрофону или вызывают черные экраны на мониторах DisplayPort, Ultra Gaming Mode использует **обратимый цикл на базе снимков состояния**:
 
 ```
 [Штатная Windows] ──(Подготовка)──> [Снимок системы JSON] ──(Перезагрузка)──> [Ultra Gaming Mode]
@@ -89,7 +89,7 @@
 
 ## 🛠️ Универсальный модуль автоопределения оборудования
 
-Ultra Gaming Mode v3.2.1 оснащен автономным движком обнаружения аппаратной конфигурации (`Get-HardwareProfile`), который детально опрашивает архитектуру вашего ПК на этапе диагностики, подготовки к запуску и в момент загрузки. Вместо применения слепых универсальных твиков оптимизатор точно определяет топологию процессора, шину видеокарты, объем оперативной памяти и типы накопителей, подстраивая системные и драйверные оптимизации под физические параметры конкретного ПК.
+Ultra Gaming Mode v3.2.2 оснащен автономным движком обнаружения аппаратной конфигурации (`Get-HardwareProfile`), который детально опрашивает архитектуру вашего ПК на этапе диагностики, подготовки к запуску и в момент загрузки. Вместо применения слепых универсальных твиков оптимизатор точно определяет топологию процессора, шину видеокарты, объем оперативной памяти и типы накопителей, подстраивая системные и драйверные оптимизации под физические параметры конкретного ПК.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -277,8 +277,8 @@ Ultra Gaming Mode v3.2.1 оснащен автономным движком об
 - При выходе из режима защита автоматически включается обратно.
 
 ### 4. Жесткая выгрузка фонового софта
-- **Принудительно завершаются:** Браузеры (`firefox`, `chrome`, `msedge`), `Telegram`, `Discord`, `Spotify`, `EpicGamesLauncher`, `CrossDeviceResume` (Связь с телефоном), видеооверлей AMD (`amdow`, `AMDRSServ`), виджеты (`msedgewebview2`), облачные диски (`GoogleDriveFS`), фоновые апдейтеры.
-- **Строго защищены:** Запущенная игра, **Steam**, **FACEIT Client**, видеодрайвер AMD Radeon (`atieclxx`), **MSI Afterburner / RivaTuner**, **Process Lasso** (`ProcessGovernor`), **Apple Mobile Device Service** (USB-модем), поиск меню Пуск Windows 11 (`SearchHost`, `TextInputHost`).
+- **Принудительно завершаются:** Браузеры (`firefox`, `chrome`, `msedge`), `Telegram`, `Discord`, `Spotify`, `EpicGamesLauncher`, `CrossDeviceResume` (Связь с телефоном), видеооверлей AMD (`amdow`, `AMDRSServ`), виджеты (`Widgets`), облачные диски (`GoogleDriveFS`), фоновые апдейтеры.
+- **Строго защищены:** Запущенная игра, **Steam**, **FACEIT Client**, видеодрайвер AMD Radeon (`atieclxx`), **MSI Afterburner / RivaTuner**, **Process Lasso** (`ProcessGovernor`), **Apple Mobile Device Service** (USB-модем), поиск меню Пуск Windows 11 (`SearchHost`, `TextInputHost`), а также процессы WebView2 самого приложения (`UltraGamingMode.exe`).
 - **Изолированный карантин ярлыков автозагрузки:** Ярлыки автозапуска (`.lnk`, `.url`) из пользовательской (`AppData\...\Startup`) и общей системной (`ProgramData\...\Startup`) папок перемещаются в изолированные подкаталоги (`Backups\QuarantinedShortcuts\User` и `Backups\QuarantinedShortcuts\ProgramData`). Использование `-LiteralPath` гарантирует защиту от ошибок синтаксиса подстановочных знаков для имен со скобками (например, `Game [Modded].lnk`), а при выходе ярлыки возвращаются в свои исходные директории без конфликтов имен.
 
 ### 5. Отключение виджетов Windows 11 и веб-поиска Bing
@@ -351,7 +351,7 @@ Ultra Gaming Mode v3.2.1 оснащен автономным движком об
 - Автоматически отключается на видеокартах AMD RDNA2/Polaris (`HwSchMode = 1`), устраняя задокументированные микрозаикания в движке Source 2 (CS2).
 - Полностью резервируется в снимке `active_state.json` и восстанавливается при выходе.
 
-### 19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации (v3.2.1)
+### 19. Тюнинг фреймтайма, Ring-0 IFEO и топовые оптимизации (v3.2.2)
 - **Winsock AFD Fast-Path (64 КБ) и NDIS Multi-Core RSS:** Устанавливает `FastSendDatagramThreshold = 65536`, `FastCopyReceiveThreshold = 65536`, `DefaultSendWindow = 65536` и `DefaultReceiveWindow = 65536` в ветке `HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters`, позволяя игровым UDP-пакетам размером до 64 КБ проходить через сокеты без внутренней буферизации ядра, а также включает `MaxNumRssCpus = 4` в `Services\NDIS\Parameters` для распределения сетевых прерываний по ядрам процессора.
 - **Отключение телеметрии питания ядра и консолидация процессов:** Отключает фоновую телеметрию энергопотребления (`DisableTaggedEnergyLogging = 1`, `TelemetryMaxApplication = 0`, `TelemetryMaxTagPerApplication = 0` в `Control\Power\EnergyEstimation\TaggedEnergy`), коалесценцию таймеров (`CoalescingTimerInterval = 0`) и гибридный быстрый запуск (`HiberbootEnabled = 0`), а также объединяет системные процессы `svchost.exe` (`SvcHostSplitThresholdInKB = 67108864` на ПК с >= 16 ГБ ОЗУ; автоматически пропускается на `LowRamProfile`).
 - **Анти-статтер AMD Radeon DXNAVI и блокировка глубокого сна GPU:** Наряду с отключением энергосбережения шины PCIe (`EnableAspmL0s = 0`, `EnableAspmL1 = 0`) и удержанием кэша шейдеров AMD UMD в режиме `Always On (0x32, 0x00)`, задает `StutterMode = 0` и `PP_SclkDeepSleepDisable = 1` в ветках драйвера AMD (`{4d36e968-e325-11ce-bfc1-08002be10318}`), устраняя микрофризы от сброса частот DXNAVI.
@@ -369,9 +369,9 @@ Ultra Gaming Mode v3.2.1 оснащен автономным движком об
 
 ## 🚀 Быстрый старт
 
-### Вариант А: Нативное десктопное приложение GUI (v3.2.1 - рекомендуется)
+### Вариант А: Нативное десктопное приложение GUI (v3.2.2 - рекомендуется)
 
-Ultra Gaming Mode v3.2.1 представляет собой полностью автономное приложение для Windows 11 на базе **Tauri v2 (Rust)** и **Svelte 5**: все скрипты PowerShell, JSON-конфигурации и тесты целостности вшиты внутрь единого **`UltraGamingMode.exe`** и также включаются установщиками **`UltraGamingMode-Setup.exe` (NSIS)** и **`UltraGamingMode.msi`**. Интерфейс поддерживает сбалансированные **Темную и Светлую темы** (переключатель `Светлая` / `Тёмная` в заголовке окна сохраняет выбор в `localStorage` и синхронизируется с нативной рамкой DWM), контрастность по WCAG AA / 1.4.11, системный High Contrast (`forced-colors: active`), `prefers-reduced-motion`, навигацию по вкладкам с клавиатуры (`role="tablist"` + стрелки/`Home`/`End`), явные баннеры ошибок `role="alert"` и сохранение состояния вкладок:
+Ultra Gaming Mode v3.2.2 представляет собой полностью автономное приложение для Windows 11 на базе **Tauri v2 (Rust)** и **Svelte 5**: все скрипты PowerShell, JSON-конфигурации и тесты целостности вшиты внутрь единого **`UltraGamingMode.exe`** и также включаются установщиками **`UltraGamingMode-Setup.exe` (NSIS)** и **`UltraGamingMode.msi`**. Интерфейс поддерживает сбалансированные **Темную и Светлую темы** (переключатель `Светлая` / `Тёмная` в заголовке окна сохраняет выбор в `localStorage` и синхронизируется с нативной рамкой DWM), контрастность по WCAG AA / 1.4.11, системный High Contrast (`forced-colors: active`), `prefers-reduced-motion`, навигацию по вкладкам с клавиатуры (`role="tablist"` + стрелки/`Home`/`End`), явные баннеры ошибок `role="alert"` и сохранение состояния вкладок:
 
 1. Запустите переносимый **`UltraGamingMode.exe`** из любой папки (или установленный ярлык от `UltraGamingMode-Setup.exe` / `UltraGamingMode.msi`; приложение автоматически запросит права Администратора через системный UAC).
 2. **Вкладка «Обзор»**:
@@ -402,7 +402,7 @@ Ultra Gaming Mode v3.2.1 представляет собой полностью 
 
 ```
 ============================================================
-           ULTRA GAMING MODE CONTROLLER  v3.2.1
+           ULTRA GAMING MODE CONTROLLER  v3.2.2
             Universal Hardware Adaptive Suite
 ============================================================
 
@@ -511,7 +511,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
-├── UltraGamingMode.exe              # Автономное десктопное приложение GUI (v3.2.1, Tauri v2, встроенные скрипты и конфиги)
+├── UltraGamingMode.exe              # Автономное десктопное приложение GUI (v3.2.2, Tauri v2, встроенные скрипты и конфиги)
 ├── UltraGamingMode.bat              # Интерактивное меню с автоматическим запросом прав
 ├── UltraGamingMode.ps1              # Основной оркестратор и контроллер PowerShell
 ├── Build-Release.ps1                # Автоматическая сборка Tauri, упаковка .bin/ и генерация SHA256SUMS

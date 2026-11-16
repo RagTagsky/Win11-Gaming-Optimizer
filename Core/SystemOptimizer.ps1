@@ -1241,7 +1241,7 @@ function Set-WindowsWidgetsAndSearchGamingState {
             Set-ItemProperty -Path $expPol -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         }
 
-        # 2. Disable Taskbar Widgets (removes 6 msedgewebview2 processes)
+        # 2. Disable Taskbar Widgets safely (terminates only Widgets host without touching UltraGamingMode or Search WebView2)
         $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
         if (Test-Path $advPath) {
             Set-ItemProperty -Path $advPath -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
@@ -1251,8 +1251,9 @@ function Set-WindowsWidgetsAndSearchGamingState {
         if (Test-Path $dshPath) {
             Set-ItemProperty -Path $dshPath -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
         }
+        Get-Process -Name "Widgets" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-        Write-Host "  [+] Widgets and Bing Start search disabled (msedgewebview2 suppressed)." -ForegroundColor Green
+        Write-Host "  [+] Widgets and Bing Start search disabled (UI WebView2 preserved)." -ForegroundColor Green
     }
     else {
         Write-Host "[*] Restoring Windows Widgets and Start search..." -ForegroundColor Cyan
@@ -3356,7 +3357,7 @@ function Set-ExtendedGamingOptimizations {
         [Parameter(Mandatory = $false)] [string[]]$Whitelist
     )
 
-    Write-Host "[*] Applying v3.2.1 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying v3.2.2 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
     $targets = @(Get-ExtendedGamingTargets -HardwareProfile $HardwareProfile -Whitelist $Whitelist)
     $applied = Set-RegistryTargets -Targets $targets
     $groups = ($targets | ForEach-Object { $_.Group } | Sort-Object -Unique) -join ", "

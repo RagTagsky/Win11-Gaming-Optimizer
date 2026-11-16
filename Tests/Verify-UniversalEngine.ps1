@@ -602,7 +602,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.2.1") "Get-AppCurrentVersion returns expected suite version '3.2.1'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.2.2") "Get-AppCurrentVersion returns expected suite version '3.2.2'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -610,7 +610,7 @@ $vBare     = ConvertTo-SemVer "2.8"
 $vPadded   = ConvertTo-SemVer "2.8.0"
 $vPatch    = ConvertTo-SemVer "v2.8.1"
 $vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.2.1"
+$vMajor    = ConvertTo-SemVer "v3.2.2"
 $vSuffix   = ConvertTo-SemVer "v2.8-Universal"
 $vBuild    = ConvertTo-SemVer "v2.8.0+build123"
 $vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
@@ -627,7 +627,7 @@ Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer ret
 # 12.3 SemVer Comparison Contracts
 Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
 Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.1 is correctly recognized as newer than v2.8"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.2 is correctly recognized as newer than v2.8"
 Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
 $vOld = ConvertTo-SemVer "v2.7"
 Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
@@ -858,6 +858,11 @@ $startupCfgFile = Join-Path $PSScriptRoot "..\Config\startup_apps.json"
 $startupCfgJson = Get-Content -LiteralPath $startupCfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
 $searchBlacklisted = ($startupCfgJson.BlacklistProcesses -contains "SearchHost" -or $startupCfgJson.BlacklistProcesses -contains "TextInputHost")
 Assert-Test ($searchBlacklisted -eq $false) "Config\startup_apps.json does not blacklist SearchHost or TextInputHost (preserves Start menu search)"
+$webviewKilled = ($startupCfgJson.BlacklistProcesses -contains "msedgewebview2" -or $startupCfgJson.BlacklistProcesses -contains "UltraGamingMode")
+Assert-Test ($webviewKilled -eq $false) "Config\startup_apps.json does not blanket-kill msedgewebview2 or UltraGamingMode UI"
+Assert-Test ((Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=UltraGamingMode.exe --user-data-dir="C:\Users\u\AppData\Local\com.ultragamingmode.optimizer\EBWebView"') -eq $false) "Test-ShouldStopWebViewProcess protects UltraGamingMode WebView2 renderer"
+Assert-Test ((Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=SearchHost.exe') -eq $false) "Test-ShouldStopWebViewProcess protects SearchHost WebView2 renderer"
+Assert-Test ((Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=Widgets.exe') -eq $true) "Test-ShouldStopWebViewProcess targets only Windows Widgets WebView2 helpers"
 
 # 14.7 Core Services & Windows Search Repair Contract in Repair-CoreServices
 $repairDef = (Get-Command Repair-CoreServices).Definition

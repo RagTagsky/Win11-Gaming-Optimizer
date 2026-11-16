@@ -122,7 +122,7 @@
       class="max-[440px]:hidden shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
       data-tauri-drag-region
     >
-      v3.2.1
+      v3.2.2
     </span>
   </div>
 

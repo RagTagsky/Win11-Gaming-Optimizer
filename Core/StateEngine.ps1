@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "3.2.1"
+$Script:APP_VERSION = "3.2.2"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -139,6 +139,23 @@ function Get-GamingScheduledTaskTargets {
     return $list
 }
 
+function Test-ShouldStopWebViewProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$CommandLine
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) {
+        return $false
+    }
+    # Protect Ultra Gaming Mode's own WebView2 renderer, Windows Search, and shell hosts strictly
+    if ($CommandLine -match '(?i)(UltraGamingMode|com\.ultragamingmode\.optimizer|SearchHost|TextInputHost|StartMenuExperienceHost|ShellExperienceHost|LockApp)') {
+        return $false
+    }
+    return ($CommandLine -match '(?i)(Widgets\.exe|WidgetService\.exe|WindowsWebExperiencePack)')
+}
+
 function Stop-BlacklistedProcesses {
     [CmdletBinding()]
     param(
@@ -146,17 +163,37 @@ function Stop-BlacklistedProcesses {
         [string[]]$ProcessNames
     )
 
+    $webViewCmdLines = $null
     foreach ($name in $ProcessNames) {
+        if ([string]::IsNullOrWhiteSpace($name) -or $name -ieq 'UltraGamingMode') {
+            continue
+        }
         $procs = Get-Process -Name $name -ErrorAction SilentlyContinue
-        if ($procs) {
-            foreach ($p in $procs) {
-                try {
-                    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-                    Write-Host "  [x] Terminated running bloat process: $name (PID: $($p.Id))" -ForegroundColor Yellow
+        if (-not $procs) { continue }
+
+        if ($name -ieq 'msedgewebview2' -and $null -eq $webViewCmdLines) {
+            $webViewCmdLines = @{}
+            try {
+                Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+                    $webViewCmdLines[[int]$_.ProcessId] = [string]$_.CommandLine
                 }
-                catch {
-                    Write-Verbose "Could not terminate process $($p.Id): $($_.Exception.Message)"
+            } catch {}
+        }
+
+        foreach ($p in $procs) {
+            if ($p.Id -eq $PID) { continue }
+            if ($name -ieq 'msedgewebview2') {
+                $cmdLine = if ($webViewCmdLines.ContainsKey([int]$p.Id)) { $webViewCmdLines[[int]$p.Id] } else { '' }
+                if (-not (Test-ShouldStopWebViewProcess -CommandLine $cmdLine)) {
+                    continue
                 }
+            }
+            try {
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+                Write-Host "  [x] Terminated running bloat process: $name (PID: $($p.Id))" -ForegroundColor Yellow
+            }
+            catch {
+                Write-Verbose "Could not terminate process $($p.Id): $($_.Exception.Message)"
             }
         }
     }

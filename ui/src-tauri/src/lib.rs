@@ -864,8 +864,7 @@ fn infer_service_category(name: &str, reason: &str) -> String {
     }
 }
 
-#[tauri::command]
-fn get_system_status() -> Result<SystemStatus, String> {
+fn read_system_status_sync() -> Result<SystemStatus, String> {
     let root = get_workspace_root();
     let active_state_path = root.join("Backups").join("active_state.json");
 
@@ -966,9 +965,22 @@ fn get_system_status() -> Result<SystemStatus, String> {
 }
 
 #[tauri::command]
-fn get_tuning_config() -> Result<TuningConfig, String> {
+async fn get_system_status() -> Result<SystemStatus, String> {
+    tauri::async_runtime::spawn_blocking(read_system_status_sync)
+        .await
+        .map_err(|e| format!("Сбой фоновой задачи статуса: {}", e))?
+}
+
+fn read_tuning_config_sync() -> Result<TuningConfig, String> {
     let root = get_workspace_root();
     Ok(load_tuning_from_disk(&root))
+}
+
+#[tauri::command]
+async fn get_tuning_config() -> Result<TuningConfig, String> {
+    tauri::async_runtime::spawn_blocking(read_tuning_config_sync)
+        .await
+        .map_err(|e| format!("Сбой фоновой задачи конфигурации: {}", e))?
 }
 
 fn should_trigger_live_tuning(raw_state: &str) -> bool {
@@ -981,8 +993,7 @@ fn should_trigger_live_tuning(raw_state: &str) -> bool {
     false
 }
 
-#[tauri::command]
-fn save_tuning_config(config: TuningConfig) -> Result<TuningConfig, String> {
+fn write_tuning_config_sync(config: TuningConfig) -> Result<TuningConfig, String> {
     let root = get_workspace_root();
     let mut normalized = config;
     if normalized.input_buffer_queue_size < 32 {
@@ -1016,7 +1027,13 @@ fn save_tuning_config(config: TuningConfig) -> Result<TuningConfig, String> {
 }
 
 #[tauri::command]
-fn get_services_lists() -> Result<ServicesLists, String> {
+async fn save_tuning_config(config: TuningConfig) -> Result<TuningConfig, String> {
+    tauri::async_runtime::spawn_blocking(move || write_tuning_config_sync(config))
+        .await
+        .map_err(|e| format!("Сбой сохранения конфигурации: {}", e))?
+}
+
+fn read_services_lists_sync() -> Result<ServicesLists, String> {
     let root = get_workspace_root();
     let bl_path = root.join("Config").join("services_blacklist.json");
     let wl_path = root.join("Config").join("services_whitelist.json");
@@ -1117,6 +1134,13 @@ fn get_services_lists() -> Result<ServicesLists, String> {
     })
 }
 
+#[tauri::command]
+async fn get_services_lists() -> Result<ServicesLists, String> {
+    tauri::async_runtime::spawn_blocking(read_services_lists_sync)
+        .await
+        .map_err(|e| format!("Сбой загрузки списков служб: {}", e))?
+}
+
 fn run_powershell_script(
     root: &Path,
     script_path: &Path,
@@ -1190,75 +1214,87 @@ fn run_powershell_script(
 
 #[tauri::command]
 fn set_window_theme(window: tauri::WebviewWindow, dark: bool) -> Result<(), String> {
-    let theme = if dark {
-        tauri::Theme::Dark
+    let (theme, bg) = if dark {
+        (tauri::Theme::Dark, tauri::window::Color(12, 14, 18, 255))
     } else {
-        tauri::Theme::Light
+        (tauri::Theme::Light, tauri::window::Color(244, 246, 250, 255))
     };
+    let _ = window.set_background_color(Some(bg));
     let _ = window.set_theme(Some(theme));
     Ok(())
 }
 
 #[tauri::command]
 async fn execute_mode_action(action: String, profile: String) -> Result<ActionResult, String> {
-    let root = get_workspace_root();
-    let script_path = root.join("UltraGamingMode.ps1");
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = get_workspace_root();
+        let script_path = root.join("UltraGamingMode.ps1");
 
-    if action == "Enable" {
-        let mut current = load_tuning_from_disk(&root);
-        match profile.as_str() {
-            "competitive" => {
-                current.disable_fullscreen_optimizations = true;
-                current.disable_mouse_accel = false;
-                current.disable_nvidia_dynamic_pstate = false;
-                current.enable_net_adapter_msi = true;
-                current.input_buffer_queue_size = 100;
-                let _ = write_tuning_to_disk(&root, &current);
+        if action == "Enable" {
+            let mut current = load_tuning_from_disk(&root);
+            match profile.as_str() {
+                "competitive" => {
+                    current.disable_fullscreen_optimizations = true;
+                    current.disable_mouse_accel = false;
+                    current.disable_nvidia_dynamic_pstate = false;
+                    current.enable_net_adapter_msi = true;
+                    current.input_buffer_queue_size = 100;
+                    let _ = write_tuning_to_disk(&root, &current);
+                }
+                "aaa" => {
+                    current.disable_fullscreen_optimizations = false;
+                    current.disable_mouse_accel = false;
+                    current.disable_nvidia_dynamic_pstate = false;
+                    current.enable_net_adapter_msi = true;
+                    current.input_buffer_queue_size = 100;
+                    let _ = write_tuning_to_disk(&root, &current);
+                }
+                _ => {}
             }
-            "aaa" => {
-                current.disable_fullscreen_optimizations = false;
-                current.disable_mouse_accel = false;
-                current.disable_nvidia_dynamic_pstate = false;
-                current.enable_net_adapter_msi = true;
-                current.input_buffer_queue_size = 100;
-                let _ = write_tuning_to_disk(&root, &current);
-            }
-            _ => {}
         }
-    }
 
-    run_powershell_script(
-        &root,
-        &script_path,
-        &["-Action", action.as_str(), "-SkipUpdateCheck"],
-        format!("Действие [{}] выполнено успешно.", action),
-        "Не удалось запустить PowerShell",
-    )
+        run_powershell_script(
+            &root,
+            &script_path,
+            &["-Action", action.as_str(), "-SkipUpdateCheck"],
+            format!("Действие [{}] выполнено успешно.", action),
+            "Не удалось запустить PowerShell",
+        )
+    })
+    .await
+    .map_err(|e| format!("Сбой фонового выполнения PowerShell: {}", e))?
 }
 
 #[tauri::command]
 async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, String> {
-    let root = get_workspace_root();
-    let script_path = root.join("UltraGamingMode.ps1");
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = get_workspace_root();
+        let script_path = root.join("UltraGamingMode.ps1");
 
-    let (args, script_to_run): (Vec<&str>, PathBuf) = match repair_type.as_str() {
-        "display" => (vec!["-Action", "RepairDisplay", "-SkipUpdateCheck"], script_path),
-        "services" => (vec!["-Action", "RepairServices", "-SkipUpdateCheck"], script_path),
-        "shaders" => (vec!["-Action", "FlushShaderCache", "-SkipUpdateCheck"], script_path),
-        "memory" => (vec!["-Action", "CleanMemory", "-SkipUpdateCheck"], script_path),
-        "debloat" => (vec!["-Action", "Debloat", "-SkipUpdateCheck"], script_path),
-        "restore_debloat" => (vec!["-Action", "RestoreDebloat", "-SkipUpdateCheck"], script_path),
-        "verify" => (Vec::new(), root.join("Tests").join("Verify-UniversalEngine.ps1")),
-        _ => return Err("Неизвестный тип операции".into()),
-    };
+        let (args, script_to_run): (Vec<&'static str>, PathBuf) = match repair_type.as_str() {
+            "display" => (vec!["-Action", "RepairDisplay", "-SkipUpdateCheck"], script_path),
+            "services" => (vec!["-Action", "RepairServices", "-SkipUpdateCheck"], script_path),
+            "shaders" => (vec!["-Action", "FlushShaderCache", "-SkipUpdateCheck"], script_path),
+            "memory" => (vec!["-Action", "CleanMemory", "-SkipUpdateCheck"], script_path),
+            "debloat" => (vec!["-Action", "Debloat", "-SkipUpdateCheck"], script_path),
+            "restore_debloat" => (
+                vec!["-Action", "RestoreDebloat", "-SkipUpdateCheck"],
+                script_path,
+            ),
+            "verify" => (Vec::new(), root.join("Tests").join("Verify-UniversalEngine.ps1")),
+            _ => return Err("Неизвестный тип операции".into()),
+        };
 
-    run_powershell_script(
-        &root,
-        &script_to_run,
-        &args,
-        format!("Операция [{}] выполнена успешно.", repair_type),
-        "Не удалось выполнить команду",
-    )
+        run_powershell_script(
+            &root,
+            &script_to_run,
+            &args,
+            format!("Операция [{}] выполнена успешно.", repair_type),
+            "Не удалось выполнить команду",
+        )
+    })
+    .await
+    .map_err(|e| format!("Сбой фоновой операции обслуживания: {}", e))?
 }
 
 #[tauri::command]
@@ -1290,14 +1326,16 @@ fn start_dragging(window: tauri::WebviewWindow) {
 }
 
 #[tauri::command]
-fn lock_timer_resolution() -> Result<ActionResult, String> {
-    match timer::set_timer_resolution(5000) {
+async fn lock_timer_resolution() -> Result<ActionResult, String> {
+    tauri::async_runtime::spawn_blocking(|| match timer::set_timer_resolution(5000) {
         Ok((cur_ms, _max_ms)) => Ok(ActionResult {
             success: true,
             message: format!("Разрешение системного таймера установлено: {:.3} мс", cur_ms),
         }),
         Err(e) => Err(format!("Ошибка синхронизации таймера: {}", e)),
-    }
+    })
+    .await
+    .map_err(|e| format!("Сбой установки системного таймера: {}", e))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1305,7 +1343,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .setup(|_app| {
-            let _ = get_workspace_root();
+            std::thread::spawn(|| {
+                let _ = get_workspace_root();
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1332,7 +1372,7 @@ mod tests {
 
     #[test]
     fn test_services_lists_deserializes_all_207_blacklist_and_90_whitelist() {
-        let lists = get_services_lists().expect("get_services_lists should succeed");
+        let lists = read_services_lists_sync().expect("read_services_lists_sync should succeed");
         assert_eq!(
             lists.blacklist.len(),
             207,
@@ -1413,7 +1453,7 @@ mod tests {
 
     #[test]
     fn test_tuning_config_reads_and_enforces_safety_floor() {
-        let cfg = get_tuning_config().expect("get_tuning_config should succeed");
+        let cfg = read_tuning_config_sync().expect("read_tuning_config_sync should succeed");
         assert!(
             cfg.input_buffer_queue_size >= 32,
             "InputBufferQueueSize must respect >= 32 safety floor, got {}",
