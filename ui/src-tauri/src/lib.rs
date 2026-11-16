@@ -1,12 +1,75 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+struct EmbeddedAsset {
+    rel_path: &'static str,
+    bytes: &'static [u8],
+    preserve_if_exists: bool,
+}
+
+const EMBEDDED_RUNTIME_ASSETS: &[EmbeddedAsset] = &[
+    EmbeddedAsset {
+        rel_path: "UltraGamingMode.ps1",
+        bytes: include_bytes!("../../../UltraGamingMode.ps1"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "UltraGamingMode.bat",
+        bytes: include_bytes!("../../../UltraGamingMode.bat"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "Core/ServiceManager.ps1",
+        bytes: include_bytes!("../../../Core/ServiceManager.ps1"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "Core/StateEngine.ps1",
+        bytes: include_bytes!("../../../Core/StateEngine.ps1"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "Core/SystemOptimizer.ps1",
+        bytes: include_bytes!("../../../Core/SystemOptimizer.ps1"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "Config/services_blacklist.json",
+        bytes: include_bytes!("../../../Config/services_blacklist.json"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "Config/services_whitelist.json",
+        bytes: include_bytes!("../../../Config/services_whitelist.json"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "Config/startup_apps.json",
+        bytes: include_bytes!("../../../Config/startup_apps.json"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
+        rel_path: "Config/tuning.json",
+        bytes: include_bytes!("../../../Config/tuning.json"),
+        preserve_if_exists: true,
+    },
+    EmbeddedAsset {
+        rel_path: "Tests/Verify-UniversalEngine.ps1",
+        bytes: include_bytes!("../../../Tests/Verify-UniversalEngine.ps1"),
+        preserve_if_exists: false,
+    },
+];
+
+static RUNTIME_ROOT_CACHE: OnceLock<PathBuf> = OnceLock::new();
+static BACKUPS_ACL_INIT: OnceLock<()> = OnceLock::new();
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct HardwareInfo {
@@ -410,30 +473,189 @@ pub struct ActionResult {
     pub message: String,
 }
 
-fn get_workspace_root() -> PathBuf {
+fn is_dev_repo_root(dir: &Path) -> bool {
+    dir.join("UltraGamingMode.ps1").exists()
+        && dir.join("Core").join("StateEngine.ps1").exists()
+        && (dir.join(".git").exists() || dir.join("Build-Release.ps1").exists())
+}
+
+fn is_dir_writable(dir: &Path) -> bool {
+    let probe = dir.join(format!(
+        ".ugm_write_probe_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+    {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn sync_embedded_runtime(root: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(root.join("Backups"))
+        .map_err(|e| format!("Не удалось создать папку Backups в {}: {}", root.display(), e))?;
+
+    for asset in EMBEDDED_RUNTIME_ASSETS {
+        let mut dest = root.to_path_buf();
+        for seg in asset.rel_path.split('/') {
+            dest.push(seg);
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "Не удалось создать каталог {}: {}",
+                    parent.display(),
+                    e
+                )
+            })?;
+        }
+
+        let should_write = if !dest.exists() {
+            true
+        } else if asset.preserve_if_exists {
+            false
+        } else {
+            match std::fs::read(&dest) {
+                Ok(existing) => existing.as_slice() != asset.bytes,
+                Err(_) => true,
+            }
+        };
+
+        if should_write {
+            std::fs::write(&dest, asset.bytes).map_err(|e| {
+                format!(
+                    "Не удалось записать встроенный ресурс {}: {}",
+                    dest.display(),
+                    e
+                )
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_backups_writable(root: &Path) {
+    let backups_dir = root.join("Backups");
+    let _ = std::fs::create_dir_all(&backups_dir);
+
+    #[cfg(target_os = "windows")]
+    {
+        BACKUPS_ACL_INIT.get_or_init(|| {
+            // Allow interactive user logon HKLM\RunOnce restore (Boot 3) to update active_state.json
+            // while keeping root .ps1 scripts restricted to Administrators/SYSTEM.
+            if let Some(icacls) = resolve_system32_binary("icacls.exe") {
+                if let Some(path_str) = backups_dir.to_str() {
+                    let mut cmd = Command::new(icacls);
+                    cmd.args([path_str, "/grant", "*S-1-5-11:(OI)(CI)M", "/Q"]);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    let _ = cmd.output();
+                }
+            }
+        });
+    }
+}
+
+fn standalone_runtime_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(pd) = std::env::var_os("ProgramData")
+            .or_else(|| std::env::var_os("ALLUSERSPROFILE"))
+        {
+            out.push(PathBuf::from(pd).join("UltraGamingMode"));
+        } else {
+            out.push(PathBuf::from(r"C:\ProgramData\UltraGamingMode"));
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            out.push(PathBuf::from(local).join("UltraGamingMode").join("Runtime"));
+        }
+    }
+    out.push(std::env::temp_dir().join("UltraGamingMode"));
+    out
+}
+
+fn resolve_runtime_root_fresh() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         for ancestor in exe.ancestors().skip(1) {
-            if ancestor.join("UltraGamingMode.ps1").exists() {
+            if is_dev_repo_root(ancestor) {
                 return ancestor.to_path_buf();
             }
         }
     }
     if let Ok(cwd) = std::env::current_dir() {
         for ancestor in cwd.ancestors() {
-            if ancestor.join("UltraGamingMode.ps1").exists() {
+            if is_dev_repo_root(ancestor) {
                 return ancestor.to_path_buf();
             }
         }
     }
-    let dev_fallback = PathBuf::from(r"C:\Users\ragtagsky\Documents\Workstation\E.Mode");
-    if dev_fallback.join("UltraGamingMode.ps1").exists() {
-        return dev_fallback;
+    #[cfg(any(debug_assertions, test))]
+    {
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        if let Some(repo_root) = manifest_dir.parent().and_then(|p| p.parent()) {
+            if is_dev_repo_root(repo_root) {
+                return repo_root.to_path_buf();
+            }
+        }
     }
+
+    // Installed bundle (NSIS/MSI placed scripts beside exe via bundle.resources)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            if exe_dir.join("UltraGamingMode.ps1").exists() && is_dir_writable(exe_dir) {
+                let _ = sync_embedded_runtime(exe_dir);
+                ensure_backups_writable(exe_dir);
+                return exe_dir.to_path_buf();
+            }
+        }
+    }
+
+    // Single-file portable UltraGamingMode.exe or read-only install directory:
+    // materialize all scripts & configs into a shared writable runtime location.
+    for candidate in standalone_runtime_candidates() {
+        if std::fs::create_dir_all(&candidate).is_ok()
+            && is_dir_writable(&candidate)
+            && sync_embedded_runtime(&candidate).is_ok()
+        {
+            ensure_backups_writable(&candidate);
+            return candidate;
+        }
+    }
+
     std::env::current_dir().unwrap_or_default()
 }
 
+fn get_workspace_root() -> PathBuf {
+    let root = RUNTIME_ROOT_CACHE
+        .get_or_init(resolve_runtime_root_fresh)
+        .clone();
+    if !is_dev_repo_root(&root) && !root.join("UltraGamingMode.ps1").exists() {
+        let _ = sync_embedded_runtime(&root);
+    }
+    root
+}
+
+fn resolve_system32_binary(binary_name: &str) -> Option<PathBuf> {
+    std::env::var_os("SystemRoot").map(|sys_root| {
+        PathBuf::from(sys_root)
+            .join("System32")
+            .join(binary_name)
+    })
+}
+
 fn resolve_powershell_exe() -> PathBuf {
-    if let Ok(sys_root) = std::env::var("SystemRoot") {
+    if let Some(sys_root) = std::env::var_os("SystemRoot") {
         let candidate = PathBuf::from(sys_root)
             .join("System32")
             .join("WindowsPowerShell")
@@ -444,6 +666,71 @@ fn resolve_powershell_exe() -> PathBuf {
         }
     }
     PathBuf::from("powershell.exe")
+}
+
+#[cfg(target_os = "windows")]
+fn decode_oem_line(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() {
+        return Some(String::new());
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetOEMCP() -> u32;
+        fn MultiByteToWideChar(
+            code_page: u32,
+            dw_flags: u32,
+            lp_multi_byte_str: *const u8,
+            cb_multi_byte: i32,
+            lp_wide_char_str: *mut u16,
+            cch_wide_char: i32,
+        ) -> i32;
+    }
+    let len = i32::try_from(bytes.len()).ok()?;
+    unsafe {
+        let cp = GetOEMCP();
+        let needed = MultiByteToWideChar(cp, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0);
+        if needed <= 0 {
+            return None;
+        }
+        let mut wide = vec![0u16; needed as usize];
+        let written = MultiByteToWideChar(cp, 0, bytes.as_ptr(), len, wide.as_mut_ptr(), needed);
+        if written <= 0 {
+            return None;
+        }
+        Some(String::from_utf16_lossy(&wide[..(written as usize)]))
+    }
+}
+
+fn decode_powershell_output(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) && (bytes.len() - 2) % 2 == 0 {
+        let units: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        return String::from_utf16_lossy(&units);
+    }
+
+    let trimmed = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    let mut lines_out = Vec::new();
+    for raw_line in trimmed.split(|&b| b == b'\n') {
+        let clean_line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
+        if let Ok(utf8) = std::str::from_utf8(clean_line) {
+            lines_out.push(utf8.to_string());
+        } else {
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(decoded) = decode_oem_line(clean_line) {
+                    lines_out.push(decoded);
+                    continue;
+                }
+            }
+            lines_out.push(String::from_utf8_lossy(clean_line).into_owned());
+        }
+    }
+    lines_out.join("\n")
 }
 
 fn load_tuning_from_disk(root: &PathBuf) -> TuningConfig {
@@ -457,8 +744,11 @@ fn load_tuning_from_disk(root: &PathBuf) -> TuningConfig {
     TuningConfig::default()
 }
 
-fn write_tuning_to_disk(root: &PathBuf, cfg: &TuningConfig) -> Result<(), String> {
-    let tuning_path = root.join("Config").join("tuning.json");
+fn write_tuning_to_disk(root: &Path, cfg: &TuningConfig) -> Result<(), String> {
+    let config_dir = root.join("Config");
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Не удалось создать папку Config: {}", e))?;
+    let tuning_path = config_dir.join("tuning.json");
     let mut safe_cfg = cfg.clone();
     if safe_cfg.input_buffer_queue_size < 32 {
         safe_cfg.input_buffer_queue_size = 32;
@@ -752,45 +1042,72 @@ fn get_services_lists() -> Result<ServicesLists, String> {
         }
     }
 
-    let mut blacklist: Vec<BlacklistServiceItem> = Vec::new();
-    let mut whitelist: Vec<String> = Vec::new();
+    let raw_bl = std::fs::read_to_string(&bl_path).map_err(|e| {
+        format!(
+            "Не удалось прочитать список служб ({}): {}",
+            bl_path.display(),
+            e
+        )
+    })?;
+    let val_bl: serde_json::Value =
+        serde_json::from_str(raw_bl.trim_start_matches('\u{feff}')).map_err(|e| {
+            format!(
+                "Ошибка разбора списка служб ({}): {}",
+                bl_path.display(),
+                e
+            )
+        })?;
+    let arr_bl = val_bl
+        .get("TargetServices")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| format!("В файле {} отсутствует поле TargetServices", bl_path.display()))?;
 
-    if let Ok(raw_bl) = std::fs::read_to_string(&bl_path) {
-        let clean = raw_bl.trim_start_matches('\u{feff}');
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(clean) {
-            if let Some(arr) = val.get("TargetServices").and_then(|v| v.as_array()) {
-                for item in arr {
-                    if let Ok(mut parsed) =
-                        serde_json::from_value::<BlacklistServiceItem>(item.clone())
-                    {
-                        if parsed.display_name.trim().is_empty() {
-                            if let Some(loc) = localized_names.get(&parsed.name.to_lowercase()) {
-                                parsed.display_name = loc.clone();
-                            } else {
-                                parsed.display_name = parsed.reason.clone();
-                            }
-                        }
-                        if parsed.category.trim().is_empty() {
-                            parsed.category =
-                                infer_service_category(&parsed.name, &parsed.reason);
-                        }
-                        blacklist.push(parsed);
-                    }
+    let mut blacklist: Vec<BlacklistServiceItem> = Vec::with_capacity(arr_bl.len());
+    for item in arr_bl {
+        if let Ok(mut parsed) = serde_json::from_value::<BlacklistServiceItem>(item.clone()) {
+            if parsed.display_name.trim().is_empty() {
+                if let Some(loc) = localized_names.get(&parsed.name.to_lowercase()) {
+                    parsed.display_name = loc.clone();
+                } else {
+                    parsed.display_name = parsed.reason.clone();
                 }
             }
+            if parsed.category.trim().is_empty() {
+                parsed.category = infer_service_category(&parsed.name, &parsed.reason);
+            }
+            blacklist.push(parsed);
         }
     }
 
-    if let Ok(raw_wl) = std::fs::read_to_string(&wl_path) {
-        let clean = raw_wl.trim_start_matches('\u{feff}');
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(clean) {
-            if let Some(arr) = val.get("ProtectedServices").and_then(|v| v.as_array()) {
-                for item in arr {
-                    if let Some(s) = item.as_str() {
-                        whitelist.push(s.to_string());
-                    }
-                }
-            }
+    let raw_wl = std::fs::read_to_string(&wl_path).map_err(|e| {
+        format!(
+            "Не удалось прочитать белый список служб ({}): {}",
+            wl_path.display(),
+            e
+        )
+    })?;
+    let val_wl: serde_json::Value =
+        serde_json::from_str(raw_wl.trim_start_matches('\u{feff}')).map_err(|e| {
+            format!(
+                "Ошибка разбора белого списка ({}): {}",
+                wl_path.display(),
+                e
+            )
+        })?;
+    let arr_wl = val_wl
+        .get("ProtectedServices")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            format!(
+                "В файле {} отсутствует поле ProtectedServices",
+                wl_path.display()
+            )
+        })?;
+
+    let mut whitelist: Vec<String> = Vec::with_capacity(arr_wl.len());
+    for item in arr_wl {
+        if let Some(s) = item.as_str() {
+            whitelist.push(s.to_string());
         }
     }
 
@@ -798,6 +1115,77 @@ fn get_services_lists() -> Result<ServicesLists, String> {
         blacklist,
         whitelist,
     })
+}
+
+fn run_powershell_script(
+    root: &Path,
+    script_path: &Path,
+    args: &[&str],
+    success_fallback: String,
+    spawn_error_prefix: &str,
+) -> Result<ActionResult, String> {
+    if !script_path.exists() {
+        return Err(format!(
+            "Скрипт движка не найден по пути: {}",
+            script_path.display()
+        ));
+    }
+    let script_str = script_path
+        .to_str()
+        .ok_or_else(|| "Путь к скрипту содержит недопустимые символы".to_string())?;
+
+    let mut cmd = Command::new(resolve_powershell_exe());
+    cmd.current_dir(root)
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script_str])
+        .args(args);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("{}: {}", spawn_error_prefix, e))?;
+
+    let stdout = decode_powershell_output(&output.stdout).trim().to_string();
+    let stderr = decode_powershell_output(&output.stderr).trim().to_string();
+    let success = output.status.success();
+
+    let message = if success {
+        if stdout.is_empty() {
+            success_fallback
+        } else {
+            stdout
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" | ")
+        }
+    } else {
+        let mut err = String::new();
+        if !stderr.is_empty() {
+            err.push_str(&stderr);
+        }
+        if !stdout.is_empty() {
+            if !err.is_empty() {
+                err.push('\n');
+            }
+            err.push_str(&stdout);
+        }
+        if err.is_empty() {
+            format!(
+                "Процесс завершился с кодом ошибки {:?}",
+                output.status.code()
+            )
+        } else {
+            err
+        }
+    };
+
+    Ok(ActionResult { success, message })
 }
 
 #[tauri::command]
@@ -839,63 +1227,13 @@ async fn execute_mode_action(action: String, profile: String) -> Result<ActionRe
         }
     }
 
-    let mut cmd = Command::new(resolve_powershell_exe());
-    cmd.current_dir(&root).args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        script_path.to_str().unwrap_or("UltraGamingMode.ps1"),
-        "-Action",
-        &action,
-        "-SkipUpdateCheck",
-    ]);
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Не удалось запустить PowerShell: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let success = output.status.success();
-
-    let message = if success {
-        if stdout.is_empty() {
-            format!("Действие [{}] выполнено успешно.", action)
-        } else {
-            stdout
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .rev()
-                .take(3)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join(" | ")
-        }
-    } else {
-        let mut err = String::new();
-        if !stderr.is_empty() {
-            err.push_str(&stderr);
-        }
-        if !stdout.is_empty() {
-            if !err.is_empty() {
-                err.push('\n');
-            }
-            err.push_str(&stdout);
-        }
-        if err.is_empty() {
-            format!("Процесс завершился с кодом ошибки {:?}", output.status.code())
-        } else {
-            err
-        }
-    };
-
-    Ok(ActionResult { success, message })
+    run_powershell_script(
+        &root,
+        &script_path,
+        &["-Action", action.as_str(), "-SkipUpdateCheck"],
+        format!("Действие [{}] выполнено успешно.", action),
+        "Не удалось запустить PowerShell",
+    )
 }
 
 #[tauri::command]
@@ -903,117 +1241,24 @@ async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, S
     let root = get_workspace_root();
     let script_path = root.join("UltraGamingMode.ps1");
 
-    let (args, script_to_run): (Vec<String>, PathBuf) = match repair_type.as_str() {
-        "display" => (
-            vec![
-                "-Action".into(),
-                "RepairDisplay".into(),
-                "-SkipUpdateCheck".into(),
-            ],
-            script_path,
-        ),
-        "services" => (
-            vec![
-                "-Action".into(),
-                "RepairServices".into(),
-                "-SkipUpdateCheck".into(),
-            ],
-            script_path,
-        ),
-        "shaders" => (
-            vec![
-                "-Action".into(),
-                "FlushShaderCache".into(),
-                "-SkipUpdateCheck".into(),
-            ],
-            script_path,
-        ),
-        "memory" => (
-            vec![
-                "-Action".into(),
-                "CleanMemory".into(),
-                "-SkipUpdateCheck".into(),
-            ],
-            script_path,
-        ),
-        "debloat" => (
-            vec![
-                "-Action".into(),
-                "Debloat".into(),
-                "-SkipUpdateCheck".into(),
-            ],
-            script_path,
-        ),
-        "restore_debloat" => (
-            vec![
-                "-Action".into(),
-                "RestoreDebloat".into(),
-                "-SkipUpdateCheck".into(),
-            ],
-            script_path,
-        ),
-        "verify" => (vec![], root.join("Tests").join("Verify-UniversalEngine.ps1")),
+    let (args, script_to_run): (Vec<&str>, PathBuf) = match repair_type.as_str() {
+        "display" => (vec!["-Action", "RepairDisplay", "-SkipUpdateCheck"], script_path),
+        "services" => (vec!["-Action", "RepairServices", "-SkipUpdateCheck"], script_path),
+        "shaders" => (vec!["-Action", "FlushShaderCache", "-SkipUpdateCheck"], script_path),
+        "memory" => (vec!["-Action", "CleanMemory", "-SkipUpdateCheck"], script_path),
+        "debloat" => (vec!["-Action", "Debloat", "-SkipUpdateCheck"], script_path),
+        "restore_debloat" => (vec!["-Action", "RestoreDebloat", "-SkipUpdateCheck"], script_path),
+        "verify" => (Vec::new(), root.join("Tests").join("Verify-UniversalEngine.ps1")),
         _ => return Err("Неизвестный тип операции".into()),
     };
 
-    let mut cmd = Command::new(resolve_powershell_exe());
-    cmd.current_dir(&root).args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        script_to_run.to_str().unwrap_or(""),
-    ]);
-
-    for arg in args {
-        cmd.arg(arg);
-    }
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Не удалось выполнить команду: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let success = output.status.success();
-
-    let message = if success {
-        if stdout.is_empty() {
-            format!("Операция [{}] выполнена успешно.", repair_type)
-        } else {
-            stdout
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .rev()
-                .take(3)
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect::<Vec<_>>()
-                .join(" | ")
-        }
-    } else {
-        let mut err = String::new();
-        if !stderr.is_empty() {
-            err.push_str(&stderr);
-        }
-        if !stdout.is_empty() {
-            if !err.is_empty() {
-                err.push('\n');
-            }
-            err.push_str(&stdout);
-        }
-        if err.is_empty() {
-            format!("Ошибка выполнения (код {:?})", output.status.code())
-        } else {
-            err
-        }
-    };
-
-    Ok(ActionResult { success, message })
+    run_powershell_script(
+        &root,
+        &script_to_run,
+        &args,
+        format!("Операция [{}] выполнена успешно.", repair_type),
+        "Не удалось выполнить команду",
+    )
 }
 
 #[tauri::command]
@@ -1060,6 +1305,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .setup(|_app| {
+            let _ = get_workspace_root();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1215,5 +1461,83 @@ mod tests {
         assert_eq!(reloaded.input_buffer_queue_size, 32);
 
         let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_sync_embedded_runtime_materializes_all_assets_and_preserves_custom_tuning() {
+        let temp_root =
+            std::env::temp_dir().join(format!("ugm_embedded_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_root);
+
+        sync_embedded_runtime(&temp_root).expect("sync_embedded_runtime should extract all files");
+
+        for asset in EMBEDDED_RUNTIME_ASSETS {
+            let mut dest = temp_root.clone();
+            for seg in asset.rel_path.split('/') {
+                dest.push(seg);
+            }
+            assert!(
+                dest.exists(),
+                "Embedded asset '{}' must exist after extraction",
+                asset.rel_path
+            );
+            let bytes = std::fs::read(&dest).expect("read extracted asset");
+            assert!(
+                !bytes.starts_with(&[0xEF, 0xBB, 0xBF]),
+                "Extracted asset '{}' must not have UTF-8 BOM",
+                asset.rel_path
+            );
+            assert_eq!(bytes.as_slice(), asset.bytes);
+        }
+        assert!(temp_root.join("Backups").is_dir());
+
+        // User-customized tuning.json must survive runtime upgrade/repair, while stale script gets refreshed.
+        let custom_tuning = br#"{"DisableFullscreenOptimizations":false,"DisableMouseAccel":true,"DisableNvidiaDynamicPstate":true,"EnableNetAdapterMsi":false,"InputBufferQueueSize":150}"#;
+        std::fs::write(temp_root.join("Config").join("tuning.json"), custom_tuning)
+            .expect("write custom tuning.json");
+        std::fs::write(temp_root.join("UltraGamingMode.ps1"), b"stale-script")
+            .expect("write stale script");
+
+        sync_embedded_runtime(&temp_root).expect("re-sync should succeed");
+
+        assert_eq!(
+            std::fs::read(temp_root.join("Config").join("tuning.json"))
+                .expect("read preserved tuning.json"),
+            custom_tuning
+        );
+        assert_ne!(
+            std::fs::read(temp_root.join("UltraGamingMode.ps1"))
+                .expect("read repaired script"),
+            b"stale-script"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_decode_powershell_output_handles_utf8_utf16_and_oem_bytes() {
+        let utf8_bom = "\u{feff}Строка UTF-8\r\nВторая строка";
+        assert_eq!(
+            decode_powershell_output(utf8_bom.as_bytes()),
+            "Строка UTF-8\nВторая строка"
+        );
+
+        let mut utf16 = vec![0xFFu8, 0xFEu8];
+        for unit in "Привет UTF-16".encode_utf16() {
+            utf16.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(decode_powershell_output(&utf16), "Привет UTF-16");
+
+        // Non-UTF-8 OEM bytes (CP866 for "Аргумент"): must never emit U+FFFD replacement chars on Windows.
+        let oem_bytes: &[u8] = &[0x80, 0xE0, 0xA3, 0xE3, 0xAC, 0xA5, 0xAD, 0xE2];
+        let decoded = decode_powershell_output(oem_bytes);
+        #[cfg(target_os = "windows")]
+        assert!(
+            !decoded.is_empty() && !decoded.contains('\u{FFFD}'),
+            "Windows OEM decoding produced replacement chars: {:?}",
+            decoded
+        );
+        #[cfg(not(target_os = "windows"))]
+        assert!(!decoded.is_empty());
     }
 }

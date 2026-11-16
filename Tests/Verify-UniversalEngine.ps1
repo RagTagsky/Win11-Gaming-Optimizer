@@ -583,7 +583,7 @@ Assert-Test ($ugmContent -match '\$stateData\.State -eq ["'']Armed["'']') "Ultra
 Assert-Test ($ugmContent -notmatch 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce.*-Action RestoreUser -Watchdog') "UltraGamingMode.ps1 does not arm premature user RunOnce during Enable action"
 
 # 11.14 Pure UTF-8 without BOM Encoding Check (Source & Config Files)
-$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/](Backups|node_modules|target|\.git)[\\/]' }
+$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/](Backups|node_modules|target|\.git|EBWebView|dist)[\\/]' }
 $hasBom = $false
 foreach ($f in $allConfigFiles) {
     $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
@@ -602,7 +602,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.2.0") "Get-AppCurrentVersion returns expected suite version '3.2.0'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.2.1") "Get-AppCurrentVersion returns expected suite version '3.2.1'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -610,7 +610,7 @@ $vBare     = ConvertTo-SemVer "2.8"
 $vPadded   = ConvertTo-SemVer "2.8.0"
 $vPatch    = ConvertTo-SemVer "v2.8.1"
 $vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.2.0"
+$vMajor    = ConvertTo-SemVer "v3.2.1"
 $vSuffix   = ConvertTo-SemVer "v2.8-Universal"
 $vBuild    = ConvertTo-SemVer "v2.8.0+build123"
 $vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
@@ -627,7 +627,7 @@ Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer ret
 # 12.3 SemVer Comparison Contracts
 Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
 Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.0 is correctly recognized as newer than v2.8"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.2.1 is correctly recognized as newer than v2.8"
 Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
 $vOld = ConvertTo-SemVer "v2.7"
 Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
@@ -640,7 +640,8 @@ Assert-Test ($offlineCheck.CurrentVersion -eq "2.8") "Check-AppUpdate preserves 
 
 # 12.5 ProjectRoot Resolution & Update Cache Lifecycle
 Assert-Test ([string]::IsNullOrWhiteSpace($Script:ProjectRoot) -eq $false) "Script:ProjectRoot is successfully resolved in StateEngine.ps1"
-Assert-Test (Test-Path (Join-Path $Script:ProjectRoot ".git")) "Script:ProjectRoot correctly identifies project .git repository root"
+$hasValidProjectRoot = (Test-Path (Join-Path $Script:ProjectRoot ".git")) -or ((Test-Path (Join-Path $Script:ProjectRoot "UltraGamingMode.ps1")) -and (Test-Path (Join-Path $Script:ProjectRoot "Config\services_blacklist.json")))
+Assert-Test $hasValidProjectRoot "Script:ProjectRoot correctly identifies repository or standalone runtime root"
 
 # 12.6 Simulated Update Detection & Cache File Coordination
 $infoFile = Join-Path $Script:BackupDir "update_info.cmd"
