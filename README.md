@@ -519,7 +519,6 @@ Win11-Gaming-Optimizer/
 ├── Build-Release.ps1                # Automated Tauri build, .bin/ packaging & SHA256SUMS generator
 ├── README.md                        # English documentation & benchmarks
 ├── README.ru.md                     # Russian documentation & benchmarks
-├── RELEASE_NOTES.md                 # Detailed release changelog
 ├── LICENSE                          # MIT License
 │
 ├── ui/                              # Native Desktop frontend & Tauri Rust backend
@@ -538,7 +537,7 @@ Win11-Gaming-Optimizer/
 │   └── SystemOptimizer.ps1          # Power, MMCSS, Network, Memory, and Defender tuning
 │
 ├── Tests/
-│   └── Verify-UniversalEngine.ps1   # 325 automated unit tests & hardware simulation suite
+│   └── Verify-UniversalEngine.ps1   # 366 automated unit tests & hardware simulation suite
 │
 └── Backups/
     └── active_state.json            # Dynamic active session snapshot (auto-generated)
