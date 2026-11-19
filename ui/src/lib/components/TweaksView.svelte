@@ -310,7 +310,7 @@
             {#if isAutostartSaving}
               <Loader2 size={14} strokeWidth={2} class="ui-spin text-[var(--accent-text)]" aria-hidden="true" />
             {/if}
-            <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-right">
+            <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-end">
               {autostartStatus?.enabled ? 'Вкл' : 'Выкл'}
             </span>
             <button
@@ -337,7 +337,7 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Режим окна при автозапуске">
-          <span class="text-xs font-medium text-[var(--text-muted)] mr-1">При входе в Windows:</span>
+          <span class="text-xs font-medium text-[var(--text-muted)] me-1">При входе в Windows:</span>
           <button
             type="button"
             disabled={isAutostartLoading || isAutostartSaving}
@@ -425,7 +425,7 @@
         </div>
 
         <div class="flex items-center gap-2.5 shrink-0 pt-1">
-          <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-right">
+          <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-end">
             {config.AutoLockTimerInGaming ? 'Вкл' : 'Выкл'}
           </span>
           <button
@@ -496,7 +496,7 @@
           </div>
 
           <div class="flex items-center gap-2.5 shrink-0 pt-1">
-            <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-right">
+            <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-end">
               {enabled ? 'Вкл' : 'Выкл'}
             </span>
             <button
@@ -558,7 +558,7 @@
             aria-pressed={selected}
             class="{selected
               ? 'ui-card-selected'
-              : 'ui-card-interactive'} rounded-xl px-3.5 py-2.5 text-left flex items-center justify-between gap-2 disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+              : 'ui-card-interactive'} rounded-xl px-3.5 py-2.5 text-start flex items-center justify-between gap-2 disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
           >
             <span class="block">
               <span class="block text-sm font-semibold tabular-nums text-[var(--text-primary)]">

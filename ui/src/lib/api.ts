@@ -786,8 +786,8 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
   }
   await new Promise((r) => setTimeout(r, 250));
   return {
-    currentVersion: '3.5.0',
-    latestVersion: '3.5.0',
+    currentVersion: '3.5.1',
+    latestVersion: '3.5.1',
     hasUpdate: false,
     releaseUrl: 'https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest',
     releaseNotes: ''

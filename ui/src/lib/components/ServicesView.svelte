@@ -407,7 +407,7 @@
               onclick={() => onApplyFeaturePack?.(pack.id, !pack.keepEnabledInGame)}
               class="{pack.keepEnabledInGame
                 ? 'ui-card-selected'
-                : 'ui-card-interactive'} rounded-xl px-3.5 py-2.5 text-left flex items-start justify-between gap-2.5 disabled:opacity-55 cursor-pointer"
+                : 'ui-card-interactive'} rounded-xl px-3.5 py-2.5 text-start flex items-start justify-between gap-2.5 disabled:opacity-55 cursor-pointer"
             >
               <div class="flex items-start gap-2.5 min-w-0">
                 <span
@@ -797,7 +797,7 @@
                             svc.Status === 'Running' ? 'Stop' : 'Start'
                           );
                         }}
-                        class="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium cursor-pointer"
+                        class="w-full text-start px-3 py-2 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-primary)] font-medium cursor-pointer"
                       >
                         {svc.Status === 'Running' ? 'Остановить сейчас' : 'Запустить сейчас'}
                       </button>
@@ -808,7 +808,7 @@
                           openMenuService = null;
                           onControlService(svc.Name, 'Automatic');
                         }}
-                        class="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer"
+                        class="w-full text-start px-3 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer"
                       >
                         Тип запуска: Авто
                       </button>
@@ -819,7 +819,7 @@
                           openMenuService = null;
                           onControlService(svc.Name, 'Manual');
                         }}
-                        class="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer"
+                        class="w-full text-start px-3 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer"
                       >
                         Тип запуска: Вручную
                       </button>
@@ -830,7 +830,7 @@
                           openMenuService = null;
                           onControlService(svc.Name, 'Disabled');
                         }}
-                        class="w-full text-left px-3 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer"
+                        class="w-full text-start px-3 py-1.5 rounded-lg hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] cursor-pointer"
                       >
                         Тип запуска: Отключена
                       </button>
@@ -848,7 +848,7 @@
                           operation: 'remove'
                         });
                       }}
-                      class="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--status-danger-soft)] text-[var(--status-danger-text)] cursor-pointer"
+                      class="w-full text-start px-3 py-2 rounded-lg hover:bg-[var(--status-danger-soft)] text-[var(--status-danger-text)] cursor-pointer"
                     >
                       Убрать из списков
                     </button>

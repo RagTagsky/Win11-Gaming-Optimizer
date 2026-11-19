@@ -107,7 +107,7 @@
 >
   <div class="flex items-center gap-2.5 min-w-0" data-tauri-drag-region>
     <div
-      class="w-7 h-7 rounded-lg bg-[var(--accent-solid)] text-white flex items-center justify-center shrink-0"
+      class="w-7 h-7 rounded-lg bg-[var(--accent-solid)] text-[var(--text-on-solid)] flex items-center justify-center shrink-0"
       data-tauri-drag-region
     >
       <Zap size={16} strokeWidth={2} aria-hidden="true" />
@@ -122,7 +122,7 @@
       class="max-[440px]:hidden shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
       data-tauri-drag-region
     >
-      v3.5.0
+      v3.5.1
     </span>
   </div>
 
@@ -130,7 +130,7 @@
     <button
       type="button"
       onclick={onToggleTheme}
-      class="ui-btn-ghost ui-pressable h-9 px-2.5 sm:px-3 mr-1 rounded-lg flex items-center gap-1.5 text-[0.8125rem] font-medium cursor-pointer"
+      class="ui-btn-ghost ui-pressable h-9 px-2.5 sm:px-3 me-1 rounded-lg flex items-center gap-1.5 text-[0.8125rem] font-medium cursor-pointer"
       aria-label={theme === 'dark'
         ? 'Светлая тема — переключить оформление на светлое'
         : 'Тёмная тема — переключить оформление на тёмное'}

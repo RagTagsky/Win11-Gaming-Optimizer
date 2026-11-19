@@ -1,24 +1,40 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode for Windows 11
-### *Competitive Low-Latency, Fluent UI & Universal Hardware Edition (v3.5.0)*
+### *Native Desktop GUI · Competitive Low-Latency · Universal Hardware Edition (v3.5.1)*
 
-**A zero-risk, high-precision latency, frame pacing, and universal hardware optimizer for Windows 10/11.**  
-Temporarily strips background bloat, halts real-time disk scanning, auto-detects and adapts to ANY PC hardware (Intel/AMD CPUs, NVIDIA/AMD/Intel GPUs, 8GB Low-RAM Guard, HDD 100% Thrash Protection), activates GPU MSI Mode, bypasses kernel DPC queuing, cuts peripheral input buffer latency, synchronizes system timers, activates HAGS, and guarantees 100% automated failsafe recovery on next boot.
+**A zero-risk, snapshot-driven kernel latency, frame pacing, and hardware optimizer for Windows 10 & 11.**  
+Built with **Tauri v2 (Rust) + Svelte 5** and a native **Win32 / PowerShell Engine** — featuring zero-RAM tray mode, elevated Task Scheduler autostart, 1-click service feature packs, automatic `0.500 ms` timer resolution, and a 100% crash-proof `HKLM\RunOnce` failsafe watchdog.
 
-[![Windows 11 Supported](https://img.shields.io/badge/Windows-11%20%7C%2010-0078D4?logo=windows&logoColor=white&style=for-the-badge)](https://www.microsoft.com/windows)
-[![PowerShell Version](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white&style=for-the-badge)](https://github.com/PowerShell/PowerShell)
-[![Version](https://img.shields.io/badge/Version-v3.5.0--Universal-FF4500?style=for-the-badge)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-success.svg?style=for-the-badge)](LICENSE)
-[![Zero-Risk Watchdog](https://img.shields.io/badge/Watchdog-HKLM%20RunOnce-blueviolet?style=for-the-badge)](#the-zero-risk-watchdog-guarantee)
-[![Universal Hardware](https://img.shields.io/badge/Hardware-Intel%20%2B%20AMD%20%7C%20NVIDIA-ED1C24?style=for-the-badge)](#universal-hardware-auto-detection-engine)
-[![Latency Suite](https://img.shields.io/badge/Latency-Kernel%20DPC%20%7C%20Timers%20%7C%20HAGS-00C853?style=for-the-badge)](#14-kernel-dpc-execution--executive-memory-tuning)
+[![Release](https://img.shields.io/badge/Release-v3.5.1-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
+[![Platform](https://img.shields.io/badge/Windows-11%20%7C%2010%20(x64)-2563EB?style=for-the-badge&logo=windows&logoColor=white&labelColor=0F172A)](https://www.microsoft.com/windows)
+[![Desktop Stack](https://img.shields.io/badge/Tauri%20v2-Rust%20%2B%20Svelte%205-3B82F6?style=for-the-badge&logo=rust&logoColor=white&labelColor=0F172A)](#option-a-native-desktop-gui-app-v351---recommended)
+[![Watchdog](https://img.shields.io/badge/Failsafe-HKLM%20RunOnce-10B981?style=for-the-badge&labelColor=0F172A)](#the-zero-risk-watchdog-guarantee)
+[![Anti-Cheat Safe](https://img.shields.io/badge/Anti--Cheat-FACEIT%20%7C%20Vanguard%20%7C%20EAC%20%7C%20VAC-10B981?style=for-the-badge&labelColor=0F172A)](#2-ironclad-whitelist-92-protected-services)
+[![Test Suite](https://img.shields.io/badge/Verified-381%20PS%20%2B%2020%20Rust%20Tests-475569?style=for-the-badge&labelColor=0F172A)](#directory-structure)
+[![License: MIT](https://img.shields.io/badge/License-MIT-475569?style=for-the-badge&labelColor=0F172A)](LICENSE)
+
+<br />
+
+[**🚀 Quick Start**](#quick-start-guide) · [**📊 CS2 Benchmarks**](#real-world-benchmarks-engine-telemetry) · [**🛠️ Hardware Engine**](#universal-hardware-auto-detection-engine) · [**🛡️ Watchdog Lifecycle**](#core-architecture-lifecycle) · [**🔬 19 Technical Modules**](#deep-technical-features) · [**⌨️ CLI Reference**](#menu-overview-cli-reference)
+
+**Language:** [**🇺🇸 English**](README.md) · [**🇷🇺 Русский**](README.ru.md)
+
+</div>
 
 ---
 
-[English](README.md) | [Русский](README.ru.md)
+## ✨ Architecture at a Glance
 
-</div>
+| 🖥️ Native Desktop & Zero-RAM Tray | ⚡ Kernel, Input & Network Latency | 🛠️ Universal Hardware Adaptation | 🛡️ Zero-Risk Snapshot Watchdog |
+|:---|:---|:---|:---|
+| • **Tauri v2 + Rust + Svelte 5** Fluent UI<br>• **Zero-RAM Tray Mode**: closing `[×]` unloads WebView2 (`0 MB` UI RAM)<br>• **Elevated Autostart** (`--tray`) via Task Scheduler without UAC prompts<br>• **SHA-256 Verified Updater** directly from GitHub Releases | • **Auto `0.500 ms` Timer Lock** in Gaming Mode (`NtSetTimerResolution`)<br>• **GPU & PCIe NIC MSI Mode** (`DevicePriority = 3`)<br>• **Winsock AFD 64 KB Fast-Path** & Nagle off<br>• **High-Polling Input Buffer** (`32–1024` packets, 8000 Hz safe) | • **CPU Unparking** (`CPMINCORES 100`) & Low-Core Guard (`<= 4` threads)<br>• **Discrete GPU Discovery** (AMD ULPS/DXNAVI, NVIDIA Per-Core DPC, Intel Arc)<br>• **Low-RAM Guard (8 GB)** + native `NtSetSystemInformation` Standby Purge<br>• **Mechanical HDD 100% Thrash Guard** | • Full pre-flight JSON snapshot (`Backups\active_state.json`)<br>• Autonomous `HKLM\RunOnce` kernel watchdog (`*UltraGamingModeRestore`)<br>• **92 Protected Whitelist Services** (`FACEIT`, `vgk`, `EAC`, `camsvc`, `PrtSc`)<br>• 1-Click Emergency DisplayPort & Audio Repair |
+
+> [!TIP]
+> **What's New in v3.5.1:**
+> - **Clean Release Notes & Metadata in Updater Card:** Structured Markdown parser (`parseReleaseNotesLines`) with installer filename, size (`MB`), and release date badge, plus expandable changelog preview.
+> - **UI Polish (`/better-colors`, `/better-layout`, `/better-ui`):** Semantic surface/text tokens (`--text-on-solid`, `--backdrop-overlay`, `--close-hover-bg`), layered dark-mode card elevation, logical layout properties (`text-start`/`text-end`, `ps-`/`pe-`), optical icon button alignment, and zero-smear theme transitions.
+> - **Elevated Autostart & Intuitive Programs/Services Redesign (v3.5.x):** Task Scheduler autostart (`UltraGamingMode_AutoStart`), 1-click service feature packs (`Wi-Fi`, `Bluetooth`, `FACEIT`, `Webcam`, `Xbox`, `VPN`, `Printer`), grouped apps with `version.dll` names, and live Windows Startup manager.
 
 ---
 
@@ -55,9 +71,9 @@ Temporarily strips background bloat, halts real-time disk scanning, auto-detects
   - [16. BCDedit System Timer Synchronization](#16-bcdedit-system-timer-synchronization)
   - [17. High-Performance TCP Gaming Stack](#17-high-performance-tcp-gaming-stack)
   - [18. Hardware-Accelerated GPU Scheduling (HAGS)](#18-hardware-accelerated-gpu-scheduling-hags)
-  - [19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.0)](#19-competitive-frame-pacing-ring-0-ifeo--top-tier-optimizations-v350)
+  - [19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.1)](#19-competitive-frame-pacing-ring-0-ifeo--top-tier-optimizations-v351)
 - [Quick Start Guide](#quick-start-guide)
-  - [Option A: Native Desktop GUI App (v3.5.0 - Recommended)](#option-a-native-desktop-gui-app-v350---recommended)
+  - [Option A: Native Desktop GUI App (v3.5.1 - Recommended)](#option-a-native-desktop-gui-app-v351---recommended)
   - [Option B: Interactive TUI Menu](#option-b-interactive-tui-menu)
   - [Option C: PowerShell CLI Usage](#option-c-powershell-cli-usage)
 - [Menu Overview & CLI Reference](#menu-overview-cli-reference)
@@ -76,7 +92,7 @@ Modern Windows 11 is packed with hundreds of background processes, telemetry col
 - **Micro-Freezes on Frame Boundaries:** Secondary threads stealing CPU cycles from game render loops.
 - **1% Low FPS Drops:** Jitter in frame pacing even when average FPS remains high.
 
-**Ultra Gaming Mode v3.5.0** solves this without permanently mangling your operating system. Unlike brittle "debloater" scripts that break Windows Update, brick microphone privacy permissions, or cause black screens on DisplayPort monitors, Ultra Gaming Mode utilizes a **non-destructive, snapshot-driven lifecycle**:
+**Ultra Gaming Mode v3.5.1** solves this without permanently mangling your operating system. Unlike brittle "debloater" scripts that break Windows Update, brick microphone privacy permissions, or cause black screens on DisplayPort monitors, Ultra Gaming Mode utilizes a **non-destructive, snapshot-driven lifecycle**:
 
 ```
 [Normal Windows] ──(Arm Mode)──> [System Snapshot] ──(Reboot)──> [Stripped Ultra Gaming Mode]
@@ -89,7 +105,7 @@ Modern Windows 11 is packed with hundreds of background processes, telemetry col
 
 ## 🛠️ Universal Hardware Auto-Detection Engine
 
-Ultra Gaming Mode v3.5.0 features an autonomous hardware discovery engine (`Get-HardwareProfile`) that inspects your machine's physical architecture during diagnostic checks, arming, and boot stages. Rather than applying blunt, one-size-fits-all tweaks, the optimizer detects exact CPU topologies, GPU bus interfaces, physical memory limits, and storage media types to dynamically tailor kernel and driver optimizations to your exact PC.
+Ultra Gaming Mode v3.5.1 features an autonomous hardware discovery engine (`Get-HardwareProfile`) that inspects your machine's physical architecture during diagnostic checks, arming, and boot stages. Rather than applying blunt, one-size-fits-all tweaks, the optimizer detects exact CPU topologies, GPU bus interfaces, physical memory limits, and storage media types to dynamically tailor kernel and driver optimizations to your exact PC.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -351,7 +367,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 - Automatically disabled on AMD RDNA2/Polaris cards (`HwSchMode = 1`) to eliminate known Source 2 engine (CS2) frame-pacing micro-stutter.
 - Fully snapshot-backed and restored cleanly in `active_state.json`.
 
-### 19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.0)
+### 19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.1)
 - **Winsock AFD Fast-Path & NDIS Multi-Core RSS:** Sets `FastSendDatagramThreshold = 65536`, `FastCopyReceiveThreshold = 65536`, `DefaultSendWindow = 65536`, and `DefaultReceiveWindow = 65536` under `HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters` so UDP game packets up to 64 KB bypass Winsock kernel buffering, and sets `MaxNumRssCpus = 4` under `Services\NDIS\Parameters` for multi-core network interrupt scaling.
 - **Kernel Power Telemetry Suppression & Process Consolidation:** Disables Windows energy estimation telemetry (`DisableTaggedEnergyLogging = 1`, `TelemetryMaxApplication = 0`, `TelemetryMaxTagPerApplication = 0` under `Control\Power\EnergyEstimation\TaggedEnergy`), disables timer coalescing (`CoalescingTimerInterval = 0`) and Fast Startup (`HiberbootEnabled = 0`), and consolidates `svchost.exe` processes (`SvcHostSplitThresholdInKB = 67108864` on systems with >= 16 GB RAM; automatically skipped on `LowRamProfile`).
 - **AMD Radeon DXNAVI Anti-Stutter & Clock Lock:** Alongside disabling PCIe link power state drops (`EnableAspmL0s = 0`, `EnableAspmL1 = 0`) and locking AMD UMD ShaderCache to `Always On (0x32, 0x00)`, configures `StutterMode = 0` and `PP_SclkDeepSleepDisable = 1` across AMD display class keys (`{4d36e968-e325-11ce-bfc1-08002be10318}`) to eliminate DXNAVI core downclocking micro-stutters.
@@ -369,24 +385,31 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ## 🚀 Quick Start Guide
 
-### Option A: Native Desktop GUI App (v3.5.0 - Recommended)
+### Option A: Native Desktop GUI App (v3.5.1 - Recommended)
 
-Ultra Gaming Mode v3.5.0 is a fully self-contained Windows 11 Native Desktop application built on **Tauri v2 (Rust)** and **Svelte 5** with **elevated Windows autostart (`--tray` zero-RAM startup via Task Scheduler)**, **zero-RAM tray mode** (closing `[×]` destroys WebView2 from memory while keeping the 3-color status tray icon active: Red = Normal, Orange = Waiting Reboot / Pending Restore, Green = Active), **direct Win32 native RAM/SCM/shader/timer paths** (including automatic `0.500 ms` timer lock/unlock and partial-restore recovery), **inline Russian service descriptions and 1-click Feature Packs** (`Wi-Fi`, `Bluetooth`, `FACEIT`, `Webcam`, `Xbox`, `VPN`, `Printer`), **grouped Programs & Windows Startup Manager**, one-click **PC reboot**, and **verified GitHub Releases in-app updater** (`SHA256SUMS.txt`). All PowerShell engines, JSON configs, and self-tests are embedded inside **`UltraGamingMode.exe`** and bundled in **`UltraGamingMode-Setup.exe` (NSIS)** and **`UltraGamingMode.msi`**. Both installers and the portable runtime target **`C:\Program Files\UltraGamingMode`** (`perMachine` layout) so configuration, backups, and scripts stay in a single canonical directory. The interface features balanced **Dark & Light Modes** (`Светлая` / `Тёмная` toggle persisted in `localStorage` and synchronized with native Windows DWM window chrome), explicit Content Security Policy (CSP), WCAG AA / non-text contrast, Windows High Contrast (`forced-colors: active`), `prefers-reduced-motion`, full keyboard tab navigation (`role="tablist"` + Arrow/Home/End keys), explicit `role="alert"` IPC error banners, and persistent lazy-loaded tabs:
+Ultra Gaming Mode v3.5.1 ships as a self-contained Windows 11 Native Desktop application built on **Tauri v2 (Rust)** and **Svelte 5**. All PowerShell engines, JSON configs, and self-tests are embedded inside **`UltraGamingMode.exe`** and synchronized to **`C:\Program Files\UltraGamingMode`**.
 
-1. Launch portable **`UltraGamingMode.exe`** anywhere (or run the installed desktop shortcut from `UltraGamingMode-Setup.exe` / `UltraGamingMode.msi`; it requests Administrator UAC elevation automatically).
-2. **Overview Tab (`Обзор`)**:
-   - Displays live system state (`Обычный`, `Подготовка к перезагрузке`, `Игровой режим`, `Ожидает завершения возврата`, `Применяется`, `Ошибка`), complete hardware cards (CPU, GPU, RAM, Display/MPO, DPC/Timer telemetry) with selectable specs, 1-click recovery banner for interrupted restores, and the primary **«Включить игровой режим»** / **«Вернуть штатный режим»** action.
-   - Choose your optimization profile (`Киберспорт`, `AAA и стриминг`, or `Пользовательский`) and lock or unlock the `0.5 мс` multimedia timer on demand.
-3. **Programs Tab (`Программы`)**:
-   - Monitor running Windows programs grouped by application with human-readable descriptions (expanded PID view, OS core processes hidden by default, distinct protection badges for `Ядро Windows`, `Античит`, `Игровой клиент`, and `Это приложение`), terminate non-critical background apps with confirmation dialogs, configure auto-close rules, and manage live **Windows Startup entries (`Автозагрузка Windows`)** (`Run` keys, Startup `.lnk`/`.url`, UWP tasks) cleanly.
-4. **Services Tab (`Службы`)**:
-   - Use 1-click **«Что вам нужно во время игры?»** Feature Packs (`Wi-Fi` with active Wi-Fi warning, `Bluetooth`, `FACEIT`, `Webcam`, `Xbox / Store`, `VPN`, `Printer`), browse and filter all **205** disabled-in-game services with inline Russian summaries, manage **92+** always-enabled protected services (`Всегда включены`), or inspect/assign any installed PC service (`Все службы ПК`).
-5. **Settings Tab (`Настройки`)**:
-   - Configure **«Запуск и фоновый режим»** (elevated `--tray` Windows autostart via Task Scheduler with path-drift repair and automatic `0.5 ms` timer lock in Gaming Mode) and `Config\tuning.json` toggles with selectable technical keys: Classic Fullscreen Exclusive (`DisableFullscreenOptimizations`), PCIe Network Card MSI Mode (`EnableNetAdapterMsi`), Raw 1:1 Mouse Input (`DisableMouseAccel`), and NVIDIA Max Clock / P-State Lock (`DisableNvidiaDynamicPstate`).
-   - Tune Peripheral Input Buffer Queue Size (`InputBufferQueueSize`) via presets (`64`, `100`, `150`, `200`) or custom validated numeric input (`32–1024` packets) with automatic rollback on save errors and live background `-Action ApplyTuning` synchronization while Gaming Mode is Armed or Active.
-6. **Maintenance Tab (`Обслуживание`)**:
-   - **Quick Maintenance & Diagnostics**: On-demand Standby RAM cache purge (`Очистить кэш ОЗУ`), configuration integrity verification (`Проверить конфиги`), and Windows service restoration (`Восстановить службы`).
-   - **System Resets & Windows 11 Tweaks (ConfirmDialog-protected)**: Confirmation-guarded GPU shader cache purge (AMD / NVIDIA / Intel / DirectX), Display / DWM stack reset, and reversible Win11 Debloat / Rollback, alongside a confirmation-guarded collapsible event log console.
+#### 📦 Release Packages
+| Package | Format | Best For |
+|:---|:---|:---|
+| **`UltraGamingMode-Setup.exe`** | NSIS Installer (`perMachine`) | Recommended desktop install with Start Menu / Desktop shortcuts & in-app auto-updater |
+| **`UltraGamingMode.msi`** | Windows Installer (`MSI`) | Enterprise / clean MSI deployment to `C:\Program Files\UltraGamingMode` |
+| **`UltraGamingMode.exe`** | Standalone Portable EXE | Zero-install portable execution with embedded PowerShell & JSON runtime |
+
+#### 🧭 Desktop UI Tabs & Controls
+| Tab | Key Features & Controls |
+|:---|:---|
+| **1. Обзор (`Overview`)** | Live mode status badge, primary **«Включить игровой режим» / «Вернуть штатный режим»** button, 1-click **PC Reboot**, interrupted-restore recovery banner, optimization profiles (`Киберспорт`, `AAA и стриминг`, `Пользовательский`), on-demand `0.500 ms` timer lock/unlock, hardware telemetry cards, and **SHA-256 verified GitHub Updater**. |
+| **2. Программы (`Programs`)** | Running processes grouped by application with human-readable `version.dll` titles, expandable PIDs, OS core filter, 4 protection badges (`Ядро Windows`, `Античит`, `Игровой клиент`, `Это приложение`), «Закрывать в игре» toggle, and integrated **Windows Startup Manager (`Автозагрузка Windows`)** (`HKCU/HKLM Run`, `.lnk`/`.url`, UWP). |
+| **3. Службы (`Services`)** | 1-click **«Что вам нужно во время игры?»** Feature Packs (`Wi-Fi` with active connection check, `Bluetooth`, `FACEIT`, `Webcam`, `Xbox / Store`, `VPN`, `Printer`), 8 categories, and 3 views: **«Отключаются в игре» (205)** with Russian descriptions, **«Всегда включены» (92+)**, and **«Все службы ПК»**. |
+| **4. Настройки (`Settings`)** | **«Запуск и фоновый режим»** (elevated `--tray` Task Scheduler autostart with path-drift repair & auto `0.500 ms` timer lock in Gaming Mode), `Config\tuning.json` switches (`FSE`, `NetAdapterMsi`, `DisableMouseAccel`, `DisableNvidiaDynamicPstate`), and `InputBufferQueueSize` (`32–1024` packets) with live `-Action ApplyTuning`. |
+| **5. Обслуживание (`Maintenance`)** | Instant **Standby RAM Purge (`Win32StandbyCleaner`)**, config integrity check, service state restore, confirmation-guarded **GPU Shader Cache Purge** (AMD / NVIDIA / Intel / DirectX), DisplayPort / DWM topology reset, and reversible Windows 11 Debloat. |
+
+> [!NOTE]
+> **Zero-RAM System Tray Indicator:** Closing the window (`[×]`) destroys the WebView2 renderer (`0 MB` UI memory overhead) while keeping the native Rust tray icon active:
+> - 🟢 **Green:** Gaming Mode Active (`0.500 ms` timer & optimizations active)
+> - 🟠 **Orange:** Armed for Next Boot / Pending Restore completion
+> - 🔴 **Red:** Normal Stock Windows State
 
 ---
 
@@ -404,7 +427,7 @@ Ultra Gaming Mode v3.5.0 is a fully self-contained Windows 11 Native Desktop app
 
 ```
 ============================================================
-           ULTRA GAMING MODE CONTROLLER  v3.5.0
+           ULTRA GAMING MODE CONTROLLER  v3.5.1
             Universal Hardware Adaptive Suite
 ============================================================
 
@@ -513,7 +536,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
-├── UltraGamingMode.exe              # Self-contained Windows 11 Desktop GUI application (v3.5.0, Tauri v2, embedded runtime)
+├── UltraGamingMode.exe              # Self-contained Windows 11 Desktop GUI application (v3.5.1, Tauri v2, embedded runtime)
 ├── UltraGamingMode.bat              # Elevated interactive TUI launcher
 ├── UltraGamingMode.ps1              # Core PowerShell CLI controller & orchestrator
 ├── Build-Release.ps1                # Automated Tauri build, .bin/ packaging & SHA256SUMS generator
@@ -523,13 +546,14 @@ Win11-Gaming-Optimizer/
 │
 ├── ui/                              # Native Desktop frontend & Tauri Rust backend
 │   ├── src/                         # Svelte 5 (Runes) + Tailwind CSS v4 + Lucide Icons + ConfirmDialog
-│   └── src-tauri/                   # Rust application core with native window chrome, theme sync & unit tests
+│   └── src-tauri/                   # Rust application core with native window chrome, theme sync & 20 unit tests
 │
 ├── Config/
+│   ├── service_descriptions.json    # Localized Russian descriptions for all 297+ managed Windows services
 │   ├── services_blacklist.json      # 205 target non-essential Windows services
-│   ├── services_whitelist.json      # 92 strictly protected critical components
+│   ├── services_whitelist.json      # 92 strictly protected critical components (incl. FACEIT)
 │   ├── startup_apps.json            # Target startup bloat & protected app rules
-│   └── tuning.json                  # User-configurable FSE, Mouse Accel, NVIDIA P-State, NIC MSI & Input Queue toggles
+│   └── tuning.json                  # User-configurable AutoLockTimer, FSE, Mouse Accel, NVIDIA P-State, NIC MSI & Input Queue
 │
 ├── Core/
 │   ├── ServiceManager.ps1           # Safe service manipulation with whitelist locks
@@ -537,7 +561,7 @@ Win11-Gaming-Optimizer/
 │   └── SystemOptimizer.ps1          # Power, MMCSS, Network, Memory, and Defender tuning
 │
 ├── Tests/
-│   └── Verify-UniversalEngine.ps1   # 366 automated unit tests & hardware simulation suite
+│   └── Verify-UniversalEngine.ps1   # 381 automated unit tests & hardware simulation suite
 │
 └── Backups/
     └── active_state.json            # Dynamic active session snapshot (auto-generated)

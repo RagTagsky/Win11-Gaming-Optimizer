@@ -137,6 +137,23 @@
   const visibleReleaseNotes = $derived(
     showAllReleaseNotes ? releaseNoteItems : releaseNoteItems.slice(0, 3)
   );
+  const updateMetaText = $derived.by(() => {
+    if (!updateInfo) return '';
+    const parts: string[] = [];
+    if (updateInfo.installerName) {
+      parts.push(updateInfo.installerName);
+    }
+    if (typeof updateInfo.sizeBytes === 'number' && updateInfo.sizeBytes > 0) {
+      parts.push(`${(updateInfo.sizeBytes / (1024 * 1024)).toFixed(2)} МБ`);
+    }
+    if (updateInfo.publishedAt) {
+      const parsed = new Date(updateInfo.publishedAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        parts.push(parsed.toLocaleDateString('ru-RU'));
+      }
+    }
+    return parts.join(' · ');
+  });
 
   const isTimerActive = $derived.by(() => {
     if (timerLocked) return true;
@@ -287,7 +304,7 @@
           type="button"
           onclick={onToggleMode}
           disabled={isBusy || isRebooting}
-          class="{isActiveMode ? 'ui-btn-danger' : 'ui-btn-primary'} ui-pressable min-h-11 px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+          class="{isActiveMode ? 'ui-btn-danger' : 'ui-btn-primary'} ui-pressable min-h-11 ps-4 pe-5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
         >
           {#if isBusy}
             <Loader2 size={17} strokeWidth={2} class="ui-spin" aria-hidden="true" />
@@ -380,14 +397,14 @@
           onclick={() => onProfileChange(item.id)}
           disabled={isBusy}
           aria-pressed={selected}
-          class="{selected ? 'ui-card-selected' : 'ui-card-interactive'} rounded-xl p-4 text-left flex flex-col justify-between gap-3 disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+          class="{selected ? 'ui-card-selected' : 'ui-card-interactive'} rounded-xl p-4 text-start flex flex-col justify-between gap-3 disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
         >
           <span class="block space-y-2 w-full">
             <span class="flex items-start justify-between gap-2 w-full">
               <span class="flex items-center gap-2 min-w-0">
                 <span
                   class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 {selected
-                    ? 'bg-[var(--accent-solid)] text-white'
+                    ? 'bg-[var(--accent-solid)] text-[var(--text-on-solid)]'
                     : 'bg-[var(--bg-elevated)] text-[var(--accent-text)]'}"
                 >
                   {#if item.id === 'competitive'}
@@ -411,7 +428,7 @@
 
               {#if selected}
                 <span
-                  class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold bg-[var(--accent-solid)] text-white shrink-0"
+                  class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold bg-[var(--accent-solid)] text-[var(--text-on-solid)] shrink-0"
                 >
                   <Check size={12} strokeWidth={2.25} aria-hidden="true" />
                   <span>Выбран</span>
@@ -592,7 +609,7 @@
           <span
             class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
           >
-            v{updateInfo?.currentVersion ?? '3.5.0'}
+            v{updateInfo?.currentVersion ?? '3.5.1'}
           </span>
         </div>
         <p class="text-[0.8125rem] text-[var(--text-secondary)]">
@@ -639,9 +656,18 @@
         class="rounded-xl p-4 bg-[var(--accent-soft)] border border-[var(--accent-border)] flex flex-col sm:flex-row sm:items-start justify-between gap-3"
       >
         <div class="min-w-0 flex-1 space-y-1.5">
-          <p class="text-sm font-semibold text-[var(--accent-text)]">
-            Доступна новая версия v{updateInfo.latestVersion}
-          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="text-sm font-semibold text-[var(--accent-text)]">
+              Доступна новая версия v{updateInfo.latestVersion}
+            </p>
+            {#if updateMetaText}
+              <span
+                class="inline-flex items-center rounded-md px-2 py-0.5 text-[0.7rem] font-medium tabular-nums bg-[var(--bg-surface)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
+              >
+                {updateMetaText}
+              </span>
+            {/if}
+          </div>
           {#if updateInfo.releaseNotes}
             {#if visibleReleaseNotes.length > 0}
               <ul class="space-y-1 text-xs leading-relaxed text-[var(--text-secondary)]">
@@ -678,7 +704,7 @@
               type="button"
               onclick={onInstallUpdate}
               disabled={isInstallingUpdate}
-              class="ui-btn-primary ui-pressable rounded-lg px-4 py-2 min-h-9 text-[0.8125rem] font-semibold inline-flex items-center gap-1.5 disabled:opacity-55 cursor-pointer"
+              class="ui-btn-primary ui-pressable rounded-lg ps-3.5 pe-4 py-2 min-h-9 text-[0.8125rem] font-semibold inline-flex items-center gap-1.5 disabled:opacity-55 cursor-pointer"
             >
               {#if isInstallingUpdate}
                 <Loader2 size={14} strokeWidth={2} class="ui-spin" aria-hidden="true" />
