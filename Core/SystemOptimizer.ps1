@@ -3357,7 +3357,7 @@ function Set-ExtendedGamingOptimizations {
         [Parameter(Mandatory = $false)] [string[]]$Whitelist
     )
 
-    Write-Host "[*] Applying v3.4.0 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying v3.5.0 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
     $targets = @(Get-ExtendedGamingTargets -HardwareProfile $HardwareProfile -Whitelist $Whitelist)
     $applied = Set-RegistryTargets -Targets $targets
     $groups = ($targets | ForEach-Object { $_.Group } | Sort-Object -Unique) -join ", "

@@ -467,14 +467,14 @@ Assert-Test ($wlContent.ProtectedServices -contains "camsvc") "camsvc (Microphon
 $allStrippedServices = @(
     "Rockstar Service", "AMD Crash Defender Service", "midisrv", "WinHttpAutoProxySvc", "WpnUserService",
     "bthserv", "BTAGService", "BthAvctpSvc", "BluetoothUserService", "WlanSvc", "LanmanServer",
-    "FACEIT", "FACEITService", "FrameServer", "FrameServerMonitor", "ZTHELPER", "ssh-agent",
+    "FrameServer", "FrameServerMonitor", "ZTHELPER", "ssh-agent",
     "dot3svc", "TapiSrv", "ALG", "lltdsvc", "PerfHost", "KtmRm", "MSDTC", "swprv", "VSS",
     "RasMan", "RasAuto", "SstpSvc", "SharedAccess", "defragsvc", "NcdAutoSetup", "wcncsvc",
     "IpxlatCfgSvc", "NetTcpPortSharing", "LxpSvc", "NgcSvc", "AssignedAccessManagerSvc",
     "XboxGipSvc", "wlidsvc", "EapHost", "NcaSvc", "WwanSvc", "CredentialEnrollmentManagerUserSvc"
 )
 $foundStrippedServices = @($blContent.TargetServices | Where-Object { $allStrippedServices -contains $_.Name })
-Assert-Test ($foundStrippedServices.Count -eq $allStrippedServices.Count) "All 44 user-selected bloat/unused services added to services_blacklist.json ($($foundStrippedServices.Count)/$($allStrippedServices.Count))"
+Assert-Test ($foundStrippedServices.Count -eq $allStrippedServices.Count) "All 42 user-selected bloat/unused services added to services_blacklist.json ($($foundStrippedServices.Count)/$($allStrippedServices.Count))"
 $stillWhitelisted = @($wlContent.ProtectedServices | Where-Object { $allStrippedServices -contains $_ })
 Assert-Test ($stillWhitelisted.Count -eq 0) "Stripped services completely removed from services_whitelist.json"
 
@@ -602,7 +602,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.4.0") "Get-AppCurrentVersion returns expected suite version '3.4.0'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.5.0") "Get-AppCurrentVersion returns expected suite version '3.5.0'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -610,7 +610,7 @@ $vBare     = ConvertTo-SemVer "2.8"
 $vPadded   = ConvertTo-SemVer "2.8.0"
 $vPatch    = ConvertTo-SemVer "v2.8.1"
 $vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.4.0"
+$vMajor    = ConvertTo-SemVer "v3.5.0"
 $vSuffix   = ConvertTo-SemVer "v2.8-Universal"
 $vBuild    = ConvertTo-SemVer "v2.8.0+build123"
 $vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
@@ -627,7 +627,7 @@ Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer ret
 # 12.3 SemVer Comparison Contracts
 Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
 Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.4.0 is correctly recognized as newer than v2.8"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.5.0 is correctly recognized as newer than v2.8"
 Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
 $vOld = ConvertTo-SemVer "v2.7"
 Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
@@ -937,7 +937,7 @@ $netMsiDef = (Get-Command Set-NetAdapterMsiMode).Definition
 Assert-Test ($netMsiDef -match '\^PCI\\\\' -and $netMsiDef -match 'MSISupported') "Set-NetAdapterMsiMode strictly filters physical PCIe adapters (^PCI\\) and sets MSISupported = 1"
 
 $ugmContent = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\UltraGamingMode.ps1") -Raw -Encoding UTF8
-Assert-Test ($ugmContent -notmatch '173 non-essential' -and $ugmContent -match '207 non-essential') "UltraGamingMode.ps1 references all 207 non-essential services"
+Assert-Test ($ugmContent -notmatch '173 non-essential' -and $ugmContent -match '205 non-essential') "UltraGamingMode.ps1 references all 205 non-essential services"
 Assert-Test ($ugmContent -match 'Kernel DPC: Threaded \(Optimal\)' -and $ugmContent -match 'Dynamic Tick: Default \(Optimal\)') "UltraGamingMode.ps1 displays accurate optimal status badges for Kernel DPC and Dynamic Tick"
 
 # 14.10 Behavioral Verification: DisableMouseAccel, NetAdapterMsi Restore & Registry Snapshot Round-Trip
@@ -1282,6 +1282,56 @@ if (Test-Path -LiteralPath $rustLibPath) {
     Assert-Test ($rustLibRaw -match 'reboot_pc' -and $rustLibRaw -match 'check_for_updates' -and $rustLibRaw -match 'install_github_update') "lib.rs exposes reboot_pc, check_for_updates, and install_github_update IPC commands"
     Assert-Test ($rustLibRaw -match 'clean_memory_win32' -and $rustLibRaw -match 'control_service_win32' -and $rustLibRaw -match 'build_tray_icon') "lib.rs implements native Win32 memory/service optimization and 3-color tray icon builder"
 }
+
+# -- 17. v3.5.0 Autostart, FACEIT Whitelist, Startup Protection & UI Redesign Contracts --
+Write-Host "`n[Test Group 17] v3.5.0 Autostart, FACEIT Whitelist, Startup Protection & UI Redesign Contracts:" -ForegroundColor Yellow
+
+$ugmRoot = Split-Path -Parent $PSScriptRoot
+$blJson17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Config\services_blacklist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$wlJson17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Config\services_whitelist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$tuningJson17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Config\tuning.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+
+$blNames17 = @($blJson17.TargetServices | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.Name } })
+Assert-Test ($blNames17.Count -eq 205 -and ($blNames17 -notcontains 'FACEIT') -and ($blNames17 -notcontains 'FACEITService')) "services_blacklist.json has 205 TargetServices and excludes FACEIT / FACEITService"
+Assert-Test ($wlJson17.ProtectedServices.Count -eq 92 -and ($wlJson17.ProtectedServices -contains 'FACEIT') -and ($wlJson17.ProtectedServices -contains 'FACEITService')) "services_whitelist.json has 92 ProtectedServices and protects FACEIT / FACEITService"
+Assert-Test ($null -ne $tuningJson17.AutoLockTimerInGaming -and $tuningJson17.AutoLockTimerInGaming -is [bool]) "tuning.json exposes boolean AutoLockTimerInGaming setting"
+
+$tauriConf17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src-tauri\tauri.conf.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+Assert-Test ($tauriConf17.version -eq '3.5.0' -and $tauriConf17.app.windows[0].create -eq $false) "tauri.conf.json sets version 3.5.0 and Zero-RAM create=false on main window"
+
+$wxsRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src-tauri\templates\main.wxs") -Raw -Encoding UTF8
+$afterUpdateBlock17 = ($wxsRaw17 -split '\{\{/if\}\}', 2)[1]
+Assert-Test ($wxsRaw17 -match 'DeleteAutoStartTask' -and $null -ne $afterUpdateBlock17 -and $afterUpdateBlock17 -match 'UltraGamingMode_AutoStart') "main.wxs deletes UltraGamingMode_AutoStart outside enable_elevated_update_task"
+
+$nsiRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src-tauri\templates\installer.nsi") -Raw -Encoding UTF8
+$nsiUninstallMatches17 = [regex]::Matches($nsiRaw17, '(?s)\$\{If\}\s+\$UpdateMode\s+<>\s+1.*?\$\{EndIf\}')
+$nsiHasAutoStartCleanup17 = @($nsiUninstallMatches17 | Where-Object { $_.Value -match 'DeleteRegValue' -and $_.Value -match 'UltraGamingMode_AutoStart' }).Count -gt 0
+Assert-Test ($nsiHasAutoStartCleanup17) 'installer.nsi deletes UltraGamingMode_AutoStart on full uninstall ($UpdateMode <> 1)'
+
+if (Test-Path -LiteralPath $rustLibPath) {
+    $rustLibRaw17 = Get-Content -LiteralPath $rustLibPath -Raw -Encoding UTF8
+    $requiredRustSymbols17 = @(
+        'get_autostart_status',
+        'set_autostart',
+        'unlock_timer_resolution',
+        'finish_pending_restore',
+        'get_windows_startup_entries',
+        'apply_service_feature_pack',
+        'classify_process_protection'
+    )
+    $missingRustSymbols17 = @($requiredRustSymbols17 | Where-Object { $rustLibRaw17 -notmatch [regex]::Escape($_) })
+    Assert-Test ($missingRustSymbols17.Count -eq 0) "lib.rs defines all v3.5.0 commands and classifiers (missing: $($missingRustSymbols17 -join ', '))"
+}
+
+$stateEngineRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Core\StateEngine.ps1") -Raw -Encoding UTF8
+Assert-Test ($stateEngineRaw17 -match 'cleanName' -and $stateEngineRaw17 -match 'protectedStartup' -and $stateEngineRaw17 -match 'pkgProtected' -and $stateEngineRaw17 -match 'taskProtected') "Core/StateEngine.ps1 guards protected .lnk/.url shortcuts and UWP startup tasks"
+
+$tweaksRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src\lib\components\TweaksView.svelte") -Raw -Encoding UTF8
+Assert-Test ($tweaksRaw17 -match 'SystemResponsiveness\s*=\s*10' -and $tweaksRaw17 -match 'max="1024"') "TweaksView.svelte sets SystemResponsiveness = 10 copy and max=1024 on InputBufferQueueSize"
+
+$appSvelteRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src\App.svelte") -Raw -Encoding UTF8
+$programsLabel17 = -join ([char[]](0x041F,0x0440,0x043E,0x0433,0x0440,0x0430,0x043C,0x043C,0x044B))
+Assert-Test ($appSvelteRaw17.Contains($programsLabel17)) "App.svelte labels the processes tab cleanly in Russian"
 
 # ── Summary ────────────────────────────────────────────────────────────────
 Write-Host "`n=====================================================" -ForegroundColor Magenta

@@ -26,15 +26,19 @@
   import LogConsole from './lib/components/LogConsole.svelte';
   import ConfirmDialog from './lib/components/ConfirmDialog.svelte';
   import {
+    applyServiceFeaturePack,
     buildProfileTuningPreset,
     checkForUpdates,
     controlService,
     executeEmergencyRepair,
     executeModeAction,
+    fetchAutostartStatus,
     fetchRunningProcesses,
     fetchServicesLists,
     fetchSystemStatus,
     fetchTuningConfig,
+    fetchWindowsStartupEntries,
+    finishPendingRestore,
     formatIpcError,
     installGithubUpdate,
     isTauri,
@@ -44,15 +48,19 @@
     rebootPc,
     resolveProfileFromTuning,
     saveTuningConfig,
+    setAutostart,
     setWindowTheme,
+    unlockTimerResolution,
     updateProcessList,
     updateServiceList
   } from './lib/api';
   import type {
+    AutostartStatus,
     BlacklistServiceItem,
     ConfirmDialogRequest,
     ErrorBannerState,
     HardwareInfo,
+    InstalledServiceItem,
     ListMutationOperation,
     LogEntry,
     ModeAction,
@@ -64,16 +72,19 @@
     ServiceCategory,
     ServiceControlOperation,
     ServiceDescriptionEntry,
+    ServiceFeaturePack,
     ServiceListType,
+    StartupEntry,
     TabId,
     ThemeMode,
     TuningConfig,
-    UpdateInfo
+    UpdateInfo,
+    WhitelistServiceItem
   } from './lib/types';
 
   const TAB_META: Array<{ id: TabId; label: string }> = [
     { id: 'dashboard', label: 'Обзор' },
-    { id: 'processes', label: 'Процессы' },
+    { id: 'processes', label: 'Программы' },
     { id: 'services', label: 'Службы' },
     { id: 'tweaks', label: 'Настройки' },
     { id: 'repair', label: 'Обслуживание' }
@@ -116,17 +127,20 @@
   let isStatusLoading = $state(true);
   let statusError = $state<string | null>(null);
   let isProcessing = $state(false);
+  let isFinishingRestore = $state(false);
   let timerLocked = $state(false);
   let isTimerLocking = $state(false);
 
-  // Processes Tab State (persists across tabs)
+  // Processes / Programs & Startup Tab State (persists across tabs)
   let processes = $state<ProcessItem[]>([]);
   let blacklistProcesses = $state<string[]>([]);
   let protectedStartupNames = $state<string[]>([]);
-  let processesViewMode = $state<ProcessViewMode>('live');
+  let startupEntries = $state<StartupEntry[]>([]);
+  let processesViewMode = $state<ProcessViewMode>('running');
   let processesFilterMode = $state<ProcessFilterMode>('all');
   let processesSearchQuery = $state('');
   let isProcessesLoading = $state(false);
+  let isStartupLoading = $state(false);
   let processBusyKey = $state<string | null>(null);
   let processesError = $state<string | null>(null);
 
@@ -134,7 +148,12 @@
   let blacklist = $state<BlacklistServiceItem[]>([]);
   let whitelist = $state<string[]>([]);
   let whitelistDescriptions = $state<Record<string, ServiceDescriptionEntry>>({});
-  let servicesViewMode = $state<ServiceViewMode>('blacklist');
+  let whitelistItems = $state<WhitelistServiceItem[]>([]);
+  let allInstalledServices = $state<InstalledServiceItem[]>([]);
+  let wifiActive = $state(false);
+  let featurePacks = $state<ServiceFeaturePack[]>([]);
+  let busyFeaturePack = $state<string | null>(null);
+  let servicesViewMode = $state<ServiceViewMode>('disable');
   let servicesSearchQuery = $state('');
   let servicesCategory = $state<ServiceCategoryFilter>('all');
   let isServicesLoading = $state(false);
@@ -142,6 +161,12 @@
   let servicesError = $state<string | null>(null);
   let servicesLoaded = false;
   let processesLoaded = false;
+
+  // Elevated Autostart State
+  let autostartStatus = $state<AutostartStatus | null>(null);
+  let isAutostartLoading = $state(false);
+  let isAutostartSaving = $state(false);
+  let autostartError = $state<string | null>(null);
 
   // Reboot & GitHub Updates State
   let isRebooting = $state(false);
@@ -286,12 +311,31 @@
     }
   }
 
+  async function loadStartupEntries(silent = false) {
+    if (!silent) {
+      isStartupLoading = true;
+    }
+    try {
+      startupEntries = await fetchWindowsStartupEntries();
+    } catch (err) {
+      const detail = formatIpcError(err);
+      if (!silent) {
+        addLog('error', `Сбой чтения автозагрузки Windows: ${detail}`);
+      }
+    } finally {
+      isStartupLoading = false;
+    }
+  }
+
   async function loadProcesses(silent = false) {
     if (!silent) {
       isProcessesLoading = true;
     }
     try {
-      const snap = await fetchRunningProcesses();
+      const [snap] = await Promise.all([
+        fetchRunningProcesses(),
+        loadStartupEntries(true)
+      ]);
       processes = snap.processes;
       blacklistProcesses = snap.blacklistProcesses;
       protectedStartupNames = snap.protectedStartupNames;
@@ -301,21 +345,29 @@
       const detail = formatIpcError(err);
       processesError = detail;
       if (!silent) {
-        setError('processes', 'Ошибка сканирования процессов Windows', detail);
-        addLog('error', `Сбой чтения процессов: ${detail}`);
+        setError('processes', 'Ошибка сканирования программ Windows', detail);
+        addLog('error', `Сбой чтения программ: ${detail}`);
       }
     } finally {
       isProcessesLoading = false;
     }
   }
 
+  function applyServicesListsResponse(lists: Awaited<ReturnType<typeof fetchServicesLists>>) {
+    blacklist = lists.blacklist;
+    whitelist = lists.whitelist;
+    whitelistDescriptions = lists.whitelistDescriptions ?? {};
+    whitelistItems = lists.whitelistItems ?? [];
+    allInstalledServices = lists.allInstalledServices ?? [];
+    wifiActive = Boolean(lists.wifiActive);
+    featurePacks = lists.featurePacks ?? [];
+  }
+
   async function loadServices() {
     isServicesLoading = true;
     try {
       const lists = await fetchServicesLists();
-      blacklist = lists.blacklist;
-      whitelist = lists.whitelist;
-      whitelistDescriptions = lists.whitelistDescriptions ?? {};
+      applyServicesListsResponse(lists);
       servicesLoaded = true;
       servicesError = null;
       clearErrorIfSource('services');
@@ -326,6 +378,44 @@
       addLog('error', `Сбой чтения служб: ${detail}`);
     } finally {
       isServicesLoading = false;
+    }
+  }
+
+  async function loadAutostart() {
+    isAutostartLoading = true;
+    try {
+      autostartStatus = await fetchAutostartStatus();
+      autostartError = null;
+      clearErrorIfSource('autostart');
+    } catch (err) {
+      const detail = formatIpcError(err);
+      autostartError = detail;
+      addLog('error', `Сбой проверки автозапуска Windows: ${detail}`);
+    } finally {
+      isAutostartLoading = false;
+    }
+  }
+
+  async function handleSetAutostart(enabled: boolean, startInTray: boolean) {
+    if (isAutostartSaving) return;
+    isAutostartSaving = true;
+    try {
+      const status = await setAutostart(enabled, startInTray);
+      autostartStatus = status;
+      autostartError = null;
+      clearErrorIfSource('autostart');
+      const msg = enabled
+        ? `Автозапуск вместе с Windows включён (${startInTray ? 'в трей' : 'с открытием окна'}).`
+        : 'Автозапуск вместе с Windows отключён.';
+      addLog('success', msg);
+      liveAnnouncement = msg;
+    } catch (err) {
+      const detail = formatIpcError(err);
+      autostartError = detail;
+      setError('autostart', 'Не удалось изменить автозапуск Windows', detail);
+      addLog('error', detail);
+    } finally {
+      isAutostartSaving = false;
     }
   }
 
@@ -368,7 +458,7 @@
         ? 'Интерфейс подключён к модулю управления Windows.'
         : 'Запущен предпросмотр интерфейса вне среды Tauri.'
     );
-    await Promise.all([loadSystemStatus(), loadTuning()]);
+    await Promise.all([loadSystemStatus(), loadTuning(), loadAutostart()]);
   }
 
   async function handleCheckUpdates(silent = false) {
@@ -605,7 +695,10 @@
     profile = nextProfile;
 
     if (tuningConfig) {
-      const nextCfg = buildProfileTuningPreset(nextProfile);
+      const nextCfg = buildProfileTuningPreset(
+        nextProfile,
+        tuningConfig.AutoLockTimerInGaming ?? true
+      );
       const savedOk = await handleUpdateTuning(nextCfg, false);
       if (!savedOk) {
         profile = prevProfile;
@@ -643,6 +736,71 @@
       addLog('error', detail);
     } finally {
       isTimerLocking = false;
+    }
+  }
+
+  async function handleUnlockTimer() {
+    if (isTimerLocking || isProcessing || isFinishingRestore) return;
+    isTimerLocking = true;
+    addLog('info', 'Сброс удержания системного таймера 0.500 мс…');
+    try {
+      const res = await unlockTimerResolution();
+      if (res.success) {
+        timerLocked = false;
+        clearErrorIfSource('timer');
+        addLog('success', res.message);
+        if (!isTauri && hardware) {
+          hardware = { ...hardware, timerResolution: '1.000 мс (штатный)' };
+        } else if (isTauri) {
+          await loadSystemStatus(true);
+        }
+        liveAnnouncement = res.message;
+      } else {
+        setError('timer', 'Не удалось сбросить системный таймер', res.message);
+        addLog('error', res.message);
+      }
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('timer', 'Ошибка сброса системного таймера', detail);
+      addLog('error', detail);
+    } finally {
+      isTimerLocking = false;
+    }
+  }
+
+  async function handleFinishPendingRestore() {
+    if (isFinishingRestore || isProcessing || mode === 'Transitioning') return;
+    isFinishingRestore = true;
+    const prevMode = mode;
+    mode = 'Transitioning';
+    addLog('info', 'Завершение восстановления автозагрузки и пользовательского профиля…');
+    try {
+      const res = await finishPendingRestore();
+      if (res.success) {
+        timerLocked = false;
+        clearErrorIfSource('action');
+        addLog('success', res.message);
+        if (!isTauri) {
+          mode = 'Normal';
+          activeSince = undefined;
+        } else {
+          const reloads: Array<Promise<void>> = [loadSystemStatus(true), loadTuning()];
+          if (servicesLoaded) reloads.push(loadServices());
+          await Promise.all(reloads);
+        }
+        liveAnnouncement = res.message;
+      } else {
+        mode = prevMode;
+        setError('action', 'Не удалось завершить восстановление профиля', res.message);
+        addLog('error', res.message);
+      }
+    } catch (err) {
+      mode = prevMode;
+      const detail = formatIpcError(err);
+      setError('action', 'Сбой завершения восстановления', detail);
+      addLog('error', detail);
+    } finally {
+      isFinishingRestore = false;
     }
   }
 
@@ -791,6 +949,47 @@
     }
   }
 
+  async function handleKillProcessGroup(displayName: string, procs: ProcessItem[]) {
+    const targets = procs.filter((p) => !p.isProtected);
+    if (processBusyKey !== null || targets.length === 0) return;
+    const sampleName = targets[0].name;
+    const approved = await requestConfirm({
+      title: `Закрыть все процессы «${displayName}»?`,
+      description: `Будет завершено процессов: ${targets.length} (${sampleName}.exe). Несохранённые данные в этой программе будут потеряны.`,
+      confirmLabel: 'Закрыть все',
+      cancelLabel: 'Отмена',
+      tone: 'danger'
+    });
+    if (!approved) return;
+
+    processBusyKey = `killgroup:${sampleName}`;
+    try {
+      let okCount = 0;
+      let lastErr = '';
+      for (const proc of targets) {
+        const res = await killProcess(proc.pid, proc.name);
+        if (res.success) okCount += 1;
+        else lastErr = res.message;
+      }
+      if (okCount > 0) {
+        clearErrorIfSource('processes');
+        const msg = `Завершено процессов «${displayName}»: ${okCount} из ${targets.length}.`;
+        addLog('success', msg);
+        liveAnnouncement = msg;
+      } else if (lastErr) {
+        setError('processes', 'Не удалось закрыть программу', lastErr);
+        addLog('error', lastErr);
+      }
+      await loadProcesses(true);
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('processes', 'Сбой закрытия программы', detail);
+      addLog('error', detail);
+    } finally {
+      processBusyKey = null;
+    }
+  }
+
   async function handleUpdateProcessList(
     listType: ProcessListType,
     processName: string,
@@ -803,18 +1002,79 @@
       blacklistProcesses = updated.blacklistProcesses;
       protectedStartupNames = updated.protectedStartupNames;
       clearErrorIfSource('processes');
-      const targetLabel = listType === 'blacklist' ? 'чёрного списка' : 'исключений';
-      const actionLabel = operation === 'add' ? 'добавлен в список' : 'удалён из списка';
-      const msg = `Процесс «${processName}» ${actionLabel} (${targetLabel}).`;
+      const targetLabel =
+        listType === 'blacklist' ? 'закрытия в игре' : 'сохранения в автозагрузке';
+      const actionLabel = operation === 'add' ? 'добавлено в правило' : 'удалено из правила';
+      const msg = `«${processName}» ${actionLabel} (${targetLabel}).`;
       addLog('success', msg);
       liveAnnouncement = msg;
       await loadProcesses(true);
     } catch (err) {
       const detail = formatIpcError(err);
-      setError('processes', 'Ошибка обновления правил процессов', detail);
+      setError('processes', 'Ошибка обновления правил программ', detail);
       addLog('error', detail);
     } finally {
       processBusyKey = null;
+    }
+  }
+
+  async function handleApplyFeaturePack(packId: string, keepEnabledInGame: boolean) {
+    if (busyFeaturePack !== null || busyService !== null) return;
+    busyFeaturePack = packId;
+    try {
+      const updated = await applyServiceFeaturePack(packId, keepEnabledInGame);
+      applyServicesListsResponse(updated);
+      clearErrorIfSource('services');
+      const packTitle = updated.featurePacks?.find((p) => p.id === packId)?.title ?? packId;
+      const msg = keepEnabledInGame
+        ? `Функция «${packTitle}» теперь всегда остаётся включённой в игре.`
+        : `Функция «${packTitle}» теперь отключается на время игры для максимального FPS.`;
+      addLog('success', msg);
+      liveAnnouncement = msg;
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('services', 'Ошибка настройки группы служб', detail);
+      addLog('error', detail);
+    } finally {
+      busyFeaturePack = null;
+    }
+  }
+
+  async function handleMoveToDisableList(serviceName: string) {
+    if (busyService !== null || busyFeaturePack !== null) return;
+    const approved = await requestConfirm({
+      title: `Отключать «${serviceName}» в игровом режиме?`,
+      description:
+        'Служба будет убрана из списка «Всегда включены» и перенесена в список отключаемых на время игры (при выходе из игры её работа восстановится).',
+      confirmLabel: 'Отключать в игре',
+      cancelLabel: 'Отмена',
+      tone: 'warn'
+    });
+    if (!approved) return;
+
+    busyService = serviceName;
+    try {
+      await updateServiceList({
+        listType: 'whitelist',
+        serviceName,
+        operation: 'remove'
+      });
+      const updated = await updateServiceList({
+        listType: 'blacklist',
+        serviceName,
+        operation: 'add'
+      });
+      applyServicesListsResponse(updated);
+      clearErrorIfSource('services');
+      const msg = `Служба «${serviceName}» перенесена в «Отключаются в игре».`;
+      addLog('success', msg);
+      liveAnnouncement = msg;
+    } catch (err) {
+      const detail = formatIpcError(err);
+      setError('services', 'Ошибка переноса службы', detail);
+      addLog('error', detail);
+    } finally {
+      busyService = null;
     }
   }
 
@@ -879,18 +1139,14 @@
     busyService = params.serviceName;
     try {
       const updated = await updateServiceList(params);
-      blacklist = updated.blacklist;
-      whitelist = updated.whitelist;
-      if (updated.whitelistDescriptions) {
-        whitelistDescriptions = updated.whitelistDescriptions;
-      }
+      applyServicesListsResponse(updated);
       clearErrorIfSource('services');
       const scopeLabel =
-        params.listType === 'blacklist' ? 'оптимизируемых служб' : 'белого списка';
+        params.listType === 'blacklist' ? 'отключаемых в игре служб' : 'всегда включённых служб';
       const msg =
         params.operation === 'add'
-          ? `Служба «${params.serviceName}» добавлена в список (${scopeLabel}).`
-          : `Служба «${params.serviceName}» удалена из списка (${scopeLabel}).`;
+          ? `Служба «${params.serviceName}» добавлена (${scopeLabel}).`
+          : `Служба «${params.serviceName}» убрана (${scopeLabel}).`;
       addLog('success', msg);
       liveAnnouncement = msg;
     } catch (err) {
@@ -908,6 +1164,7 @@
     else if (globalError.source === 'processes') void loadProcesses();
     else if (globalError.source === 'services') void loadServices();
     else if (globalError.source === 'tuning') void loadTuning();
+    else if (globalError.source === 'autostart') void loadAutostart();
   }
 
   function handleTabKeyDown(e: KeyboardEvent, index: number) {
@@ -1052,6 +1309,7 @@
           {activeSince}
           {timerLocked}
           {isTimerLocking}
+          {isFinishingRestore}
           {isRebooting}
           {updateInfo}
           {isCheckingUpdates}
@@ -1060,6 +1318,8 @@
           onToggleMode={handleToggleMode}
           onProfileChange={handleProfileChange}
           onLockTimer={handleLockTimer}
+          onUnlockTimer={handleUnlockTimer}
+          onFinishPendingRestore={handleFinishPendingRestore}
           onRetryStatus={() => loadSystemStatus()}
           onRebootPc={handleRebootPc}
           onCheckUpdates={() => handleCheckUpdates(false)}
@@ -1078,17 +1338,21 @@
           {processes}
           {blacklistProcesses}
           {protectedStartupNames}
+          {startupEntries}
           viewMode={processesViewMode}
           filterMode={processesFilterMode}
           searchQuery={processesSearchQuery}
           isLoading={isProcessesLoading}
+          {isStartupLoading}
           busyKey={processBusyKey}
           loadError={processesError}
           onViewModeChange={(m) => (processesViewMode = m)}
           onFilterModeChange={(f) => (processesFilterMode = f)}
           onSearchChange={(q) => (processesSearchQuery = q)}
           onRefresh={() => loadProcesses()}
+          onRefreshStartup={() => loadStartupEntries()}
           onKillProcess={handleKillProcess}
+          onKillGroup={handleKillProcessGroup}
           onUpdateList={handleUpdateProcessList}
         />
       </div>
@@ -1103,6 +1367,11 @@
           {blacklist}
           {whitelist}
           {whitelistDescriptions}
+          {whitelistItems}
+          {allInstalledServices}
+          {wifiActive}
+          {featurePacks}
+          {busyFeaturePack}
           viewMode={servicesViewMode}
           searchQuery={servicesSearchQuery}
           selectedCategory={servicesCategory}
@@ -1113,6 +1382,8 @@
           onSearchChange={(q) => (servicesSearchQuery = q)}
           onCategoryChange={(c) => (servicesCategory = c)}
           onRetry={loadServices}
+          onApplyFeaturePack={handleApplyFeaturePack}
+          onMoveToDisableList={handleMoveToDisableList}
           onControlService={handleControlService}
           onUpdateServiceList={handleUpdateServiceList}
         />
@@ -1130,8 +1401,14 @@
           isSaving={isTuningSaving}
           loadError={tuningError}
           {mode}
+          {autostartStatus}
+          {isAutostartLoading}
+          {isAutostartSaving}
+          {autostartError}
           onUpdateConfig={handleUpdateTuning}
           onRetryLoad={loadTuning}
+          onSetAutostart={handleSetAutostart}
+          onRefreshAutostart={loadAutostart}
         />
       </div>
 

@@ -698,14 +698,6 @@
                                "Reason":  "SMB Server File and Print Sharing Service"
                            },
                            {
-                               "Name":  "FACEIT",
-                               "Reason":  "FACEIT Anti-Cheat Service"
-                           },
-                           {
-                               "Name":  "FACEITService",
-                               "Reason":  "FACEIT Client Service"
-                           },
-                           {
                                "Name":  "FrameServer",
                                "Reason":  "Windows Camera Frame Server"
                            },

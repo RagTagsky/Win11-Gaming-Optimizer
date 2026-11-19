@@ -908,6 +908,8 @@ Section Uninstall
   ; We do this when not updating (to preserve the registry value on updates)
   ${If} $UpdateMode <> 1
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCTNAME}"
+    nsExec::Exec '"$SYSDIR\schtasks.exe" /Delete /TN "UltraGamingMode_AutoStart" /F'
+    Pop $0
   ${EndIf}
 
   ; Delete app data if the checkbox is selected

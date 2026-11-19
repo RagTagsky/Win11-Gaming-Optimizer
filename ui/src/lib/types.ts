@@ -1,4 +1,10 @@
-export type ModeState = 'Normal' | 'Armed' | 'Gaming' | 'Transitioning' | 'Error';
+export type ModeState =
+  | 'Normal'
+  | 'Armed'
+  | 'Gaming'
+  | 'RestoringPending'
+  | 'Transitioning'
+  | 'Error';
 
 export type OptimizationProfile = 'competitive' | 'aaa' | 'custom';
 
@@ -8,7 +14,17 @@ export type ThemeMode = 'dark' | 'light';
 
 export type TabId = 'dashboard' | 'processes' | 'services' | 'tweaks' | 'repair';
 
-export type ServiceCategory = 'Xbox' | 'Print' | 'Telemetry' | 'Network' | 'System';
+export type ServiceCategory =
+  | 'Telemetry'
+  | 'Updates'
+  | 'Xbox'
+  | 'Print'
+  | 'Devices'
+  | 'Network'
+  | 'Remote'
+  | 'System';
+
+export type ProcessProtectionKind = 'os_core' | 'self_app' | 'anticheat' | 'game_client';
 
 export type ServiceControlOperation = 'Start' | 'Stop' | 'Automatic' | 'Manual' | 'Disabled';
 
@@ -43,6 +59,19 @@ export interface TuningConfig {
   DisableNvidiaDynamicPstate: boolean;
   EnableNetAdapterMsi: boolean;
   InputBufferQueueSize: number;
+  AutoLockTimerInGaming: boolean;
+}
+
+export interface AutostartStatus {
+  enabled: boolean;
+  startInTray: boolean;
+  taskExists: boolean;
+  pathMatches: boolean;
+  isElevatedTask: boolean;
+  currentExePath: string;
+  registeredCommand?: string;
+  isAdminSession: boolean;
+  warning?: string;
 }
 
 export interface ServiceDescriptionEntry {
@@ -61,10 +90,43 @@ export interface BlacklistServiceItem {
   CanDisableHint?: string;
 }
 
+export interface WhitelistServiceItem {
+  Name: string;
+  DisplayName: string;
+  Status: string;
+  isCoreLocked: boolean;
+  SummaryRu?: string;
+  CanDisableHint?: string;
+}
+
+export interface InstalledServiceItem {
+  Name: string;
+  DisplayName: string;
+  Status: string;
+  StartType: string;
+  Category: ServiceCategory;
+  membership: 'core' | 'whitelist' | 'blacklist' | 'none';
+  isCoreLocked: boolean;
+  SummaryRu?: string;
+  CanDisableHint?: string;
+}
+
+export interface ServiceFeaturePack {
+  id: string;
+  title: string;
+  description: string;
+  keepEnabledInGame: boolean;
+  services: string[];
+}
+
 export interface ServicesLists {
   blacklist: BlacklistServiceItem[];
   whitelist: string[];
   whitelistDescriptions?: Record<string, ServiceDescriptionEntry>;
+  whitelistItems?: WhitelistServiceItem[];
+  allInstalledServices?: InstalledServiceItem[];
+  wifiActive?: boolean;
+  featurePacks?: ServiceFeaturePack[];
 }
 
 export interface UpdateInfo {
@@ -83,10 +145,25 @@ export interface UpdateInfo {
 export interface ProcessItem {
   pid: number;
   name: string;
+  displayName?: string;
+  executablePath?: string;
+  protectionKind?: ProcessProtectionKind | null;
   memoryMb: number;
   isProtected: boolean;
   isBlacklisted: boolean;
   isStartupProtected: boolean;
+}
+
+export interface StartupEntry {
+  id: string;
+  name: string;
+  displayName: string;
+  source: string;
+  sourceLabel: string;
+  target: string;
+  enabled: boolean;
+  isProtected: boolean;
+  matchedRule?: string;
 }
 
 export interface ProcessConfigLists {
@@ -111,6 +188,7 @@ export interface ErrorBannerState {
   source:
     | 'status'
     | 'tuning'
+    | 'autostart'
     | 'processes'
     | 'services'
     | 'action'

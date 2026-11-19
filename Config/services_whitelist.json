@@ -90,6 +90,8 @@
                               "cbdhsvc",
                               "CDPUserSvc",
                               "ConsentUxUserSvc",
-                              "UdkUserSvc"
+                              "UdkUserSvc",
+                              "FACEIT",
+                              "FACEITService"
                           ]
 }

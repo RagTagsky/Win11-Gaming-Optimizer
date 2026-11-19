@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "3.4.0"
+$Script:APP_VERSION = "3.5.0"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -421,7 +421,7 @@ function New-SystemStateBackup {
         NetAdapterMsiConfig      = @()
     }
 
-    # 1. Services Snapshot - shortcut: optimized for FPS & speed (batch CIM query instead of 207 individual calls)
+    # 1. Services Snapshot - shortcut: optimized for FPS & speed (batch CIM query instead of 205 individual calls)
     $cimServices = @(Get-CimInstance -ClassName Win32_Service -Property Name, DisplayName, StartMode, State -ErrorAction SilentlyContinue)
     $serviceMap = @{}
     foreach ($cs in $cimServices) {
@@ -709,6 +709,18 @@ function Disable-UserStateAggressive {
         if (Test-Path -LiteralPath $sDir) {
             Get-ChildItem -LiteralPath $sDir -File -Force | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
                 $cleanName = $_.Name -replace '\.ugm_backup$', ''
+                $baseName = [System.IO.Path]::GetFileNameWithoutExtension($cleanName)
+                $isProtected = $false
+                if ($protectedStartup) {
+                    foreach ($prot in $protectedStartup) {
+                        if ([string]::IsNullOrWhiteSpace($prot)) { continue }
+                        if ($cleanName -like "*$prot*" -or $baseName -like "*$prot*") { $isProtected = $true; break }
+                    }
+                }
+                if ($isProtected) {
+                    Write-Host "  [v] Retained protected startup shortcut: $cleanName" -ForegroundColor Green
+                    return
+                }
                 $destPath = Join-Path $qTarget $cleanName
                 Move-Item -LiteralPath $_.FullName -Destination $destPath -Force -ErrorAction SilentlyContinue
                 Write-Host "  [x] Quarantined startup shortcut: $cleanName ($($sd.Target | Split-Path -Leaf))" -ForegroundColor Yellow
@@ -722,10 +734,32 @@ function Disable-UserStateAggressive {
         Get-ChildItem -Path $uwpRoot | ForEach-Object {
             $pkg = $_
             if ($pkg.PSChildName -like "*Apple*") { return }
+            $pkgProtected = $false
+            if ($protectedStartup) {
+                foreach ($prot in $protectedStartup) {
+                    if ([string]::IsNullOrWhiteSpace($prot)) { continue }
+                    if ($pkg.PSChildName -like "*$prot*") { $pkgProtected = $true; break }
+                }
+            }
+            if ($pkgProtected) {
+                Write-Host "  [v] Retained protected UWP package startup: $($pkg.PSChildName)" -ForegroundColor Green
+                return
+            }
 
             Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
                 $task = $_
                 if ($task.PSChildName -like "*Apple*") { return }
+                $taskProtected = $false
+                if ($protectedStartup) {
+                    foreach ($prot in $protectedStartup) {
+                        if ([string]::IsNullOrWhiteSpace($prot)) { continue }
+                        if ($task.PSChildName -like "*$prot*") { $taskProtected = $true; break }
+                    }
+                }
+                if ($taskProtected) {
+                    Write-Host "  [v] Retained protected UWP startup task: $($task.PSChildName)" -ForegroundColor Green
+                    return
+                }
 
                 $props = Get-ItemProperty -Path $task.PSPath -ErrorAction SilentlyContinue
                 if ($null -ne $props -and $props.PSObject.Properties["State"]) {

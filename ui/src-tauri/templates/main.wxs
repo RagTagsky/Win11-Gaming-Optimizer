@@ -371,6 +371,20 @@
         </InstallExecuteSequence>
         {{/if}}
 
+        <!-- Remove elevated autostart scheduled task during real uninstall (outside updater toggle) -->
+        <CustomAction
+            Id="DeleteAutoStartTask"
+            Directory="INSTALLDIR"
+            ExeCommand="[System64Folder]schtasks.exe /Delete /TN &quot;UltraGamingMode_AutoStart&quot; /F"
+            Execute="deferred"
+            Impersonate="no"
+            Return="ignore" />
+        <InstallExecuteSequence>
+            <Custom Action="DeleteAutoStartTask" Before="InstallFinalize">
+                (REMOVE = "ALL") AND NOT UPGRADINGPRODUCTCODE
+            </Custom>
+        </InstallExecuteSequence>
+
         <InstallExecuteSequence>
           <Custom Action="LaunchApplication" After="InstallFinalize">AUTOLAUNCHAPP AND NOT Installed</Custom>
         </InstallExecuteSequence>

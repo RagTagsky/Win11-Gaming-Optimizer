@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     AlertCircle,
+    AlertTriangle,
     Check,
     Cpu,
     Gamepad2,
@@ -9,10 +10,12 @@
     Monitor,
     Mouse,
     Network,
+    Power,
     RefreshCw,
-    SlidersHorizontal
+    SlidersHorizontal,
+    Timer
   } from '@lucide/svelte';
-  import type { ModeState, TuningConfig } from '../types';
+  import type { AutostartStatus, ModeState, TuningConfig } from '../types';
 
   interface Props {
     config: TuningConfig | null;
@@ -20,8 +23,14 @@
     isSaving: boolean;
     loadError: string | null;
     mode: ModeState;
+    autostartStatus: AutostartStatus | null;
+    isAutostartLoading: boolean;
+    isAutostartSaving: boolean;
+    autostartError: string | null;
     onUpdateConfig: (next: TuningConfig) => Promise<boolean>;
     onRetryLoad: () => void;
+    onSetAutostart: (enabled: boolean, startInTray: boolean) => Promise<void> | void;
+    onRefreshAutostart: () => void;
   }
 
   let {
@@ -30,15 +39,22 @@
     isSaving,
     loadError,
     mode,
+    autostartStatus,
+    isAutostartLoading,
+    isAutostartSaving,
+    autostartError,
     onUpdateConfig,
-    onRetryLoad
+    onRetryLoad,
+    onSetAutostart,
+    onRefreshAutostart
   }: Props = $props();
 
   type BooleanTuningKey =
     | 'DisableFullscreenOptimizations'
     | 'EnableNetAdapterMsi'
     | 'DisableMouseAccel'
-    | 'DisableNvidiaDynamicPstate';
+    | 'DisableNvidiaDynamicPstate'
+    | 'AutoLockTimerInGaming';
 
   const PRESETS: Array<{ value: number; hint: string }> = [
     { value: 64, hint: 'Минимум' },
@@ -87,8 +103,15 @@
   let bufferError = $state<string | null>(null);
   let lastSyncedQueue: number | null = null;
   let bufferInputEl = $state<HTMLInputElement | null>(null);
+  let preferredStartInTray = $state(true);
 
   const isLiveMode = $derived(mode === 'Gaming' || mode === 'Armed');
+
+  $effect(() => {
+    if (autostartStatus?.taskExists) {
+      preferredStartInTray = autostartStatus.startInTray;
+    }
+  });
 
   $effect(() => {
     if (!config) return;
@@ -98,6 +121,13 @@
       bufferError = null;
     }
   });
+
+  async function selectAutostartMode(startInTray: boolean) {
+    preferredStartInTray = startInTray;
+    if (autostartStatus?.enabled && !isAutostartSaving) {
+      await onSetAutostart(true, startInTray);
+    }
+  }
 
   async function toggleBooleanSetting(key: BooleanTuningKey) {
     if (!config || isSaving) return;
@@ -127,16 +157,16 @@
   function validateBufferValue(raw: string): { value: number | null; error: string | null } {
     const trimmed = raw.trim();
     if (!trimmed) {
-      return { value: null, error: 'Укажите размер очереди (целое число от 32 до 4096).' };
+      return { value: null, error: 'Укажите размер очереди (целое число от 32 до 1024).' };
     }
     if (!/^\d+$/.test(trimmed)) {
       return { value: null, error: 'Допустимо только целое положительное число без дробной части.' };
     }
     const parsed = Number.parseInt(trimmed, 10);
-    if (!Number.isSafeInteger(parsed) || parsed < 32 || parsed > 4096) {
+    if (!Number.isSafeInteger(parsed) || parsed < 32 || parsed > 1024) {
       return {
         value: null,
-        error: 'Защитный диапазон — от 32 до 4096 пакетов (ниже 32 возможна потеря событий мыши).'
+        error: 'Защитный диапазон — от 32 до 1024 пакетов (ниже 32 возможна потеря событий мыши).'
       };
     }
     return { value: parsed, error: null };
@@ -230,6 +260,194 @@
       </button>
     </div>
   {:else if config}
+    <!-- Autostart & Background Mode Card -->
+    <section
+      aria-labelledby="autostart-heading"
+      class="ui-card rounded-2xl divide-y divide-[var(--border-subtle)] overflow-hidden"
+    >
+      <div class="px-5 py-3.5 bg-[var(--bg-elevated)] flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <Power size={16} strokeWidth={1.75} class="text-[var(--accent-text)]" aria-hidden="true" />
+          <h2 id="autostart-heading" class="text-sm font-semibold text-[var(--text-primary)]">
+            Запуск и фоновый режим
+          </h2>
+        </div>
+
+        <button
+          type="button"
+          onclick={onRefreshAutostart}
+          disabled={isAutostartLoading || isAutostartSaving}
+          aria-label="Обновить статус автозапуска"
+          class="ui-btn-ghost ui-pressable rounded-lg px-2.5 py-1 text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+        >
+          <RefreshCw
+            size={13}
+            strokeWidth={1.75}
+            class={isAutostartLoading ? 'ui-spin' : ''}
+            aria-hidden="true"
+          />
+          <span>Проверить</span>
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4">
+        <div class="flex items-start justify-between gap-4">
+          <div class="space-y-1 min-w-0">
+            <div id="autostart-switch-title" class="text-sm font-semibold text-[var(--text-primary)]">
+              Запускать вместе с Windows
+            </div>
+            <p id="autostart-switch-desc" class="text-sm leading-relaxed text-[var(--text-secondary)]">
+              Регистрирует задачу Планировщика Windows с повышенными правами без лишних запросов UAC при входе в систему.
+            </p>
+            {#if autostartStatus?.taskExists && autostartStatus.registeredCommand}
+              <p translate="no" class="font-mono text-xs text-[var(--text-muted)] break-all select-text">
+                {autostartStatus.registeredCommand}
+              </p>
+            {/if}
+          </div>
+
+          <div class="flex items-center gap-2.5 shrink-0 pt-1">
+            {#if isAutostartSaving}
+              <Loader2 size={14} strokeWidth={2} class="ui-spin text-[var(--accent-text)]" aria-hidden="true" />
+            {/if}
+            <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-right">
+              {autostartStatus?.enabled ? 'Вкл' : 'Выкл'}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(autostartStatus?.enabled)}
+              aria-labelledby="autostart-switch-title"
+              aria-describedby="autostart-switch-desc"
+              disabled={isAutostartLoading || isAutostartSaving || (autostartStatus !== null && !autostartStatus.isAdminSession && !autostartStatus.enabled)}
+              onclick={() =>
+                onSetAutostart(
+                  !(autostartStatus?.enabled ?? false),
+                  autostartStatus?.taskExists ? autostartStatus.startInTray : preferredStartInTray
+                )}
+              class="ui-switch relative inline-flex items-center w-11 h-6 rounded-full shrink-0 disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span
+                class="ui-switch-thumb pointer-events-none block w-4 h-4 rounded-full {autostartStatus?.enabled
+                  ? 'translate-x-[22px]'
+                  : 'translate-x-[3px]'}"
+              ></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Режим окна при автозапуске">
+          <span class="text-xs font-medium text-[var(--text-muted)] mr-1">При входе в Windows:</span>
+          <button
+            type="button"
+            disabled={isAutostartLoading || isAutostartSaving}
+            aria-pressed={preferredStartInTray}
+            onclick={() => selectAutostartMode(true)}
+            class="{preferredStartInTray
+              ? 'bg-[var(--accent-soft)] text-[var(--accent-text)] border-[var(--accent-border)]'
+              : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-input)] hover:bg-[var(--bg-hover)]'} ui-pressable rounded-lg border px-3 py-1.5 min-h-8 text-[0.8125rem] font-medium disabled:opacity-50 cursor-pointer"
+          >
+            Сразу в трей (0 МБ ОЗУ)
+          </button>
+          <button
+            type="button"
+            disabled={isAutostartLoading || isAutostartSaving}
+            aria-pressed={!preferredStartInTray}
+            onclick={() => selectAutostartMode(false)}
+            class="{!preferredStartInTray
+              ? 'bg-[var(--accent-soft)] text-[var(--accent-text)] border-[var(--accent-border)]'
+              : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-input)] hover:bg-[var(--bg-hover)]'} ui-pressable rounded-lg border px-3 py-1.5 min-h-8 text-[0.8125rem] font-medium disabled:opacity-50 cursor-pointer"
+          >
+            Открывать окно
+          </button>
+        </div>
+
+        {#if autostartStatus?.taskExists && !autostartStatus.pathMatches}
+          <div
+            role="status"
+            class="rounded-xl p-3.5 bg-[var(--status-warn-soft)] border border-[var(--status-warn-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          >
+            <div class="flex items-start gap-2.5 min-w-0">
+              <AlertTriangle size={17} strokeWidth={1.85} class="text-[var(--status-warn-text)] shrink-0 mt-0.5" aria-hidden="true" />
+              <div class="space-y-0.5 text-[0.8125rem] min-w-0">
+                <p class="font-semibold text-[var(--status-warn-text)]">
+                  Путь в задаче автозапуска устарел
+                </p>
+                <p class="text-[var(--text-secondary)] break-all">
+                  Обнаружено расхождение с текущим <code translate="no" class="font-mono text-xs">{autostartStatus.currentExePath}</code>.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={isAutostartSaving || !autostartStatus.isAdminSession}
+              onclick={() => onSetAutostart(autostartStatus.enabled, preferredStartInTray)}
+              class="ui-btn-warn ui-pressable rounded-lg px-3.5 py-2 min-h-9 text-xs font-semibold shrink-0 disabled:opacity-55 cursor-pointer"
+            >
+              Исправить путь
+            </button>
+          </div>
+        {/if}
+
+        {#if autostartError || (autostartStatus?.warning && !(autostartStatus.taskExists && !autostartStatus.pathMatches))}
+          <div
+            role="status"
+            class="rounded-xl p-3 bg-[var(--status-warn-soft)] border border-[var(--status-warn-border)] text-[0.8125rem] text-[var(--status-warn-text)] flex items-start gap-2"
+          >
+            <AlertTriangle size={16} strokeWidth={1.85} class="shrink-0 mt-0.5" aria-hidden="true" />
+            <span>{autostartError ?? autostartStatus?.warning}</span>
+          </div>
+        {/if}
+      </div>
+
+      <div class="p-5 flex items-start justify-between gap-4">
+        <div class="flex items-start gap-3.5 min-w-0">
+          <div
+            class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 {config.AutoLockTimerInGaming
+              ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]'
+              : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}"
+          >
+            <Timer size={18} strokeWidth={1.75} aria-hidden="true" />
+          </div>
+
+          <div class="min-w-0 space-y-1">
+            <div id="tweak-title-AutoLockTimerInGaming" class="text-sm font-semibold text-[var(--text-primary)]">
+              Автоматически фиксировать таймер 0.5 мс в игровом режиме
+            </div>
+            <p id="tweak-desc-AutoLockTimerInGaming" class="text-sm leading-relaxed text-[var(--text-secondary)]">
+              При входе в систему в активном игровом режиме автоматически удерживает системный таймер 0.500 мс и снимает удержание при возврате к штатному режиму.
+            </p>
+            <p translate="no" class="font-mono text-xs text-[var(--text-muted)] select-text pt-0.5">
+              AutoLockTimerInGaming · NtSetTimerResolution(0.5 ms)
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2.5 shrink-0 pt-1">
+          <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-right">
+            {config.AutoLockTimerInGaming ? 'Вкл' : 'Выкл'}
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={config.AutoLockTimerInGaming}
+            aria-labelledby="tweak-title-AutoLockTimerInGaming"
+            aria-describedby="tweak-desc-AutoLockTimerInGaming"
+            disabled={isSaving}
+            onclick={() => toggleBooleanSetting('AutoLockTimerInGaming')}
+            class="ui-switch relative inline-flex items-center w-11 h-6 rounded-full shrink-0 disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+          >
+            <span
+              class="ui-switch-thumb pointer-events-none block w-4 h-4 rounded-full {config.AutoLockTimerInGaming
+                ? 'translate-x-[22px]'
+                : 'translate-x-[3px]'}"
+            ></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- Primary Boolean Switches -->
     <section aria-labelledby="switches-heading" class="ui-card rounded-2xl divide-y divide-[var(--border-subtle)] overflow-hidden">
       <div class="px-5 py-3.5 bg-[var(--bg-elevated)] flex items-center gap-2">
@@ -363,7 +581,7 @@
         <div class="flex flex-col sm:flex-row sm:items-end gap-2.5">
           <div class="flex-1 min-w-0 space-y-1.5">
             <label for="input-buffer-size" class="block text-[0.8125rem] font-medium text-[var(--text-secondary)]">
-              Произвольное значение (от 32 до 4096 пакетов)
+              Произвольное значение (от 32 до 1024 пакетов)
             </label>
             <input
               bind:this={bufferInputEl}
@@ -372,7 +590,7 @@
               type="number"
               inputmode="numeric"
               min="32"
-              max="4096"
+              max="1024"
               step="1"
               value={bufferDraft}
               oninput={(e) => {
@@ -424,7 +642,7 @@
             Повышает приоритет потоков игр (<code translate="no" class="font-mono text-xs select-text">Games</code>) и ограничивает фоновый троттлинг сети.
           </dd>
           <dd translate="no" class="font-mono text-xs text-[var(--text-muted)] break-all select-text">
-            SystemResponsiveness = 0 · NetworkThrottlingIndex = 0xFFFFFFFF
+            SystemResponsiveness = 10 · NetworkThrottlingIndex = 0xFFFFFFFF
           </dd>
         </div>
 

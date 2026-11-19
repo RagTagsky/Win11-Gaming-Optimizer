@@ -32,6 +32,7 @@
     activeSince?: string;
     timerLocked: boolean;
     isTimerLocking: boolean;
+    isFinishingRestore?: boolean;
     isRebooting?: boolean;
     updateInfo?: UpdateInfo | null;
     isCheckingUpdates?: boolean;
@@ -40,6 +41,8 @@
     onToggleMode: () => void;
     onProfileChange: (p: OptimizationProfile) => void;
     onLockTimer: () => void;
+    onUnlockTimer?: () => void;
+    onFinishPendingRestore?: () => void;
     onRetryStatus: () => void;
     onRebootPc: () => void;
     onCheckUpdates: () => void;
@@ -57,6 +60,7 @@
     activeSince,
     timerLocked,
     isTimerLocking,
+    isFinishingRestore = false,
     isRebooting = false,
     updateInfo = null,
     isCheckingUpdates = false,
@@ -65,6 +69,8 @@
     onToggleMode,
     onProfileChange,
     onLockTimer,
+    onUnlockTimer,
+    onFinishPendingRestore,
     onRetryStatus,
     onRebootPc,
     onCheckUpdates,
@@ -73,7 +79,7 @@
   }: Props = $props();
 
   const isActiveMode = $derived(mode === 'Gaming' || mode === 'Armed');
-  const isBusy = $derived(isProcessing || mode === 'Transitioning');
+  const isBusy = $derived(isProcessing || isFinishingRestore || mode === 'Transitioning');
 
   const isTimerActive = $derived.by(() => {
     if (timerLocked) return true;
@@ -99,6 +105,15 @@
           title: 'Ожидает перезагрузки ПК',
           subtitle: 'Игровой режим подготовлен к следующему запуску Windows. Перезагрузите ПК для активации.',
           badgeText: 'Ждёт перезагрузки',
+          pillClass:
+            'bg-[var(--status-warn-soft)] text-[var(--status-warn-text)] border-[var(--status-warn-border)]'
+        };
+      case 'RestoringPending':
+        return {
+          title: 'Ожидает завершения возврата',
+          subtitle:
+            'Системные службы восстановлены, но ярлыки автозагрузки пользователя и параметры профиля ещё не возвращены.',
+          badgeText: 'Не завершено',
           pillClass:
             'bg-[var(--status-warn-soft)] text-[var(--status-warn-text)] border-[var(--status-warn-border)]'
         };
@@ -173,7 +188,7 @@
             <Loader2 size={22} strokeWidth={2} class="ui-spin" aria-hidden="true" />
           {:else if mode === 'Gaming'}
             <ShieldCheck size={22} strokeWidth={1.75} aria-hidden="true" />
-          {:else if mode === 'Armed'}
+          {:else if mode === 'Armed' || mode === 'RestoringPending'}
             <Clock size={22} strokeWidth={1.75} aria-hidden="true" />
           {:else if mode === 'Error'}
             <AlertTriangle size={22} strokeWidth={1.75} aria-hidden="true" />
@@ -247,6 +262,45 @@
       </div>
     </div>
   </section>
+
+  {#if mode === 'RestoringPending'}
+    <section
+      role="status"
+      class="ui-card rounded-2xl p-4 sm:p-5 border border-[var(--status-warn-border)] bg-[var(--status-warn-soft)] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+    >
+      <div class="flex items-start gap-3 min-w-0">
+        <AlertTriangle
+          size={19}
+          strokeWidth={1.85}
+          class="text-[var(--status-warn-text)] shrink-0 mt-0.5"
+          aria-hidden="true"
+        />
+        <div class="space-y-0.5 min-w-0">
+          <p class="text-sm font-semibold text-[var(--status-warn-text)]">
+            Требуется завершить восстановление после перезагрузки
+          </p>
+          <p class="text-[0.8125rem] text-[var(--text-secondary)]">
+            Верните сохранённые программы автозагрузки и пользовательские настройки одним нажатием.
+          </p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onclick={() => onFinishPendingRestore?.()}
+        disabled={isBusy}
+        class="ui-btn-warn ui-pressable rounded-xl px-4 py-2 min-h-10 text-sm font-semibold flex items-center justify-center gap-2 shrink-0 disabled:opacity-55 cursor-pointer"
+      >
+        {#if isFinishingRestore}
+          <Loader2 size={15} strokeWidth={2} class="ui-spin" aria-hidden="true" />
+          <span>Завершаю…</span>
+        {:else}
+          <RotateCcw size={15} strokeWidth={2} aria-hidden="true" />
+          <span>Завершить восстановление</span>
+        {/if}
+      </button>
+    </section>
+  {/if}
 
   <!-- Profile Selector -->
   <section aria-labelledby="profiles-heading" class="space-y-3">
@@ -359,6 +413,18 @@
             <span>{isTimerActive ? 'Переприменить 0.5 мс' : 'Зафиксировать 0.5 мс'}</span>
           {/if}
         </button>
+
+        {#if isTimerActive && onUnlockTimer}
+          <button
+            type="button"
+            onclick={onUnlockTimer}
+            disabled={isTimerLocking || isBusy}
+            class="ui-btn-ghost ui-pressable rounded-lg px-3 py-2 min-h-9 text-[0.8125rem] font-medium border border-[var(--border-subtle)] disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+            title="Снять удержание системного таймера 0.5 мс"
+          >
+            Сбросить
+          </button>
+        {/if}
       </div>
     </div>
 
@@ -469,7 +535,7 @@
           <span
             class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
           >
-            v{updateInfo?.currentVersion ?? '3.4.0'}
+            v{updateInfo?.currentVersion ?? '3.5.0'}
           </span>
         </div>
         <p class="text-[0.8125rem] text-[var(--text-secondary)]">
