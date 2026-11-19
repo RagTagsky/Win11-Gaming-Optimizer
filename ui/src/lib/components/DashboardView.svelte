@@ -81,6 +81,63 @@
   const isActiveMode = $derived(mode === 'Gaming' || mode === 'Armed');
   const isBusy = $derived(isProcessing || isFinishingRestore || mode === 'Transitioning');
 
+  let showAllReleaseNotes = $state(false);
+
+  function stripInlineMarkdown(text: string): string {
+    return text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/__(.+?)__/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function parseReleaseNotesLines(raw: string): string[] {
+    const items: string[] = [];
+    for (const rawLine of raw.split(/\r?\n/)) {
+      const trimmed = rawLine.trim();
+      if (!trimmed || /^(?:[-*_]\s*){3,}$/.test(trimmed) || /^\|.*\|$/.test(trimmed)) {
+        continue;
+      }
+
+      const headingMatch = trimmed.match(/^#{1,6}\s+(.+)$/);
+      if (headingMatch) {
+        const headingText = stripInlineMarkdown(headingMatch[1]);
+        if (
+          /^(?:what'?s\s+new|файлы\s+и\s+sha256|sha256|checksums)/i.test(headingText) &&
+          items.length > 0
+        ) {
+          break;
+        }
+        if (
+          /^(?:ultra\s+gaming\s+mode\b|что\s+нового|подробн(?:ее|о)|changelog|release\s+notes)/i.test(
+            headingText
+          )
+        ) {
+          continue;
+        }
+        if (headingText) {
+          items.push(headingText);
+        }
+        continue;
+      }
+
+      const cleaned = stripInlineMarkdown(trimmed.replace(/^(?:[-*•]+|\d+[.)])\s+/, ''));
+      if (cleaned) {
+        items.push(cleaned);
+      }
+    }
+    return items;
+  }
+
+  const releaseNoteItems = $derived(
+    updateInfo?.releaseNotes ? parseReleaseNotesLines(updateInfo.releaseNotes) : []
+  );
+  const visibleReleaseNotes = $derived(
+    showAllReleaseNotes ? releaseNoteItems : releaseNoteItems.slice(0, 3)
+  );
+
   const isTimerActive = $derived.by(() => {
     if (timerLocked) return true;
     const raw = hardware?.timerResolution ?? '';
@@ -579,16 +636,39 @@
       </div>
     {:else if updateInfo?.hasUpdate}
       <div
-        class="rounded-xl p-4 bg-[var(--accent-soft)] border border-[var(--accent-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        class="rounded-xl p-4 bg-[var(--accent-soft)] border border-[var(--accent-border)] flex flex-col sm:flex-row sm:items-start justify-between gap-3"
       >
-        <div class="min-w-0 space-y-1">
+        <div class="min-w-0 flex-1 space-y-1.5">
           <p class="text-sm font-semibold text-[var(--accent-text)]">
             Доступна новая версия v{updateInfo.latestVersion}
           </p>
           {#if updateInfo.releaseNotes}
-            <p class="text-xs text-[var(--text-secondary)] line-clamp-3 whitespace-pre-line">
-              {updateInfo.releaseNotes}
-            </p>
+            {#if visibleReleaseNotes.length > 0}
+              <ul class="space-y-1 text-xs leading-relaxed text-[var(--text-secondary)]">
+                {#each visibleReleaseNotes as line, idx (idx)}
+                  <li class="flex items-start gap-1.5">
+                    <span
+                      class="mt-[0.42rem] h-1 w-1 rounded-full bg-[var(--accent-text)] opacity-70 shrink-0"
+                      aria-hidden="true"
+                    ></span>
+                    <span>{line}</span>
+                  </li>
+                {/each}
+              </ul>
+              {#if releaseNoteItems.length > 3}
+                <button
+                  type="button"
+                  onclick={() => (showAllReleaseNotes = !showAllReleaseNotes)}
+                  class="text-[0.7rem] font-medium text-[var(--accent-text)] hover:underline cursor-pointer"
+                >
+                  {showAllReleaseNotes ? 'Свернуть' : `Показать все (${releaseNoteItems.length})`}
+                </button>
+              {/if}
+            {:else}
+              <p class="text-xs leading-relaxed text-[var(--text-secondary)]">
+                {stripInlineMarkdown(updateInfo.releaseNotes.replace(/^#{1,6}\s+/gm, ''))}
+              </p>
+            {/if}
           {/if}
         </div>
 
