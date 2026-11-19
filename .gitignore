@@ -26,7 +26,6 @@
 *.so
 *.dylib
 *.bin
-!/.bin/
 *.iso
 *.img
 
@@ -49,10 +48,8 @@
 *.wixbin
 releases/
 release/
-.bin/*
-!.bin/.gitkeep
-bin/*
-!bin/.gitkeep
+.bin/
+bin/
 
 # ── Rust & Tauri Build System ─────────────────────────────────────────────────
 # Cargo build tree (all profiles: debug, release)
@@ -78,11 +75,11 @@ lerna-debug.log*
 **/.svelte-kit/
 **/.turbo/
 *.tsbuildinfo
+*.local
 
 # ── Dynamic Runtime State, Backups & Host Snapshots ───────────────────────────
 # Dynamic backups captured during optimization (host-specific)
-Backups/*
-!Backups/.gitkeep
+Backups/
 active_state.json
 **/active_state.json
 

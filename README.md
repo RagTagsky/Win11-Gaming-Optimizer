@@ -536,7 +536,6 @@ powershell.exe -ExecutionPolicy Bypass -File .\UltraGamingMode.ps1 -Action Repai
 ```
 Win11-Gaming-Optimizer/
 │
-├── UltraGamingMode.exe              # Self-contained Windows 11 Desktop GUI application (v3.5.1, Tauri v2, embedded runtime)
 ├── UltraGamingMode.bat              # Elevated interactive TUI launcher
 ├── UltraGamingMode.ps1              # Core PowerShell CLI controller & orchestrator
 ├── Build-Release.ps1                # Automated Tauri build, .bin/ packaging & SHA256SUMS generator
@@ -560,11 +559,8 @@ Win11-Gaming-Optimizer/
 │   ├── StateEngine.ps1              # Snapshot creation, registry backup & restore engine
 │   └── SystemOptimizer.ps1          # Power, MMCSS, Network, Memory, and Defender tuning
 │
-├── Tests/
-│   └── Verify-UniversalEngine.ps1   # 381 automated unit tests & hardware simulation suite
-│
-└── Backups/
-    └── active_state.json            # Dynamic active session snapshot (auto-generated)
+└── Tests/
+    └── Verify-UniversalEngine.ps1   # 381 automated unit tests & hardware simulation suite
 ```
 
 ---
