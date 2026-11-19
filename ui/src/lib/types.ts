@@ -45,6 +45,11 @@ export interface TuningConfig {
   InputBufferQueueSize: number;
 }
 
+export interface ServiceDescriptionEntry {
+  summaryRu: string;
+  canDisableRu: string;
+}
+
 export interface BlacklistServiceItem {
   Name: string;
   DisplayName: string;
@@ -52,11 +57,27 @@ export interface BlacklistServiceItem {
   Reason: string;
   Status?: string;
   StartType?: string;
+  SummaryRu?: string;
+  CanDisableHint?: string;
 }
 
 export interface ServicesLists {
   blacklist: BlacklistServiceItem[];
   whitelist: string[];
+  whitelistDescriptions?: Record<string, ServiceDescriptionEntry>;
+}
+
+export interface UpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  releaseUrl: string;
+  publishedAt?: string;
+  releaseNotes: string;
+  installerUrl?: string;
+  installerName?: string;
+  checksumUrl?: string;
+  sizeBytes?: number;
 }
 
 export interface ProcessItem {

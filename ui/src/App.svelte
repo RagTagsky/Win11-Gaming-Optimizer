@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { listen } from '@tauri-apps/api/event';
   import {
     Activity,
     AlertCircle,
@@ -26,6 +27,7 @@
   import ConfirmDialog from './lib/components/ConfirmDialog.svelte';
   import {
     buildProfileTuningPreset,
+    checkForUpdates,
     controlService,
     executeEmergencyRepair,
     executeModeAction,
@@ -34,9 +36,12 @@
     fetchSystemStatus,
     fetchTuningConfig,
     formatIpcError,
+    installGithubUpdate,
     isTauri,
     killProcess,
     lockTimerResolution,
+    openReleaseUrl,
+    rebootPc,
     resolveProfileFromTuning,
     saveTuningConfig,
     setWindowTheme,
@@ -58,10 +63,12 @@
     RepairType,
     ServiceCategory,
     ServiceControlOperation,
+    ServiceDescriptionEntry,
     ServiceListType,
     TabId,
     ThemeMode,
-    TuningConfig
+    TuningConfig,
+    UpdateInfo
   } from './lib/types';
 
   const TAB_META: Array<{ id: TabId; label: string }> = [
@@ -119,19 +126,29 @@
   let processesViewMode = $state<ProcessViewMode>('live');
   let processesFilterMode = $state<ProcessFilterMode>('all');
   let processesSearchQuery = $state('');
-  let isProcessesLoading = $state(true);
+  let isProcessesLoading = $state(false);
   let processBusyKey = $state<string | null>(null);
   let processesError = $state<string | null>(null);
 
   // Services Tab State (persists across tabs)
   let blacklist = $state<BlacklistServiceItem[]>([]);
   let whitelist = $state<string[]>([]);
+  let whitelistDescriptions = $state<Record<string, ServiceDescriptionEntry>>({});
   let servicesViewMode = $state<ServiceViewMode>('blacklist');
   let servicesSearchQuery = $state('');
   let servicesCategory = $state<ServiceCategoryFilter>('all');
-  let isServicesLoading = $state(true);
+  let isServicesLoading = $state(false);
   let busyService = $state<string | null>(null);
   let servicesError = $state<string | null>(null);
+  let servicesLoaded = false;
+  let processesLoaded = false;
+
+  // Reboot & GitHub Updates State
+  let isRebooting = $state(false);
+  let updateInfo = $state<UpdateInfo | null>(null);
+  let isCheckingUpdates = $state(false);
+  let isInstallingUpdate = $state(false);
+  let updateError = $state<string | null>(null);
 
   // Tuning Config State (persists across tabs, serialized save)
   let tuningConfig = $state<TuningConfig | null>(null);
@@ -298,6 +315,8 @@
       const lists = await fetchServicesLists();
       blacklist = lists.blacklist;
       whitelist = lists.whitelist;
+      whitelistDescriptions = lists.whitelistDescriptions ?? {};
+      servicesLoaded = true;
       servicesError = null;
       clearErrorIfSource('services');
     } catch (err) {
@@ -330,6 +349,18 @@
     }
   }
 
+  function selectTab(tab: TabId) {
+    currentTab = tab;
+    if (tab === 'processes') {
+      const wasLoaded = processesLoaded;
+      processesLoaded = true;
+      void loadProcesses(wasLoaded);
+    } else if (tab === 'services' && !servicesLoaded) {
+      servicesLoaded = true;
+      void loadServices();
+    }
+  }
+
   async function bootstrapApp() {
     addLog(
       'info',
@@ -337,26 +368,138 @@
         ? 'Интерфейс подключён к модулю управления Windows.'
         : 'Запущен предпросмотр интерфейса вне среды Tauri.'
     );
-    await Promise.all([loadSystemStatus(), loadServices(), loadTuning(), loadProcesses()]);
-    if (blacklist.length > 0) {
-      addLog(
-        'info',
-        `Загружено ${formatRussianPlural(blacklist.length, {
-          one: 'оптимизируемая служба',
-          few: 'оптимизируемые службы',
-          many: 'оптимизируемых служб'
-        })} и ${formatRussianPlural(whitelist.length, {
-          one: 'защищённая служба',
-          few: 'защищённые службы',
-          many: 'защищённых служб'
-        })}.`
+    await Promise.all([loadSystemStatus(), loadTuning()]);
+  }
+
+  async function handleCheckUpdates(silent = false) {
+    if (isCheckingUpdates || isInstallingUpdate) return;
+    isCheckingUpdates = true;
+    if (!silent) {
+      updateError = null;
+      addLog('info', 'Проверка наличия обновлений на GitHub Releases…');
+    }
+    try {
+      const info = await checkForUpdates();
+      updateInfo = info;
+      updateError = null;
+      if (info.hasUpdate) {
+        addLog('info', `Доступна новая версия v${info.latestVersion} (текущая v${info.currentVersion}).`);
+        liveAnnouncement = `Доступно обновление v${info.latestVersion}.`;
+      } else if (!silent) {
+        addLog('success', `Установлена актуальная версия v${info.currentVersion}.`);
+      }
+    } catch (err) {
+      const detail = formatIpcError(err);
+      if (!silent) {
+        updateError = detail;
+        addLog('error', `Не удалось проверить обновления: ${detail}`);
+      }
+    } finally {
+      isCheckingUpdates = false;
+    }
+  }
+
+  async function handleInstallUpdate() {
+    if (!updateInfo?.hasUpdate || !updateInfo.installerUrl || !updateInfo.installerName) return;
+    if (isInstallingUpdate) return;
+
+    const approved = await requestConfirm({
+      title: `Установить обновление v${updateInfo.latestVersion}?`,
+      description: `Установщик ${updateInfo.installerName} будет скачан с GitHub, проверен по SHA-256 и запущен автоматически. Текущее окно закроется на время обновления.`,
+      confirmLabel: 'Скачать и установить',
+      cancelLabel: 'Отмена',
+      tone: 'warn'
+    });
+    if (!approved) return;
+
+    isInstallingUpdate = true;
+    updateError = null;
+    addLog('info', `Загрузка и проверка SHA-256 для ${updateInfo.installerName}…`);
+    try {
+      const res = await installGithubUpdate(
+        updateInfo.installerUrl,
+        updateInfo.checksumUrl,
+        updateInfo.installerName
       );
+      if (res.success) {
+        addLog('success', res.message);
+      } else {
+        updateError = res.message;
+        addLog('error', res.message);
+      }
+    } catch (err) {
+      const detail = formatIpcError(err);
+      updateError = detail;
+      addLog('error', detail);
+    } finally {
+      isInstallingUpdate = false;
+    }
+  }
+
+  function handleOpenReleasePage() {
+    const url =
+      updateInfo?.releaseUrl || 'https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases';
+    void openReleaseUrl(url).catch((err) => {
+      const detail = formatIpcError(err);
+      addLog('error', `Не удалось открыть страницу релизов: ${detail}`);
+    });
+  }
+
+  async function handleRebootPc() {
+    if (isRebooting || isProcessing) return;
+    const approved = await requestConfirm({
+      title: 'Перезагрузить компьютер?',
+      description:
+        'Система выполнит перезагрузку через 2 секунды. Все несохранённые данные в открытых программах будут потеряны.',
+      confirmLabel: 'Перезагрузить ПК',
+      cancelLabel: 'Отмена',
+      tone: 'warn'
+    });
+    if (!approved) return;
+
+    isRebooting = true;
+    addLog('warn', 'Инициирована перезагрузка компьютера…');
+    try {
+      const res = await rebootPc();
+      if (res.success) {
+        addLog('success', res.message);
+        liveAnnouncement = res.message;
+      } else {
+        isRebooting = false;
+        setError('action', 'Не удалось выполнить перезагрузку ПК', res.message);
+        addLog('error', res.message);
+      }
+    } catch (err) {
+      isRebooting = false;
+      const detail = formatIpcError(err);
+      setError('action', 'Сбой команды перезагрузки ПК', detail);
+      addLog('error', detail);
     }
   }
 
   onMount(() => {
     void setWindowTheme(theme === 'dark').catch(() => {});
     void bootstrapApp();
+
+    let unlistenTray: (() => void) | null = null;
+    if (isTauri) {
+      void listen('ugm://state-changed', () => {
+        if (!isProcessing && runningRepair === null) {
+          void loadSystemStatus(true);
+          if (servicesLoaded) {
+            void loadServices();
+          }
+        }
+      })
+        .then((fn) => {
+          unlistenTray = fn;
+        })
+        .catch(() => {});
+    }
+
+    const updateTimer = setTimeout(() => {
+      void handleCheckUpdates(true);
+    }, 1500);
 
     const interval = setInterval(() => {
       if (
@@ -370,7 +513,9 @@
     }, 5000);
 
     return () => {
+      clearTimeout(updateTimer);
       clearInterval(interval);
+      unlistenTray?.();
     };
   });
 
@@ -420,7 +565,9 @@
             hardware = { ...hardware, timerResolution: '1.000 мс (штатный)' };
           }
         } else {
-          await Promise.all([loadSystemStatus(true), loadServices(), loadTuning()]);
+          const reloads: Array<Promise<void>> = [loadSystemStatus(true), loadTuning()];
+          if (servicesLoaded) reloads.push(loadServices());
+          await Promise.all(reloads);
         }
         liveAnnouncement = res.message;
       } else {
@@ -572,8 +719,10 @@
         repairStatus = { type: 'success', text: res.message };
         clearErrorIfSource('repair');
         addLog('success', res.message);
-        if (type === 'services') {
+        if (type === 'services' && servicesLoaded) {
           await Promise.all([loadSystemStatus(true), loadServices()]);
+        } else if (type === 'services') {
+          await loadSystemStatus(true);
         }
         liveAnnouncement = res.message;
       } else {
@@ -732,6 +881,9 @@
       const updated = await updateServiceList(params);
       blacklist = updated.blacklist;
       whitelist = updated.whitelist;
+      if (updated.whitelistDescriptions) {
+        whitelistDescriptions = updated.whitelistDescriptions;
+      }
       clearErrorIfSource('services');
       const scopeLabel =
         params.listType === 'blacklist' ? 'оптимизируемых служб' : 'белого списка';
@@ -768,10 +920,7 @@
     if (nextIndex !== null) {
       e.preventDefault();
       const targetTab = TAB_META[nextIndex].id;
-      currentTab = targetTab;
-      if (targetTab === 'processes') {
-        void loadProcesses(true);
-      }
+      selectTab(targetTab);
       tabButtons[nextIndex]?.focus();
     }
   }
@@ -800,12 +949,7 @@
             aria-selected={selected}
             aria-controls="panel-{tab.id}"
             tabindex={selected ? 0 : -1}
-            onclick={() => {
-              currentTab = tab.id;
-              if (tab.id === 'processes') {
-                void loadProcesses(true);
-              }
-            }}
+            onclick={() => selectTab(tab.id)}
             onkeydown={(e) => handleTabKeyDown(e, index)}
             class="ui-tab ui-pressable rounded-xl px-3 py-2.5 min-h-10 text-sm font-medium flex items-center justify-center gap-2 cursor-pointer"
           >
@@ -908,10 +1052,19 @@
           {activeSince}
           {timerLocked}
           {isTimerLocking}
+          {isRebooting}
+          {updateInfo}
+          {isCheckingUpdates}
+          {isInstallingUpdate}
+          {updateError}
           onToggleMode={handleToggleMode}
           onProfileChange={handleProfileChange}
           onLockTimer={handleLockTimer}
           onRetryStatus={() => loadSystemStatus()}
+          onRebootPc={handleRebootPc}
+          onCheckUpdates={() => handleCheckUpdates(false)}
+          onInstallUpdate={handleInstallUpdate}
+          onOpenReleasePage={handleOpenReleasePage}
         />
       </div>
 
@@ -949,6 +1102,7 @@
         <ServicesView
           {blacklist}
           {whitelist}
+          {whitelistDescriptions}
           viewMode={servicesViewMode}
           searchQuery={servicesSearchQuery}
           selectedCategory={servicesCategory}

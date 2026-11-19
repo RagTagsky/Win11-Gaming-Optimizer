@@ -65,8 +65,24 @@
   }: Props = $props();
 
   let newProcessName = $state('');
+  let debouncedQuery = $state('');
+  let searchDebounceHandle: ReturnType<typeof setTimeout> | undefined;
+  let visibleLiveLimit = $state(60);
 
-  const normalizedQuery = $derived(searchQuery.trim().toLowerCase());
+  $effect(() => {
+    const target = searchQuery.trim().toLowerCase();
+    clearTimeout(searchDebounceHandle);
+    if (!target) {
+      debouncedQuery = '';
+      return;
+    }
+    searchDebounceHandle = setTimeout(() => {
+      debouncedQuery = target;
+    }, 120);
+    return () => clearTimeout(searchDebounceHandle);
+  });
+
+  const normalizedQuery = $derived(debouncedQuery);
 
   const filteredLiveProcesses = $derived.by(() => {
     return processes.filter((p) => {
@@ -79,6 +95,15 @@
       );
     });
   });
+
+  $effect(() => {
+    void normalizedQuery;
+    void filterMode;
+    void viewMode;
+    visibleLiveLimit = 60;
+  });
+
+  const visibleLiveProcesses = $derived(filteredLiveProcesses.slice(0, visibleLiveLimit));
 
   const filteredBlacklistNames = $derived.by(() => {
     if (!normalizedQuery) return blacklistProcesses;
@@ -245,7 +270,7 @@
         </div>
 
         <p class="text-[0.8125rem] text-[var(--text-muted)] tabular-nums" aria-live="polite">
-          Показано {filteredLiveProcesses.length} из {processes.length}
+          Показано {visibleLiveProcesses.length} из {filteredLiveProcesses.length}{#if filteredLiveProcesses.length !== processes.length} (всего {processes.length}){/if}
         </p>
       </div>
     {:else}
@@ -332,7 +357,7 @@
       </div>
     {:else}
       <ul class="ui-card rounded-2xl divide-y divide-[var(--border-subtle)] overflow-hidden">
-        {#each filteredLiveProcesses as proc (`${proc.pid}-${proc.name}`)}
+        {#each visibleLiveProcesses as proc (`${proc.pid}-${proc.name}`)}
           {@const rowBusy = busyKey === `kill:${proc.pid}` || busyKey === `proc:${proc.name}`}
           <li class="p-3.5 sm:px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div class="min-w-0 flex-1 space-y-1">
@@ -429,6 +454,17 @@
           </li>
         {/each}
       </ul>
+      {#if filteredLiveProcesses.length > visibleLiveProcesses.length}
+        <div class="flex justify-center pt-1">
+          <button
+            type="button"
+            onclick={() => (visibleLiveLimit += 60)}
+            class="ui-btn-secondary ui-pressable rounded-xl px-4 py-2 min-h-9 text-[0.8125rem] font-medium cursor-pointer"
+          >
+            Показать ещё ({Math.min(60, filteredLiveProcesses.length - visibleLiveProcesses.length)} из {filteredLiveProcesses.length - visibleLiveProcesses.length} оставшихся)
+          </button>
+        </div>
+      {/if}
     {/if}
   {:else if viewMode === 'blacklist'}
     <div class="ui-card rounded-2xl p-4 sm:p-5 space-y-3">

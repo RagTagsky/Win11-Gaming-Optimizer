@@ -2,6 +2,7 @@
   import {
     AlertCircle,
     FilterX,
+    Info,
     ListFilter,
     Loader2,
     Lock,
@@ -20,6 +21,7 @@
     ListMutationOperation,
     ServiceCategory,
     ServiceControlOperation,
+    ServiceDescriptionEntry,
     ServiceListType
   } from '../types';
 
@@ -59,6 +61,7 @@
   interface Props {
     blacklist: BlacklistServiceItem[];
     whitelist: string[];
+    whitelistDescriptions?: Record<string, ServiceDescriptionEntry>;
     viewMode: ServiceViewMode;
     searchQuery: string;
     selectedCategory: ServiceCategoryFilter;
@@ -83,6 +86,7 @@
   let {
     blacklist,
     whitelist,
+    whitelistDescriptions = {},
     viewMode,
     searchQuery,
     selectedCategory,
@@ -98,6 +102,11 @@
   }: Props = $props();
 
   let newServiceName = $state('');
+  let hoveredService = $state<string | null>(null);
+  let pinnedService = $state<string | null>(null);
+  const openTooltipService = $derived(pinnedService ?? hoveredService);
+  let visibleBlacklistLimit = $state(60);
+  let visibleWhitelistLimit = $state(60);
   let newServiceReason = $state('');
   let newServiceCategory = $state<ServiceCategory>('System');
 
@@ -149,7 +158,23 @@
     return IMMUTABLE_CORE_SET.has(name.trim().toLowerCase()) || IMMUTABLE_CORE_SET.has(clean);
   }
 
-  const normalizedQuery = $derived(searchQuery.trim().toLowerCase());
+  let debouncedQuery = $state('');
+  let searchDebounceHandle: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    const target = searchQuery.trim().toLowerCase();
+    clearTimeout(searchDebounceHandle);
+    if (!target) {
+      debouncedQuery = '';
+      return;
+    }
+    searchDebounceHandle = setTimeout(() => {
+      debouncedQuery = target;
+    }, 120);
+    return () => clearTimeout(searchDebounceHandle);
+  });
+
+  const normalizedQuery = $derived(debouncedQuery);
 
   const filteredBlacklist = $derived.by(() => {
     return blacklist.filter((item) => {
@@ -162,6 +187,7 @@
         item.Name.toLowerCase().includes(normalizedQuery) ||
         item.DisplayName.toLowerCase().includes(normalizedQuery) ||
         item.Reason.toLowerCase().includes(normalizedQuery) ||
+        (item.SummaryRu ?? '').toLowerCase().includes(normalizedQuery) ||
         catLabel.includes(normalizedQuery)
       );
     });
@@ -169,8 +195,24 @@
 
   const filteredWhitelist = $derived.by(() => {
     if (!normalizedQuery) return whitelist;
-    return whitelist.filter((name) => name.toLowerCase().includes(normalizedQuery));
+    return whitelist.filter((name) => {
+      if (name.toLowerCase().includes(normalizedQuery)) return true;
+      const desc = whitelistDescriptions[name];
+      return Boolean(desc?.summaryRu?.toLowerCase().includes(normalizedQuery));
+    });
   });
+
+  $effect(() => {
+    void normalizedQuery;
+    void selectedCategory;
+    void viewMode;
+    visibleBlacklistLimit = 60;
+    visibleWhitelistLimit = 60;
+    pinnedService = null;
+  });
+
+  const visibleBlacklist = $derived(filteredBlacklist.slice(0, visibleBlacklistLimit));
+  const visibleWhitelist = $derived(filteredWhitelist.slice(0, visibleWhitelistLimit));
 
   const hasActiveFilters = $derived(
     searchQuery.trim().length > 0 || (viewMode === 'blacklist' && selectedCategory !== 'all')
@@ -198,6 +240,18 @@
     newServiceReason = '';
   }
 </script>
+
+<svelte:window
+  onclick={() => {
+    pinnedService = null;
+  }}
+  onkeydown={(e) => {
+    if (e.key === 'Escape') {
+      hoveredService = null;
+      pinnedService = null;
+    }
+  }}
+/>
 
 <div class="space-y-4">
   <!-- Header & Mode Toggle -->
@@ -364,12 +418,12 @@
         </div>
 
         <p class="text-[0.8125rem] text-[var(--text-muted)] tabular-nums" aria-live="polite">
-          Показано {filteredBlacklist.length} из {blacklist.length}
+          Показано {visibleBlacklist.length} из {filteredBlacklist.length}{#if filteredBlacklist.length !== blacklist.length} (всего {blacklist.length}){/if}
         </p>
       </div>
     {:else}
       <p class="text-[0.8125rem] text-[var(--text-muted)] tabular-nums" aria-live="polite">
-        Показано {filteredWhitelist.length} из {whitelist.length} защищённых служб
+        Показано {visibleWhitelist.length} из {filteredWhitelist.length} защищённых служб{#if filteredWhitelist.length !== whitelist.length} (всего {whitelist.length}){/if}
       </p>
     {/if}
   </section>
@@ -429,8 +483,8 @@
         {/if}
       </div>
     {:else}
-      <ul class="ui-card rounded-2xl divide-y divide-[var(--border-subtle)] overflow-hidden">
-        {#each filteredBlacklist as svc (svc.Name)}
+      <ul class="ui-card rounded-2xl divide-y divide-[var(--border-subtle)]">
+        {#each visibleBlacklist as svc, index (svc.Name)}
           {@const showDisplay =
             svc.DisplayName.trim().length > 0 &&
             svc.DisplayName.trim() !== svc.Reason.trim() &&
@@ -438,9 +492,23 @@
           {@const sLabel = statusLabel(svc.Status)}
           {@const stLabel = startTypeLabel(svc.StartType)}
           {@const isRowBusy = busyService === svc.Name}
-          <li class="p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          {@const isTooltipOpen = openTooltipService === svc.Name}
+          {@const tipId = `svc-tip-bl-${index}`}
+          {@const tipSummary = svc.SummaryRu?.trim() || svc.Reason}
+          {@const tipCanDisable =
+            svc.CanDisableHint?.trim() ||
+            'Безопасно приостанавливается только в игровом режиме (можно вернуть в любой момент).'}
+          <li
+            onmouseenter={() => (hoveredService = svc.Name)}
+            onmouseleave={() => {
+              if (hoveredService === svc.Name) hoveredService = null;
+            }}
+            class="relative first:rounded-t-2xl last:rounded-b-2xl p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3 transition-colors hover:bg-[var(--bg-hover)]/40 {isTooltipOpen
+              ? 'z-30'
+              : ''}"
+          >
             <div class="min-w-0 flex-1 space-y-1">
-              <div class="flex flex-wrap items-baseline gap-2">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="text-sm font-medium text-[var(--text-primary)] break-words">
                   {showDisplay ? svc.DisplayName : svc.Reason}
                 </span>
@@ -450,6 +518,29 @@
                 >
                   {svc.Name}
                 </code>
+                <button
+                  type="button"
+                  aria-label={`Справка по службе ${svc.Name}`}
+                  aria-expanded={isTooltipOpen}
+                  aria-describedby={isTooltipOpen ? tipId : undefined}
+                  onfocus={() => (hoveredService = svc.Name)}
+                  onblur={() => {
+                    if (hoveredService === svc.Name) hoveredService = null;
+                  }}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    pinnedService = pinnedService === svc.Name ? null : svc.Name;
+                  }}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') {
+                      hoveredService = null;
+                      pinnedService = null;
+                    }
+                  }}
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-md text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:bg-[var(--accent-soft)] focus-visible:text-[var(--accent-text)] cursor-pointer"
+                >
+                  <Info size={13} strokeWidth={1.9} aria-hidden="true" />
+                </button>
                 {#if sLabel}
                   <span
                     class="inline-flex items-center rounded-full px-2 py-0.5 text-[0.7rem] font-medium border {svc.Status === 'Running'
@@ -465,6 +556,28 @@
                 <p class="text-[0.8125rem] leading-relaxed text-[var(--text-secondary)] break-words">
                   {svc.Reason}
                 </p>
+              {/if}
+
+              {#if isTooltipOpen}
+                <div
+                  id={tipId}
+                  role="tooltip"
+                  class="mt-2 sm:absolute sm:left-4 sm:top-full sm:mt-1.5 z-40 w-full sm:max-w-xl rounded-xl p-3.5 bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-dialog)] text-xs space-y-1.5 pointer-events-none"
+                >
+                  <p class="font-semibold text-[var(--text-primary)]">
+                    {showDisplay ? svc.DisplayName : svc.Name}
+                  </p>
+                  <p class="text-[var(--text-secondary)] leading-relaxed">
+                    <span class="font-medium text-[var(--text-primary)]">Что делает:</span>
+                    {' '}
+                    {tipSummary}
+                  </p>
+                  <p class="text-[var(--status-active-text)] leading-relaxed">
+                    <span class="font-medium">Можно ли отключить:</span>
+                    {' '}
+                    {tipCanDisable}
+                  </p>
+                </div>
               {/if}
             </div>
 
@@ -534,6 +647,17 @@
           </li>
         {/each}
       </ul>
+      {#if filteredBlacklist.length > visibleBlacklist.length}
+        <div class="flex justify-center pt-1">
+          <button
+            type="button"
+            onclick={() => (visibleBlacklistLimit += 60)}
+            class="ui-btn-secondary ui-pressable rounded-xl px-4 py-2 min-h-9 text-[0.8125rem] font-medium cursor-pointer"
+          >
+            Показать ещё ({Math.min(60, filteredBlacklist.length - visibleBlacklist.length)} из {filteredBlacklist.length - visibleBlacklist.length} оставшихся)
+          </button>
+        </div>
+      {/if}
     {/if}
   {:else}
     <!-- Whitelist View -->
@@ -563,10 +687,24 @@
         </p>
 
         <ul class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-          {#each filteredWhitelist as svcName (svcName)}
+          {#each visibleWhitelist as svcName, index (svcName)}
             {@const coreLocked = isImmutableCore(svcName)}
+            {@const isTooltipOpen = openTooltipService === svcName}
+            {@const tipId = `svc-tip-wl-${index}`}
+            {@const wlDesc = whitelistDescriptions[svcName]}
+            {@const tipSummary =
+              wlDesc?.summaryRu?.trim() || 'Критически важный компонент среды выполнения Windows.'}
+            {@const tipCanDisable =
+              wlDesc?.canDisableRu?.trim() ||
+              'Не рекомендуется отключать: защита сохраняет стабильность ОС и звука/сети.'}
             <li
-              class="rounded-xl px-3.5 py-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-between gap-2 min-w-0"
+              onmouseenter={() => (hoveredService = svcName)}
+              onmouseleave={() => {
+                if (hoveredService === svcName) hoveredService = null;
+              }}
+              class="relative rounded-xl px-3.5 py-2.5 bg-[var(--bg-elevated)] border border-[var(--border-subtle)] flex items-center justify-between gap-2 min-w-0 {isTooltipOpen
+                ? 'z-30 border-[var(--accent-border)]'
+                : ''}"
             >
               <div class="flex items-center gap-2 min-w-0">
                 <ShieldCheck
@@ -581,6 +719,29 @@
                 >
                   {svcName}
                 </code>
+                <button
+                  type="button"
+                  aria-label={`Справка по защищённой службе ${svcName}`}
+                  aria-expanded={isTooltipOpen}
+                  aria-describedby={isTooltipOpen ? tipId : undefined}
+                  onfocus={() => (hoveredService = svcName)}
+                  onblur={() => {
+                    if (hoveredService === svcName) hoveredService = null;
+                  }}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    pinnedService = pinnedService === svcName ? null : svcName;
+                  }}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') {
+                      hoveredService = null;
+                      pinnedService = null;
+                    }
+                  }}
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-md shrink-0 text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:bg-[var(--accent-soft)] cursor-pointer"
+                >
+                  <Info size={13} strokeWidth={1.9} aria-hidden="true" />
+                </button>
               </div>
 
               {#if coreLocked}
@@ -607,9 +768,44 @@
                   <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
                 </button>
               {/if}
+
+              {#if isTooltipOpen}
+                <div
+                  id={tipId}
+                  role="tooltip"
+                  class="absolute {index % 2 === 1
+                    ? 'sm:right-0 sm:left-auto'
+                    : 'sm:left-0'} {index % 3 === 2
+                    ? 'lg:right-0 lg:left-auto'
+                    : 'lg:left-0 lg:right-auto'} left-0 top-full mt-1.5 z-40 w-72 sm:w-80 rounded-xl p-3 bg-[var(--bg-surface)] border border-[var(--border-strong)] shadow-[var(--shadow-dialog)] text-xs space-y-1.5 pointer-events-none"
+                >
+                  <p class="font-semibold text-[var(--text-primary)]">{svcName}</p>
+                  <p class="text-[var(--text-secondary)] leading-relaxed">
+                    <span class="font-medium text-[var(--text-primary)]">Что делает:</span>
+                    {' '}
+                    {tipSummary}
+                  </p>
+                  <p class="text-[var(--status-warn-text)] leading-relaxed">
+                    <span class="font-medium">Защита:</span>
+                    {' '}
+                    {tipCanDisable}
+                  </p>
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
+        {#if filteredWhitelist.length > visibleWhitelist.length}
+          <div class="flex justify-center pt-1">
+            <button
+              type="button"
+              onclick={() => (visibleWhitelistLimit += 60)}
+              class="ui-btn-secondary ui-pressable rounded-xl px-4 py-2 min-h-9 text-[0.8125rem] font-medium cursor-pointer"
+            >
+              Показать ещё ({Math.min(60, filteredWhitelist.length - visibleWhitelist.length)} из {filteredWhitelist.length - visibleWhitelist.length} оставшихся)
+            </button>
+          </div>
+        {/if}
       </div>
     {/if}
   {/if}

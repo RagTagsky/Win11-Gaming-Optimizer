@@ -602,7 +602,7 @@ Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "G
 Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
 Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
 Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.3.0") "Get-AppCurrentVersion returns expected suite version '3.3.0'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.4.0") "Get-AppCurrentVersion returns expected suite version '3.4.0'"
 
 # 12.2 SemVer Parsing and Normalization
 $vStandard = ConvertTo-SemVer "v2.8"
@@ -610,7 +610,7 @@ $vBare     = ConvertTo-SemVer "2.8"
 $vPadded   = ConvertTo-SemVer "2.8.0"
 $vPatch    = ConvertTo-SemVer "v2.8.1"
 $vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.3.0"
+$vMajor    = ConvertTo-SemVer "v3.4.0"
 $vSuffix   = ConvertTo-SemVer "v2.8-Universal"
 $vBuild    = ConvertTo-SemVer "v2.8.0+build123"
 $vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
@@ -627,7 +627,7 @@ Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer ret
 # 12.3 SemVer Comparison Contracts
 Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
 Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.3.0 is correctly recognized as newer than v2.8"
+Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.4.0 is correctly recognized as newer than v2.8"
 Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
 $vOld = ConvertTo-SemVer "v2.7"
 Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
@@ -1247,6 +1247,40 @@ $svcViewPath  = Join-Path $repoRoot "ui\src\lib\components\ServicesView.svelte"
 if ((Test-Path -LiteralPath (Join-Path $repoRoot "ui\src")) -and (Test-Path -LiteralPath $procViewPath)) {
     Assert-Test (Test-Path -LiteralPath $procViewPath) "ProcessesView.svelte exists for interactive process management UI"
     Assert-Test ((Get-Content -LiteralPath $svcViewPath -Raw) -match 'onControlService' -and (Get-Content -LiteralPath $svcViewPath -Raw) -match 'onUpdateServiceList') "ServicesView.svelte exposes interactive service control and list mutation handlers"
+}
+
+# -- 16. v3.4.0 Tray Mode, Service Descriptions, Reboot & Native Updater -------
+Write-Host "`n[Test Group 16] v3.4.0 Tray, Service Tooltips, Reboot & Updater Contracts:" -ForegroundColor Cyan
+
+$svcDescPath = Join-Path $repoRoot "Config\service_descriptions.json"
+Assert-Test (Test-Path -LiteralPath $svcDescPath) "Config\service_descriptions.json exists on disk"
+if (Test-Path -LiteralPath $svcDescPath) {
+    $svcDescObj = (Get-Content -LiteralPath $svcDescPath -Raw | ConvertFrom-Json).Descriptions
+    $blItems = (Get-Content -LiteralPath (Join-Path $repoRoot "Config\services_blacklist.json") -Raw | ConvertFrom-Json).TargetServices
+    $wlItems = (Get-Content -LiteralPath (Join-Path $repoRoot "Config\services_whitelist.json") -Raw | ConvertFrom-Json).ProtectedServices
+    $missingDesc = @()
+    foreach ($s in $blItems) {
+        $p = $svcDescObj.PSObject.Properties[$s.Name]
+        if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
+            $missingDesc += $s.Name
+        }
+    }
+    foreach ($w in $wlItems) {
+        $p = $svcDescObj.PSObject.Properties[$w]
+        if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
+            $missingDesc += $w
+        }
+    }
+    Assert-Test ($missingDesc.Count -eq 0) "service_descriptions.json covers all $($blItems.Count) blacklist and $($wlItems.Count) whitelist services (missing=$($missingDesc.Count))"
+}
+
+$cargoTomlRaw = Get-Content -LiteralPath (Join-Path $repoRoot "ui\src-tauri\Cargo.toml") -Raw
+Assert-Test ($cargoTomlRaw -match 'tray-icon') "ui/src-tauri/Cargo.toml enables Tauri tray-icon feature"
+
+if (Test-Path -LiteralPath $rustLibPath) {
+    $rustLibRaw = Get-Content -LiteralPath $rustLibPath -Raw
+    Assert-Test ($rustLibRaw -match 'reboot_pc' -and $rustLibRaw -match 'check_for_updates' -and $rustLibRaw -match 'install_github_update') "lib.rs exposes reboot_pc, check_for_updates, and install_github_update IPC commands"
+    Assert-Test ($rustLibRaw -match 'clean_memory_win32' -and $rustLibRaw -match 'control_service_win32' -and $rustLibRaw -match 'build_tray_icon') "lib.rs implements native Win32 memory/service optimization and 3-color tray icon builder"
 }
 
 # ── Summary ────────────────────────────────────────────────────────────────

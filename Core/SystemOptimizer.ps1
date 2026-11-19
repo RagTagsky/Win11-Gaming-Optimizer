@@ -1467,7 +1467,7 @@ function Get-HardwareProfile {
     # Also detect if any secondary drive is an HDD
     $anyHdd = $false
     try {
-        $allPDisks = @(Get-PhysicalDisk -ErrorAction SilentlyContinue)
+        $allPDisks = if ($pDisks -and $pDisks.Count -gt 0) { $pDisks } else { @(Get-PhysicalDisk -ErrorAction SilentlyContinue) }
         foreach ($pd in $allPDisks) {
             $res = Resolve-StorageDeviceMediaType -Model $pd.FriendlyName -MediaType $pd.MediaType -SpindleSpeed $pd.SpindleSpeed -BusType $pd.BusType
             if ($res.IsHdd) {
@@ -3357,7 +3357,7 @@ function Set-ExtendedGamingOptimizations {
         [Parameter(Mandatory = $false)] [string[]]$Whitelist
     )
 
-    Write-Host "[*] Applying v3.3.0 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying v3.4.0 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
     $targets = @(Get-ExtendedGamingTargets -HardwareProfile $HardwareProfile -Whitelist $Whitelist)
     $applied = Set-RegistryTargets -Targets $targets
     $groups = ($targets | ForEach-Object { $_.Group } | Sort-Object -Unique) -join ", "
@@ -3405,11 +3405,21 @@ function Set-PowerLatencyOptimizations {
 
     if (-not $Config -or -not $Config.SchemeGuid) { return $false }
     Write-Host "[*] Disabling USB selective suspend, USB3 LPM, NVMe APST idle and Ryzen/Intel EPP ramp-up delay..." -ForegroundColor Cyan
+    $activeGuid = $null
+    try {
+        $schemeOut = (powercfg /getactivescheme 2>&1) -join ' '
+        if ($schemeOut -match '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') {
+            $activeGuid = $matches[1].ToLowerInvariant()
+        }
+    } catch {}
+    $sameScheme = ($null -ne $activeGuid -and $activeGuid -eq ([string]$Config.SchemeGuid).Trim().ToLowerInvariant())
     foreach ($s in @($Config.Settings)) {
         if ($null -eq $s.Original) { continue }  # unknown original -> do not touch (cannot restore)
         $target = ($Script:PowerLatencySettings | Where-Object { $_.Setting -eq $s.Setting } | Select-Object -First 1).Value
         $null = powercfg /setacvalueindex $Config.SchemeGuid $s.Sub $s.Setting $target 2>&1
-        $null = powercfg /setacvalueindex SCHEME_CURRENT $s.Sub $s.Setting $target 2>&1
+        if (-not $sameScheme) {
+            $null = powercfg /setacvalueindex SCHEME_CURRENT $s.Sub $s.Setting $target 2>&1
+        }
         Write-Host "  [+] $($s.Name): $($s.Original) -> $target" -ForegroundColor Green
     }
     $null = powercfg /setactive SCHEME_CURRENT 2>&1

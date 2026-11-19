@@ -122,7 +122,7 @@
       class="max-[440px]:hidden shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
       data-tauri-drag-region
     >
-      v3.3.0
+      v3.4.0
     </span>
   </div>
 
@@ -175,8 +175,8 @@
           type="button"
           onclick={handleClose}
           class="ui-btn-ghost ui-btn-close w-11 h-11 flex items-center justify-center cursor-pointer"
-          aria-label="Закрыть приложение"
-          title="Закрыть"
+          aria-label="Свернуть окно в системный трей"
+          title="Закрыть окно в трей (выгрузить WebView из ОЗУ)"
         >
           <X size={16} strokeWidth={1.75} aria-hidden="true" />
         </button>

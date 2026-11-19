@@ -13,7 +13,8 @@ import type {
   ServiceListType,
   ListMutationOperation,
   ServiceControlOperation,
-  ServiceCategory
+  ServiceCategory,
+  UpdateInfo
 } from './types';
 
 export interface SystemStatus {
@@ -90,7 +91,9 @@ const PREVIEW_SERVICES: ServicesLists = {
       Category: 'Telemetry',
       Reason: 'Диагностическая телеметрия (Microsoft)',
       Status: 'Running',
-      StartType: 'Automatic'
+      StartType: 'Automatic',
+      SummaryRu: 'Собирает и отправляет диагностические данные и телеметрию использования Windows.',
+      CanDisableHint: 'Можно отключить безопасно: не влияет на игры и работу системы.'
     },
     {
       Name: 'SysMain',
@@ -98,7 +101,9 @@ const PREVIEW_SERVICES: ServicesLists = {
       Category: 'System',
       Reason: 'Фоновая предзагрузка данных в ОЗУ (конкуренция за диск и память)',
       Status: 'Running',
-      StartType: 'Automatic'
+      StartType: 'Automatic',
+      SummaryRu: 'Кэширует часто запускаемые программы в оперативной памяти.',
+      CanDisableHint: 'Можно отключить безопасно на SSD/NVMe: снижает фоновую нагрузку на диск и ОЗУ.'
     },
     {
       Name: 'XblAuthManager',
@@ -202,7 +207,8 @@ export async function fetchServicesLists(): Promise<ServicesLists> {
   }
   return {
     blacklist: PREVIEW_SERVICES.blacklist.map((item) => ({ ...item })),
-    whitelist: [...PREVIEW_SERVICES.whitelist]
+    whitelist: [...PREVIEW_SERVICES.whitelist],
+    whitelistDescriptions: PREVIEW_SERVICES.whitelistDescriptions ?? {}
   };
 }
 
@@ -360,7 +366,8 @@ export async function updateServiceList(params: {
   }
   return {
     blacklist: PREVIEW_SERVICES.blacklist.map((item) => ({ ...item })),
-    whitelist: [...PREVIEW_SERVICES.whitelist]
+    whitelist: [...PREVIEW_SERVICES.whitelist],
+    whitelistDescriptions: PREVIEW_SERVICES.whitelistDescriptions ?? {}
   };
 }
 
@@ -435,4 +442,74 @@ export async function lockTimerResolution(): Promise<ActionResult> {
     success: true,
     message: 'Предпросмотр: точность таймера Windows зафиксирована на 0.500 мс.'
   };
+}
+
+export async function rebootPc(): Promise<ActionResult> {
+  if (isTauri) {
+    try {
+      return await invoke<ActionResult>('reboot_pc');
+    } catch (err) {
+      return {
+        success: false,
+        message: formatIpcError(err)
+      };
+    }
+  }
+  return {
+    success: true,
+    message: 'Предпросмотр: инициирована перезагрузка ПК.'
+  };
+}
+
+export async function checkForUpdates(): Promise<UpdateInfo> {
+  if (isTauri) {
+    return await invoke<UpdateInfo>('check_for_updates');
+  }
+  await new Promise((r) => setTimeout(r, 250));
+  return {
+    currentVersion: '3.4.0',
+    latestVersion: '3.4.0',
+    hasUpdate: false,
+    releaseUrl: 'https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest',
+    releaseNotes: ''
+  };
+}
+
+export async function installGithubUpdate(
+  installerUrl: string,
+  checksumUrl: string | undefined,
+  expectedFileName: string
+): Promise<ActionResult> {
+  if (isTauri) {
+    try {
+      return await invoke<ActionResult>('install_github_update', {
+        installerUrl,
+        checksumUrl: checksumUrl ?? null,
+        expectedFileName
+      });
+    } catch (err) {
+      return {
+        success: false,
+        message: formatIpcError(err)
+      };
+    }
+  }
+  return {
+    success: true,
+    message: `Предпросмотр: установка ${expectedFileName}`
+  };
+}
+
+export async function openReleaseUrl(url: string): Promise<void> {
+  if (isTauri) {
+    await invoke('open_release_url', { url });
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+export async function exitApp(): Promise<void> {
+  if (isTauri) {
+    await invoke('exit_app');
+  }
 }

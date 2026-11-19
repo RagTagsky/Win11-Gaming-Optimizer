@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+use tauri::{Emitter, Manager};
+
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const GITHUB_REPO: &str = "RagTagsky/Win11-Gaming-Optimizer";
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -52,6 +57,11 @@ const EMBEDDED_RUNTIME_ASSETS: &[EmbeddedAsset] = &[
         preserve_if_exists: true,
     },
     EmbeddedAsset {
+        rel_path: "Config/service_descriptions.json",
+        bytes: include_bytes!("../../../Config/service_descriptions.json"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
         rel_path: "Config/startup_apps.json",
         bytes: include_bytes!("../../../Config/startup_apps.json"),
         preserve_if_exists: true,
@@ -70,6 +80,62 @@ const EMBEDDED_RUNTIME_ASSETS: &[EmbeddedAsset] = &[
 
 static RUNTIME_ROOT_CACHE: OnceLock<PathBuf> = OnceLock::new();
 static BACKUPS_ACL_INIT: OnceLock<()> = OnceLock::new();
+static ALLOW_APP_EXIT: AtomicBool = AtomicBool::new(false);
+static MODE_ACTION_BUSY: AtomicBool = AtomicBool::new(false);
+
+#[cfg(not(test))]
+fn set_tray_toggle_enabled(enabled: bool) {
+    if let Some(ctrl) = TRAY_CONTROLLER.get() {
+        let _ = ctrl.toggle_item.set_enabled(enabled);
+    }
+}
+
+#[cfg(test)]
+fn set_tray_toggle_enabled(_enabled: bool) {}
+
+struct ModeActionGuard;
+
+impl Drop for ModeActionGuard {
+    fn drop(&mut self) {
+        MODE_ACTION_BUSY.store(false, Ordering::SeqCst);
+        set_tray_toggle_enabled(true);
+    }
+}
+
+fn try_acquire_mode_action_guard() -> Option<ModeActionGuard> {
+    if MODE_ACTION_BUSY
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        set_tray_toggle_enabled(false);
+        Some(ModeActionGuard)
+    } else {
+        None
+    }
+}
+
+struct CachedHardwareStatic {
+    cpu: String,
+    gpu: String,
+}
+
+static HW_STATIC_CACHE: OnceLock<CachedHardwareStatic> = OnceLock::new();
+
+#[derive(Clone)]
+struct CachedActiveState {
+    path: PathBuf,
+    modified: Option<std::time::SystemTime>,
+    len: u64,
+    mode: String,
+    active_since: Option<String>,
+    state_cpu: Option<String>,
+    state_gpu: Option<String>,
+    state_ram_gb: Option<f64>,
+    localized_service_names: std::collections::HashMap<String, String>,
+}
+
+static ACTIVE_STATE_CACHE: Mutex<Option<CachedActiveState>> = Mutex::new(None);
+static TRAY_CONTROLLER: OnceLock<TrayController> = OnceLock::new();
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct HardwareInfo {
@@ -111,6 +177,14 @@ impl Default for TuningConfig {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ServiceDescriptionEntry {
+    #[serde(rename = "summaryRu", default)]
+    pub summary_ru: String,
+    #[serde(rename = "canDisableRu", default)]
+    pub can_disable_ru: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BlacklistServiceItem {
     #[serde(rename = "Name")]
@@ -125,12 +199,42 @@ pub struct BlacklistServiceItem {
     pub status: String,
     #[serde(rename = "StartType", default)]
     pub start_type: String,
+    #[serde(rename = "SummaryRu", default)]
+    pub summary_ru: String,
+    #[serde(rename = "CanDisableHint", default)]
+    pub can_disable_hint: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ServicesLists {
     pub blacklist: Vec<BlacklistServiceItem>,
     pub whitelist: Vec<String>,
+    #[serde(rename = "whitelistDescriptions", default)]
+    pub whitelist_descriptions: std::collections::HashMap<String, ServiceDescriptionEntry>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UpdateInfo {
+    #[serde(rename = "currentVersion")]
+    pub current_version: String,
+    #[serde(rename = "latestVersion")]
+    pub latest_version: String,
+    #[serde(rename = "hasUpdate")]
+    pub has_update: bool,
+    #[serde(rename = "releaseUrl")]
+    pub release_url: String,
+    #[serde(rename = "publishedAt", default)]
+    pub published_at: Option<String>,
+    #[serde(rename = "releaseNotes")]
+    pub release_notes: String,
+    #[serde(rename = "installerUrl", default)]
+    pub installer_url: Option<String>,
+    #[serde(rename = "installerName", default)]
+    pub installer_name: Option<String>,
+    #[serde(rename = "checksumUrl", default)]
+    pub checksum_url: Option<String>,
+    #[serde(rename = "sizeBytes", default)]
+    pub size_bytes: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -392,6 +496,52 @@ mod win_hw {
         service_status_process: SERVICE_STATUS_PROCESS,
     }
 
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct LUID {
+        low_part: u32,
+        high_part: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct LUID_AND_ATTRIBUTES {
+        luid: LUID,
+        attributes: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct TOKEN_PRIVILEGES {
+        privilege_count: u32,
+        privileges: [LUID_AND_ATTRIBUTES; 1],
+    }
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct SERVICE_STATUS {
+        dw_service_type: u32,
+        dw_current_state: u32,
+        dw_controls_accepted: u32,
+        dw_win32_exit_code: u32,
+        dw_service_specific_exit_code: u32,
+        dw_check_point: u32,
+        dw_wait_hint: u32,
+    }
+
+    #[repr(C)]
+    struct QUERY_SERVICE_CONFIGW {
+        dw_service_type: u32,
+        dw_start_type: u32,
+        dw_error_control: u32,
+        lp_binary_path_name: *mut u16,
+        lp_load_order_group: *mut u16,
+        dw_tag_id: u32,
+        lp_dependencies: *mut u16,
+        lp_service_start_name: *mut u16,
+        lp_display_name: *mut u16,
+    }
+
     #[link(name = "advapi32")]
     extern "system" {
         fn RegOpenKeyExW(
@@ -415,6 +565,44 @@ mod win_hw {
             lpDatabaseName: *const u16,
             dwDesiredAccess: u32,
         ) -> usize;
+        fn OpenServiceW(
+            hSCManager: usize,
+            lpServiceName: *const u16,
+            dwDesiredAccess: u32,
+        ) -> usize;
+        fn StartServiceW(
+            hService: usize,
+            dwNumServiceArgs: u32,
+            lpServiceArgVectors: *const *const u16,
+        ) -> i32;
+        fn ControlService(
+            hService: usize,
+            dwControl: u32,
+            lpServiceStatus: *mut SERVICE_STATUS,
+        ) -> i32;
+        fn QueryServiceStatus(
+            hService: usize,
+            lpServiceStatus: *mut SERVICE_STATUS,
+        ) -> i32;
+        fn ChangeServiceConfigW(
+            hService: usize,
+            dwServiceType: u32,
+            dwStartType: u32,
+            dwErrorControl: u32,
+            lpBinaryPathName: *const u16,
+            lpLoadOrderGroup: *const u16,
+            lpdwTagId: *mut u32,
+            lpDependencies: *const u16,
+            lpServiceStartName: *const u16,
+            lpPassword: *const u16,
+            lpDisplayName: *const u16,
+        ) -> i32;
+        fn QueryServiceConfigW(
+            hService: usize,
+            lpServiceConfig: *mut u8,
+            cbBufSize: u32,
+            pcbBytesNeeded: *mut u32,
+        ) -> i32;
         fn EnumServicesStatusExW(
             hSCManager: usize,
             InfoLevel: u32,
@@ -428,6 +616,24 @@ mod win_hw {
             pszGroupName: *const u16,
         ) -> i32;
         fn CloseServiceHandle(hSCObject: usize) -> i32;
+        fn OpenProcessToken(
+            ProcessHandle: isize,
+            DesiredAccess: u32,
+            TokenHandle: *mut isize,
+        ) -> i32;
+        fn LookupPrivilegeValueW(
+            lpSystemName: *const u16,
+            lpName: *const u16,
+            lpLuid: *mut LUID,
+        ) -> i32;
+        fn AdjustTokenPrivileges(
+            TokenHandle: isize,
+            DisableAllPrivileges: i32,
+            NewState: *const TOKEN_PRIVILEGES,
+            BufferLength: u32,
+            PreviousState: *mut TOKEN_PRIVILEGES,
+            ReturnLength: *mut u32,
+        ) -> i32;
     }
 
     #[link(name = "kernel32")]
@@ -450,12 +656,42 @@ mod win_hw {
             ppsmemCounters: *mut PROCESS_MEMORY_COUNTERS,
             cb: u32,
         ) -> i32;
+        fn GetCurrentProcess() -> isize;
+        fn GetModuleHandleA(lpModuleName: *const u8) -> *mut std::ffi::c_void;
+        fn GetProcAddress(
+            hModule: *mut std::ffi::c_void,
+            lpProcName: *const u8,
+        ) -> *mut std::ffi::c_void;
         fn GetLastError() -> u32;
+        fn CreateMutexW(
+            lpMutexAttributes: *const std::ffi::c_void,
+            bInitialOwner: i32,
+            lpName: *const u16,
+        ) -> isize;
+        fn CreateEventW(
+            lpEventAttributes: *const std::ffi::c_void,
+            bManualReset: i32,
+            bInitialState: i32,
+            lpName: *const u16,
+        ) -> isize;
+        fn OpenEventW(
+            dwDesiredAccess: u32,
+            bInheritHandle: i32,
+            lpName: *const u16,
+        ) -> isize;
+        fn SetEvent(hEvent: isize) -> i32;
+        fn WaitForSingleObject(hHandle: isize, dwMilliseconds: u32) -> u32;
     }
 
     #[link(name = "user32")]
     extern "system" {
         fn GetSystemMetrics(nIndex: i32) -> i32;
+        fn MessageBoxW(
+            hWnd: isize,
+            lpText: *const u16,
+            lpCaption: *const u16,
+            uType: u32,
+        ) -> i32;
     }
 
     fn to_wide(s: &str) -> Vec<u16> {
@@ -863,6 +1099,312 @@ mod win_hw {
             "Процесс '{}' (PID: {}) успешно завершён.",
             expected_clean, pid
         ))
+    }
+
+    fn enable_privilege(privilege_name: &str) -> bool {
+        unsafe {
+            let mut token: isize = 0;
+            // TOKEN_ADJUST_PRIVILEGES (0x0020) | TOKEN_QUERY (0x0008)
+            if OpenProcessToken(GetCurrentProcess(), 0x0028, &mut token) == 0 {
+                return false;
+            }
+            let priv_w = to_wide(privilege_name);
+            let mut luid = LUID {
+                low_part: 0,
+                high_part: 0,
+            };
+            if LookupPrivilegeValueW(std::ptr::null(), priv_w.as_ptr(), &mut luid) == 0 {
+                let _ = CloseHandle(token);
+                return false;
+            }
+            let tp = TOKEN_PRIVILEGES {
+                privilege_count: 1,
+                privileges: [LUID_AND_ATTRIBUTES {
+                    luid,
+                    attributes: 0x0000_0002, // SE_PRIVILEGE_ENABLED
+                }],
+            };
+            let ok = AdjustTokenPrivileges(
+                token,
+                0,
+                &tp,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            let err = GetLastError();
+            let _ = CloseHandle(token);
+            ok != 0 && err == 0
+        }
+    }
+
+    type NtSetSystemInformationFn =
+        unsafe extern "system" fn(i32, *mut std::ffi::c_void, i32) -> i32;
+
+    pub fn clean_memory_win32() -> Result<f64, String> {
+        unsafe {
+            let mut before_mem: MEMORYSTATUSEX = std::mem::zeroed();
+            before_mem.dw_length = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+            let before_avail = if GlobalMemoryStatusEx(&mut before_mem) != 0 {
+                before_mem.ull_avail_phys
+            } else {
+                0
+            };
+
+            let _ = enable_privilege("SeProfileSingleProcessPrivilege");
+            let _ = enable_privilege("SeIncreaseQuotaPrivilege");
+
+            let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr());
+            if ntdll.is_null() {
+                return Err("Не удалось получить дескриптор ntdll.dll".to_string());
+            }
+            let fn_ptr = GetProcAddress(ntdll, b"NtSetSystemInformation\0".as_ptr());
+            if fn_ptr.is_null() {
+                return Err("Функция NtSetSystemInformation не найдена в ntdll.dll".to_string());
+            }
+            let nt_set: NtSetSystemInformationFn = std::mem::transmute(fn_ptr);
+            let mut command: i32 = 4; // MemoryPurgeStandbyList
+            let status = nt_set(
+                80, // SystemMemoryListInformation
+                &mut command as *mut i32 as *mut std::ffi::c_void,
+                std::mem::size_of::<i32>() as i32,
+            );
+            if status < 0 {
+                return Err(format!(
+                    "NtSetSystemInformation(MemoryPurgeStandbyList) отклонена: NTSTATUS 0x{:08X} (требуются права администратора)",
+                    status
+                ));
+            }
+
+            let mut after_mem: MEMORYSTATUSEX = std::mem::zeroed();
+            after_mem.dw_length = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+            let after_avail = if GlobalMemoryStatusEx(&mut after_mem) != 0 {
+                after_mem.ull_avail_phys
+            } else {
+                before_avail
+            };
+
+            let freed_bytes = after_avail.saturating_sub(before_avail);
+            let freed_mb = ((freed_bytes as f64) / (1024.0 * 1024.0) * 10.0).round() / 10.0;
+            Ok(freed_mb)
+        }
+    }
+
+    pub fn control_service_win32(
+        service_name: &str,
+        operation: &str,
+    ) -> Result<Result<String, u32>, String> {
+        const SERVICE_NO_CHANGE: u32 = 0xFFFF_FFFF;
+        const SERVICE_AUTO_START: u32 = 2;
+        const SERVICE_DEMAND_START: u32 = 3;
+        const SERVICE_DISABLED: u32 = 4;
+        const SERVICE_CONTROL_STOP: u32 = 1;
+
+        let desired_access: u32 = match operation {
+            "Start" => 0x0017, // QUERY_CONFIG | CHANGE_CONFIG | QUERY_STATUS | START
+            "Stop" => 0x0024,  // STOP | QUERY_STATUS
+            "Automatic" | "Manual" | "Disabled" => 0x0002, // CHANGE_CONFIG
+            _ => return Err(format!("Недопустимая операция над службой: {}", operation)),
+        };
+
+        unsafe {
+            let scm = OpenSCManagerW(std::ptr::null(), std::ptr::null(), 0x0001);
+            if scm == 0 {
+                return Err(format!(
+                    "Не удалось открыть диспетчер служб Windows (Win32 {})",
+                    GetLastError()
+                ));
+            }
+
+            let mut resolved_name = service_name.to_string();
+            let mut svc_w = to_wide(&resolved_name);
+            let mut h_svc = OpenServiceW(scm, svc_w.as_ptr(), desired_access);
+            if h_svc == 0 && GetLastError() == 1060 {
+                // Fallback for per-user template services like CDPUserSvc -> CDPUserSvc_XXXX
+                let lower = service_name.to_lowercase();
+                let prefix_under = format!("{}_", lower);
+                let live = enumerate_live_services();
+                if let Some(inst) = live.keys().find(|k| {
+                    k.starts_with(&prefix_under)
+                        || (k.starts_with(&lower)
+                            && k.len() > lower.len()
+                            && k.as_bytes()[lower.len()].is_ascii_digit())
+                }) {
+                    resolved_name = inst.clone();
+                    svc_w = to_wide(&resolved_name);
+                    h_svc = OpenServiceW(scm, svc_w.as_ptr(), desired_access);
+                }
+            }
+
+            if h_svc == 0 {
+                let err = GetLastError();
+                let _ = CloseServiceHandle(scm);
+                return Err(format!(
+                    "Не удалось открыть службу '{}' (Win32 {})",
+                    resolved_name, err
+                ));
+            }
+
+            let result: Result<Result<String, u32>, String> = match operation {
+                "Start" => {
+                    let mut cfg_buf = vec![0u64; 1024];
+                    let mut needed: u32 = 0;
+                    if QueryServiceConfigW(
+                        h_svc,
+                        cfg_buf.as_mut_ptr() as *mut u8,
+                        (cfg_buf.len() * 8) as u32,
+                        &mut needed,
+                    ) != 0
+                    {
+                        let cfg = &*(cfg_buf.as_ptr() as *const QUERY_SERVICE_CONFIGW);
+                        if cfg.dw_start_type == SERVICE_DISABLED {
+                            let _ = ChangeServiceConfigW(
+                                h_svc,
+                                SERVICE_NO_CHANGE,
+                                SERVICE_DEMAND_START,
+                                SERVICE_NO_CHANGE,
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                std::ptr::null_mut(),
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                std::ptr::null(),
+                                std::ptr::null(),
+                            );
+                        }
+                    }
+                    if StartServiceW(h_svc, 0, std::ptr::null()) == 0 {
+                        let err = GetLastError();
+                        if err == 1056 {
+                            Ok(Ok(format!("Служба '{}' уже запущена.", resolved_name)))
+                        } else {
+                            Err(format!(
+                                "StartServiceW завершилась с ошибкой Win32 {} для '{}'",
+                                err, resolved_name
+                            ))
+                        }
+                    } else {
+                        let mut st = SERVICE_STATUS::default();
+                        for _ in 0..20 {
+                            if QueryServiceStatus(h_svc, &mut st) == 0 || st.dw_current_state != 2 {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(75));
+                        }
+                        Ok(Ok(format!("Служба '{}' запущена.", resolved_name)))
+                    }
+                }
+                "Stop" => {
+                    let mut st = SERVICE_STATUS::default();
+                    if ControlService(h_svc, SERVICE_CONTROL_STOP, &mut st) == 0 {
+                        let err = GetLastError();
+                        if err == 1062 {
+                            Ok(Ok(format!("Служба '{}' уже остановлена.", resolved_name)))
+                        } else if err == 1051 {
+                            Ok(Err(1051))
+                        } else {
+                            Err(format!(
+                                "ControlService(STOP) завершилась с ошибкой Win32 {} для '{}'",
+                                err, resolved_name
+                            ))
+                        }
+                    } else {
+                        for _ in 0..20 {
+                            if st.dw_current_state != 3 {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(75));
+                            if QueryServiceStatus(h_svc, &mut st) == 0 {
+                                break;
+                            }
+                        }
+                        Ok(Ok(format!("Служба '{}' остановлена.", resolved_name)))
+                    }
+                }
+                "Automatic" | "Manual" | "Disabled" => {
+                    let target_start = match operation {
+                        "Automatic" => SERVICE_AUTO_START,
+                        "Manual" => SERVICE_DEMAND_START,
+                        _ => SERVICE_DISABLED,
+                    };
+                    if ChangeServiceConfigW(
+                        h_svc,
+                        SERVICE_NO_CHANGE,
+                        target_start,
+                        SERVICE_NO_CHANGE,
+                        std::ptr::null(),
+                        std::ptr::null(),
+                        std::ptr::null_mut(),
+                        std::ptr::null(),
+                        std::ptr::null(),
+                        std::ptr::null(),
+                        std::ptr::null(),
+                    ) == 0
+                    {
+                        let err = GetLastError();
+                        Err(format!(
+                            "ChangeServiceConfigW завершилась с ошибкой Win32 {} для '{}'",
+                            err, resolved_name
+                        ))
+                    } else {
+                        Ok(Ok(format!(
+                            "Тип запуска службы '{}' изменён на {}.",
+                            resolved_name, operation
+                        )))
+                    }
+                }
+                _ => Err("Неизвестная операция".to_string()),
+            };
+
+            let _ = CloseServiceHandle(h_svc);
+            let _ = CloseServiceHandle(scm);
+            result
+        }
+    }
+
+    pub fn confirm_reboot_dialog_win32() -> bool {
+        unsafe {
+            let text = to_wide("Перезагрузить компьютер сейчас?\nНесохранённые данные в открытых программах могут быть потеряны.");
+            let caption = to_wide("Ultra Gaming Mode — Перезагрузка ПК");
+            // MB_YESNO (0x04) | MB_ICONWARNING (0x30) | MB_DEFBUTTON2 (0x100) | MB_SETFOREGROUND (0x10000) | MB_TOPMOST (0x40000)
+            let flags = 0x0004 | 0x0030 | 0x0100 | 0x1_0000 | 0x4_0000;
+            MessageBoxW(0, text.as_ptr(), caption.as_ptr(), flags) == 6 // IDYES
+        }
+    }
+
+    pub fn acquire_single_instance_or_wake() -> Option<isize> {
+        const ERROR_ALREADY_EXISTS: u32 = 183;
+        const EVENT_MODIFY_STATE: u32 = 0x0002;
+        unsafe {
+            let mutex_name = to_wide(r"Local\UltraGamingMode_SingleInstance_v3");
+            let h_mutex = CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr());
+            if h_mutex != 0 && GetLastError() == ERROR_ALREADY_EXISTS {
+                let _ = CloseHandle(h_mutex);
+                let wake_name = to_wide(r"Local\UltraGamingMode_WakeWindow_v3");
+                let h_wake = OpenEventW(EVENT_MODIFY_STATE, 0, wake_name.as_ptr());
+                if h_wake != 0 {
+                    let _ = SetEvent(h_wake);
+                    let _ = CloseHandle(h_wake);
+                }
+                return None;
+            }
+            Some(h_mutex)
+        }
+    }
+
+    pub fn create_wake_event() -> isize {
+        unsafe {
+            let wake_name = to_wide(r"Local\UltraGamingMode_WakeWindow_v3");
+            CreateEventW(std::ptr::null(), 0, 0, wake_name.as_ptr())
+        }
+    }
+
+    pub fn wait_wake_event_ms(handle: isize, timeout_ms: u32) -> bool {
+        if handle == 0 {
+            std::thread::sleep(std::time::Duration::from_millis(timeout_ms as u64));
+            return false;
+        }
+        unsafe { WaitForSingleObject(handle, timeout_ms) == 0 }
     }
 }
 
@@ -1366,64 +1908,177 @@ fn infer_service_category(name: &str, reason: &str) -> String {
     }
 }
 
+fn invalidate_active_state_cache() {
+    if let Ok(mut guard) = ACTIVE_STATE_CACHE.lock() {
+        *guard = None;
+    }
+}
+
+fn read_cached_active_state(root: &Path) -> Option<CachedActiveState> {
+    let active_state_path = root.join("Backups").join("active_state.json");
+    let meta = std::fs::metadata(&active_state_path).ok()?;
+    let modified = meta.modified().ok();
+    let len = meta.len();
+
+    if let Ok(guard) = ACTIVE_STATE_CACHE.lock() {
+        if let Some(cached) = guard.as_ref() {
+            if cached.path == active_state_path
+                && cached.modified == modified
+                && cached.len == len
+            {
+                return Some(cached.clone());
+            }
+        }
+    }
+
+    let content = std::fs::read_to_string(&active_state_path).ok()?;
+    let clean = content.trim_start_matches('\u{feff}');
+    let json = serde_json::from_str::<serde_json::Value>(clean).ok()?;
+
+    let mode = match json.get("State").and_then(|v| v.as_str()) {
+        Some("GameMode_Active") => "Gaming".to_string(),
+        Some("Armed") => "Armed".to_string(),
+        _ => "Normal".to_string(),
+    };
+    let active_since = if mode == "Gaming" || mode == "Armed" {
+        json.get("Timestamp")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    } else {
+        None
+    };
+
+    let hw = json.get("HardwareProfile");
+    let state_cpu = hw
+        .and_then(|h| h.get("CpuName"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let state_gpu = hw
+        .and_then(|h| h.get("GpuName"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let state_ram_gb = hw
+        .and_then(|h| h.get("TotalRamGB"))
+        .and_then(|v| v.as_f64())
+        .filter(|&r| r > 0.0);
+
+    let mut localized_service_names = std::collections::HashMap::new();
+    if let Some(svcs) = json.get("Services").and_then(|v| v.as_array()) {
+        for s in svcs {
+            let s_name = s.get("Name").and_then(|v| v.as_str()).unwrap_or("").trim();
+            let s_disp = s
+                .get("DisplayName")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if !s_name.is_empty() && !s_disp.is_empty() {
+                localized_service_names.insert(s_name.to_lowercase(), s_disp.to_string());
+            }
+        }
+    }
+
+    let parsed = CachedActiveState {
+        path: active_state_path,
+        modified,
+        len,
+        mode,
+        active_since,
+        state_cpu,
+        state_gpu,
+        state_ram_gb,
+        localized_service_names,
+    };
+
+    if let Ok(mut guard) = ACTIVE_STATE_CACHE.lock() {
+        *guard = Some(parsed.clone());
+    }
+    Some(parsed)
+}
+
+fn read_current_mode_fast(root: &Path) -> String {
+    read_cached_active_state(root)
+        .map(|s| s.mode)
+        .unwrap_or_else(|| "Normal".to_string())
+}
+
+fn load_service_descriptions_map(
+    root: &Path,
+) -> std::collections::HashMap<String, ServiceDescriptionEntry> {
+    let disk_path = root.join("Config").join("service_descriptions.json");
+    let raw = std::fs::read_to_string(&disk_path).unwrap_or_else(|_| {
+        String::from_utf8_lossy(include_bytes!("../../../Config/service_descriptions.json"))
+            .into_owned()
+    });
+    let mut out = std::collections::HashMap::new();
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}')) {
+        if let Some(obj) = val.get("Descriptions").and_then(|v| v.as_object()) {
+            for (k, v) in obj {
+                if let Ok(entry) = serde_json::from_value::<ServiceDescriptionEntry>(v.clone()) {
+                    out.insert(k.to_lowercase(), entry);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn lookup_service_description<'a>(
+    map: &'a std::collections::HashMap<String, ServiceDescriptionEntry>,
+    service_name: &str,
+) -> Option<&'a ServiceDescriptionEntry> {
+    let trimmed = service_name.trim();
+    let lower = trimmed.to_lowercase();
+    if let Some(entry) = map.get(&lower) {
+        return Some(entry);
+    }
+    let base = strip_per_user_service_suffix(trimmed).to_lowercase();
+    map.get(&base)
+}
+
+fn get_cached_hw_static() -> &'static CachedHardwareStatic {
+    HW_STATIC_CACHE.get_or_init(|| {
+        #[cfg(target_os = "windows")]
+        let cpu = win_hw::detect_cpu_name().unwrap_or_else(|| "Неизвестный процессор".to_string());
+        #[cfg(not(target_os = "windows"))]
+        let cpu = "Processor".to_string();
+
+        #[cfg(target_os = "windows")]
+        let gpu = win_hw::detect_gpu_name().unwrap_or_else(|| "Видеоадаптер".to_string());
+        #[cfg(not(target_os = "windows"))]
+        let gpu = "Graphics Adapter".to_string();
+
+        CachedHardwareStatic { cpu, gpu }
+    })
+}
+
 fn read_system_status_sync() -> Result<SystemStatus, String> {
     let root = get_workspace_root();
-    let active_state_path = root.join("Backups").join("active_state.json");
+    let hw_static = get_cached_hw_static();
 
     let mut mode = "Normal".to_string();
     let mut active_since: Option<String> = None;
-
-    #[cfg(target_os = "windows")]
-    let mut cpu = win_hw::detect_cpu_name().unwrap_or_else(|| "Неизвестный процессор".to_string());
-    #[cfg(not(target_os = "windows"))]
-    let mut cpu = "Processor".to_string();
-
-    #[cfg(target_os = "windows")]
-    let mut gpu = win_hw::detect_gpu_name().unwrap_or_else(|| "Видеоадаптер".to_string());
-    #[cfg(not(target_os = "windows"))]
-    let mut gpu = "Graphics Adapter".to_string();
+    let mut cpu = hw_static.cpu.clone();
+    let mut gpu = hw_static.gpu.clone();
 
     #[cfg(target_os = "windows")]
     let mut ram = win_hw::detect_ram_gb().unwrap_or_else(|| "ОЗУ".to_string());
     #[cfg(not(target_os = "windows"))]
     let mut ram = "RAM".to_string();
 
-    if active_state_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&active_state_path) {
-            let clean = content.trim_start_matches('\u{feff}');
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(clean) {
-                if let Some(state_str) = json.get("State").and_then(|v| v.as_str()) {
-                    mode = match state_str {
-                        "GameMode_Active" => "Gaming".to_string(),
-                        "Armed" => "Armed".to_string(),
-                        _ => "Normal".to_string(),
-                    };
-                }
-                if mode == "Gaming" || mode == "Armed" {
-                    active_since = json
-                        .get("Timestamp")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                }
-                if let Some(hw) = json.get("HardwareProfile") {
-                    if let Some(c) = hw.get("CpuName").and_then(|v| v.as_str()) {
-                        if !c.trim().is_empty() {
-                            cpu = c.trim().to_string();
-                        }
-                    }
-                    if let Some(g) = hw.get("GpuName").and_then(|v| v.as_str()) {
-                        if !g.trim().is_empty() {
-                            gpu = g.trim().to_string();
-                        }
-                    }
-                    if ram == "ОЗУ" {
-                        if let Some(r) = hw.get("TotalRamGB").and_then(|v| v.as_f64()) {
-                            if r > 0.0 {
-                                ram = format!("{:.0} ГБ ОЗУ", r);
-                            }
-                        }
-                    }
-                }
+    if let Some(cached) = read_cached_active_state(&root) {
+        mode = cached.mode;
+        active_since = cached.active_since;
+        if let Some(c) = cached.state_cpu {
+            cpu = c;
+        }
+        if let Some(g) = cached.state_gpu {
+            gpu = g;
+        }
+        if ram == "ОЗУ" {
+            if let Some(r) = cached.state_ram_gb {
+                ram = format!("{:.0} ГБ ОЗУ", r);
             }
         }
     }
@@ -1539,27 +2194,11 @@ fn read_services_lists_from_root(
 ) -> Result<ServicesLists, String> {
     let bl_path = root.join("Config").join("services_blacklist.json");
     let wl_path = root.join("Config").join("services_whitelist.json");
-    let active_state_path = root.join("Backups").join("active_state.json");
 
-    let mut localized_names = std::collections::HashMap::<String, String>::new();
-    if let Ok(raw_state) = std::fs::read_to_string(&active_state_path) {
-        let clean_state = raw_state.trim_start_matches('\u{feff}');
-        if let Ok(state_val) = serde_json::from_str::<serde_json::Value>(clean_state) {
-            if let Some(svcs) = state_val.get("Services").and_then(|v| v.as_array()) {
-                for s in svcs {
-                    let s_name = s.get("Name").and_then(|v| v.as_str()).unwrap_or("").trim();
-                    let s_disp = s
-                        .get("DisplayName")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .trim();
-                    if !s_name.is_empty() && !s_disp.is_empty() {
-                        localized_names.insert(s_name.to_lowercase(), s_disp.to_string());
-                    }
-                }
-            }
-        }
-    }
+    let localized_names = read_cached_active_state(root)
+        .map(|s| s.localized_service_names)
+        .unwrap_or_default();
+    let desc_map = load_service_descriptions_map(root);
 
     #[cfg(target_os = "windows")]
     let live_map = if include_live_status {
@@ -1633,6 +2272,14 @@ fn read_services_lists_from_root(
             if parsed.category.trim().is_empty() {
                 parsed.category = infer_service_category(&parsed.name, &parsed.reason);
             }
+            if let Some(desc) = lookup_service_description(&desc_map, &parsed.name) {
+                if parsed.summary_ru.trim().is_empty() {
+                    parsed.summary_ru = desc.summary_ru.clone();
+                }
+                if parsed.can_disable_hint.trim().is_empty() {
+                    parsed.can_disable_hint = desc.can_disable_ru.clone();
+                }
+            }
             blacklist.push(parsed);
         }
     }
@@ -1663,8 +2310,12 @@ fn read_services_lists_from_root(
         })?;
 
     let mut whitelist: Vec<String> = Vec::with_capacity(arr_wl.len());
+    let mut whitelist_descriptions = std::collections::HashMap::new();
     for item in arr_wl {
         if let Some(s) = item.as_str() {
+            if let Some(desc) = lookup_service_description(&desc_map, s) {
+                whitelist_descriptions.insert(s.to_string(), desc.clone());
+            }
             whitelist.push(s.to_string());
         }
     }
@@ -1672,6 +2323,7 @@ fn read_services_lists_from_root(
     Ok(ServicesLists {
         blacklist,
         whitelist,
+        whitelist_descriptions,
     })
 }
 
@@ -1770,8 +2422,56 @@ fn set_window_theme(window: tauri::WebviewWindow, dark: bool) -> Result<(), Stri
     Ok(())
 }
 
+fn run_execute_mode_action_sync(
+    action: &str,
+    profile: &str,
+) -> Result<ActionResult, String> {
+    let Some(_mode_guard) = try_acquire_mode_action_guard() else {
+        return Err("Операция переключения режима уже выполняется. Дождитесь завершения.".to_string());
+    };
+    let root = get_workspace_root();
+    let script_path = root.join("UltraGamingMode.ps1");
+
+    if action == "Enable" {
+        let mut current = load_tuning_from_disk(&root);
+        match profile {
+            "competitive" => {
+                current.disable_fullscreen_optimizations = true;
+                current.disable_mouse_accel = false;
+                current.disable_nvidia_dynamic_pstate = false;
+                current.enable_net_adapter_msi = true;
+                current.input_buffer_queue_size = 100;
+                let _ = write_tuning_to_disk(&root, &current);
+            }
+            "aaa" => {
+                current.disable_fullscreen_optimizations = false;
+                current.disable_mouse_accel = false;
+                current.disable_nvidia_dynamic_pstate = false;
+                current.enable_net_adapter_msi = true;
+                current.input_buffer_queue_size = 100;
+                let _ = write_tuning_to_disk(&root, &current);
+            }
+            _ => {}
+        }
+    }
+
+    let res = run_powershell_script(
+        &root,
+        &script_path,
+        &["-Action", action, "-SkipUpdateCheck"],
+        format!("Действие [{}] выполнено успешно.", action),
+        "Не удалось запустить PowerShell",
+    );
+    invalidate_active_state_cache();
+    res
+}
+
 #[tauri::command]
-async fn execute_mode_action(action: String, profile: String) -> Result<ActionResult, String> {
+async fn execute_mode_action(
+    app: tauri::AppHandle,
+    action: String,
+    profile: String,
+) -> Result<ActionResult, String> {
     let safe_action = match action.as_str() {
         "Enable" => "Enable",
         "Restore" => "Restore",
@@ -1784,56 +2484,137 @@ async fn execute_mode_action(action: String, profile: String) -> Result<ActionRe
         _ => return Err(format!("Недопустимый профиль оптимизации: {}", profile)),
     };
 
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = get_workspace_root();
-        let script_path = root.join("UltraGamingMode.ps1");
-
-        if safe_action == "Enable" {
-            let mut current = load_tuning_from_disk(&root);
-            match safe_profile {
-                "competitive" => {
-                    current.disable_fullscreen_optimizations = true;
-                    current.disable_mouse_accel = false;
-                    current.disable_nvidia_dynamic_pstate = false;
-                    current.enable_net_adapter_msi = true;
-                    current.input_buffer_queue_size = 100;
-                    let _ = write_tuning_to_disk(&root, &current);
-                }
-                "aaa" => {
-                    current.disable_fullscreen_optimizations = false;
-                    current.disable_mouse_accel = false;
-                    current.disable_nvidia_dynamic_pstate = false;
-                    current.enable_net_adapter_msi = true;
-                    current.input_buffer_queue_size = 100;
-                    let _ = write_tuning_to_disk(&root, &current);
-                }
-                _ => {}
-            }
-        }
-
-        run_powershell_script(
-            &root,
-            &script_path,
-            &["-Action", safe_action, "-SkipUpdateCheck"],
-            format!("Действие [{}] выполнено успешно.", safe_action),
-            "Не удалось запустить PowerShell",
-        )
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        run_execute_mode_action_sync(safe_action, safe_profile)
     })
     .await
-    .map_err(|e| format!("Сбой фонового выполнения PowerShell: {}", e))?
+    .map_err(|e| format!("Сбой фонового выполнения PowerShell: {}", e))?;
+
+    sync_tray_and_emit(&app, true);
+    result
+}
+
+fn clear_dir_contents(dir: &Path) -> (usize, u64) {
+    let mut removed_files = 0usize;
+    let mut freed_bytes = 0u64;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return (0, 0);
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(meta) = entry.metadata() {
+            if meta.is_dir() {
+                let (c, b) = clear_dir_contents(&path);
+                removed_files += c;
+                freed_bytes += b;
+                let _ = std::fs::remove_dir(&path);
+            } else {
+                let len = meta.len();
+                if std::fs::remove_file(&path).is_ok() {
+                    removed_files += 1;
+                    freed_bytes += len;
+                }
+            }
+        }
+    }
+    (removed_files, freed_bytes)
+}
+
+pub fn flush_shader_cache_native_impl(
+    local_app_data: Option<&Path>,
+    app_data: Option<&Path>,
+) -> (usize, f64) {
+    const LOCAL_REL_DIRS: &[&str] = &[
+        r"AMD\DxCache",
+        r"AMD\VkCache",
+        r"AMD\DxcCache",
+        r"AMD\DX9Cache",
+        r"AMD\OglCache",
+        r"NVIDIA\DXCache",
+        r"NVIDIA\GLCache",
+        r"NVIDIA Corporation\NV_Cache",
+        r"Intel\ShaderCache",
+        r"Intel\D3DSCache",
+        r"D3DSCache",
+    ];
+    let mut total_files = 0usize;
+    let mut total_bytes = 0u64;
+
+    if let Some(local) = local_app_data {
+        for rel in LOCAL_REL_DIRS {
+            let candidate = local.join(rel);
+            if candidate.is_dir() {
+                let (c, b) = clear_dir_contents(&candidate);
+                total_files += c;
+                total_bytes += b;
+            }
+        }
+    }
+    if let Some(roaming) = app_data {
+        let nv_compute = roaming.join("NVIDIA").join("ComputeCache");
+        if nv_compute.is_dir() {
+            let (c, b) = clear_dir_contents(&nv_compute);
+            total_files += c;
+            total_bytes += b;
+        }
+    }
+
+    let freed_mb = ((total_bytes as f64) / (1024.0 * 1024.0) * 10.0).round() / 10.0;
+    (total_files, freed_mb)
+}
+
+fn clean_memory_native_sync() -> Result<ActionResult, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let freed_mb = win_hw::clean_memory_win32()?;
+        Ok(ActionResult {
+            success: true,
+            message: format!(
+                "Кэш ОЗУ (Standby List) очищен. Освобождено {:.1} МБ.",
+                freed_mb
+            ),
+        })
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(ActionResult {
+            success: true,
+            message: "Кэш ОЗУ очищен (симуляция вне Windows).".to_string(),
+        })
+    }
 }
 
 #[tauri::command]
-async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+async fn execute_emergency_repair(
+    app: tauri::AppHandle,
+    repair_type: String,
+) -> Result<ActionResult, String> {
+    let kind = repair_type.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        match kind.as_str() {
+            "memory" => return clean_memory_native_sync(),
+            "shaders" => {
+                let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+                let roaming = std::env::var_os("APPDATA").map(PathBuf::from);
+                let (files, mb) =
+                    flush_shader_cache_native_impl(local.as_deref(), roaming.as_deref());
+                return Ok(ActionResult {
+                    success: true,
+                    message: format!(
+                        "Кэш шейдеров GPU очищен: удалено {} файлов ({:.1} МБ).",
+                        files, mb
+                    ),
+                });
+            }
+            _ => {}
+        }
+
         let root = get_workspace_root();
         let script_path = root.join("UltraGamingMode.ps1");
 
-        let (args, script_to_run): (Vec<&'static str>, PathBuf) = match repair_type.as_str() {
+        let (args, script_to_run): (Vec<&'static str>, PathBuf) = match kind.as_str() {
             "display" => (vec!["-Action", "RepairDisplay", "-SkipUpdateCheck"], script_path),
             "services" => (vec!["-Action", "RepairServices", "-SkipUpdateCheck"], script_path),
-            "shaders" => (vec!["-Action", "FlushShaderCache", "-SkipUpdateCheck"], script_path),
-            "memory" => (vec!["-Action", "CleanMemory", "-SkipUpdateCheck"], script_path),
             "debloat" => (vec!["-Action", "Debloat", "-SkipUpdateCheck"], script_path),
             "restore_debloat" => (
                 vec!["-Action", "RestoreDebloat", "-SkipUpdateCheck"],
@@ -1843,22 +2624,786 @@ async fn execute_emergency_repair(repair_type: String) -> Result<ActionResult, S
             _ => return Err("Неизвестный тип операции".into()),
         };
 
-        run_powershell_script(
+        let res = run_powershell_script(
             &root,
             &script_to_run,
             &args,
-            format!("Операция [{}] выполнена успешно.", repair_type),
+            format!("Операция [{}] выполнена успешно.", kind),
             "Не удалось выполнить команду",
-        )
+        );
+        invalidate_active_state_cache();
+        res
     })
     .await
-    .map_err(|e| format!("Сбой фоновой операции обслуживания: {}", e))?
+    .map_err(|e| format!("Сбой фоновой операции обслуживания: {}", e))?;
+
+    sync_tray_and_emit(&app, false);
+    result
 }
 
 #[tauri::command]
 fn close_window(window: tauri::WebviewWindow) {
+    // Destroy the WebView2 window so zero msedgewebview2 processes remain in RAM while idle;
+    // RunEvent::ExitRequested keeps the lightweight Rust tray host alive.
     let _ = window.destroy();
-    std::process::exit(0);
+}
+
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
+
+fn reboot_pc_sync() -> Result<ActionResult, String> {
+    let shutdown_exe = resolve_system32_binary("shutdown.exe")
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\shutdown.exe"));
+    let mut cmd = Command::new(&shutdown_exe);
+    cmd.args([
+        "/r",
+        "/t",
+        "2",
+        "/c",
+        "UltraGamingMode: reboot to apply gaming optimizations",
+    ]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Не удалось запустить shutdown.exe: {}", e))?;
+    if !output.status.success() {
+        let stderr = decode_powershell_output(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("shutdown.exe завершился с кодом {:?}", output.status.code())
+        } else {
+            stderr
+        });
+    }
+    Ok(ActionResult {
+        success: true,
+        message: "Команда перезагрузки ПК отправлена. Перезагрузка через 2 секунды.".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn reboot_pc() -> Result<ActionResult, String> {
+    tauri::async_runtime::spawn_blocking(reboot_pc_sync)
+        .await
+        .map_err(|e| format!("Сбой запуска перезагрузки: {}", e))?
+}
+
+pub fn parse_semver_tuple(raw: &str) -> Option<(u64, u64, u64)> {
+    let trimmed = raw.trim().trim_start_matches(['v', 'V']);
+    let core = trimmed.split(['-', '+']).next().unwrap_or("").trim();
+    if core.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = core.split('.').collect();
+    if parts.is_empty() || parts.len() > 4 {
+        return None;
+    }
+    let major = parts[0].parse::<u64>().ok()?;
+    let minor = parts.get(1).copied().unwrap_or("0").parse::<u64>().ok()?;
+    let patch = parts.get(2).copied().unwrap_or("0").parse::<u64>().ok()?;
+    Some((major, minor, patch))
+}
+
+pub fn is_newer_version(latest: &str, current: &str) -> bool {
+    match (parse_semver_tuple(latest), parse_semver_tuple(current)) {
+        (Some(l), Some(c)) => l > c,
+        _ => false,
+    }
+}
+
+pub fn is_allowed_github_url(url: &str) -> bool {
+    let trimmed = url.trim();
+    if trimmed.is_empty()
+        || !trimmed.starts_with("https://")
+        || trimmed.chars().any(|c| {
+            c.is_control()
+                || c.is_whitespace()
+                || matches!(c, '"' | '\'' | '`' | '\\' | '<' | '>' | ';' | '|' | '&')
+        })
+    {
+        return false;
+    }
+    let rest = &trimmed["https://".len()..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.is_empty() || authority.contains('@') || authority.contains(':') {
+        return false;
+    }
+    let host = authority.to_ascii_lowercase();
+    let path_lower = rest[authority_end..].to_ascii_lowercase();
+
+    match host.as_str() {
+        "github.com" => {
+            path_lower == "/ragtagsky/win11-gaming-optimizer"
+                || path_lower.starts_with("/ragtagsky/win11-gaming-optimizer/")
+        }
+        "api.github.com" => path_lower.starts_with("/repos/ragtagsky/win11-gaming-optimizer/"),
+        _ => false,
+    }
+}
+
+pub fn extract_release_download_tag(url: &str) -> Option<&str> {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("https://") {
+        return None;
+    }
+    let rest = &trimmed["https://".len()..];
+    let path_start = rest.find('/')?;
+    let path = &rest[path_start..];
+    const PREFIX: &str = "/ragtagsky/win11-gaming-optimizer/releases/download/";
+    if path.len() <= PREFIX.len() || !path.is_char_boundary(PREFIX.len()) {
+        return None;
+    }
+    if !path[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) {
+        return None;
+    }
+    let after_dl = &path[PREFIX.len()..];
+    let slash_idx = after_dl.find('/')?;
+    let tag = &after_dl[..slash_idx];
+    if tag.is_empty() || parse_semver_tuple(tag).is_none() {
+        return None;
+    }
+    Some(tag)
+}
+
+fn extract_release_download_file(url: &str, tag: &str) -> Option<String> {
+    let trimmed = url.trim();
+    let rest = trimmed.strip_prefix("https://")?;
+    let path_start = rest.find('/')?;
+    let path = &rest[path_start..];
+    let expected_prefix = format!(
+        "/ragtagsky/win11-gaming-optimizer/releases/download/{}/",
+        tag
+    );
+    if path.len() <= expected_prefix.len() || !path.is_char_boundary(expected_prefix.len()) {
+        return None;
+    }
+    if !path[..expected_prefix.len()].eq_ignore_ascii_case(&expected_prefix) {
+        return None;
+    }
+    let file_part = &path[expected_prefix.len()..];
+    if file_part.is_empty() || file_part.contains(['/', '?', '#']) {
+        return None;
+    }
+    Some(file_part.to_string())
+}
+
+pub fn validate_release_update_urls(
+    installer_url: &str,
+    checksum_url: &str,
+    expected_file_name: &str,
+    current_version: &str,
+) -> Result<String, String> {
+    if !is_allowed_github_url(installer_url) || !is_allowed_github_url(checksum_url) {
+        return Err("URL релиза не проходит проверку доверенного источника GitHub.".to_string());
+    }
+    if !is_safe_asset_filename(expected_file_name) {
+        return Err("Недопустимое имя файла установщика.".to_string());
+    }
+
+    let tag_inst = extract_release_download_tag(installer_url)
+        .ok_or_else(|| "URL установщика должен указывать на /releases/download/<tag>/<file>.".to_string())?;
+    let tag_sum = extract_release_download_tag(checksum_url)
+        .ok_or_else(|| "URL SHA256SUMS.txt должен указывать на /releases/download/<tag>/SHA256SUMS.txt.".to_string())?;
+
+    if tag_inst != tag_sum {
+        return Err(format!(
+            "Несовпадение тегов релиза между установщиком ('{}') и SHA256SUMS.txt ('{}').",
+            tag_inst, tag_sum
+        ));
+    }
+    if !is_newer_version(tag_inst, current_version) {
+        return Err(format!(
+            "Отказ от понижения или повторной установки версии: релиз '{}' не новее текущей '{}'.",
+            tag_inst, current_version
+        ));
+    }
+
+    let inst_file = extract_release_download_file(installer_url, tag_inst)
+        .ok_or_else(|| "Недопустимый путь файла в URL установщика.".to_string())?;
+    if !inst_file.eq_ignore_ascii_case(expected_file_name.trim()) {
+        return Err(format!(
+            "Имя файла в URL ('{}') не совпадает с ожидаемым '{}'.",
+            inst_file, expected_file_name
+        ));
+    }
+
+    let sum_file = extract_release_download_file(checksum_url, tag_sum)
+        .ok_or_else(|| "Недопустимый путь файла в URL SHA256SUMS.txt.".to_string())?;
+    if !sum_file.eq_ignore_ascii_case("SHA256SUMS.txt") {
+        return Err(format!(
+            "URL контрольных сумм должен указывать на SHA256SUMS.txt, получено '{}'.",
+            sum_file
+        ));
+    }
+
+    Ok(tag_inst.to_string())
+}
+
+pub fn is_safe_asset_filename(name: &str) -> bool {
+    let t = name.trim();
+    if t.is_empty() || t.len() > 128 || t.contains("..") {
+        return false;
+    }
+    t.chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
+pub fn sha256_hex(data: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ];
+    let bit_len = (data.len() as u64).wrapping_mul(8);
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while (msg.len() % 64) != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bit_len.to_be_bytes());
+
+    for chunk in msg.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes([
+                chunk[i * 4],
+                chunk[i * 4 + 1],
+                chunk[i * 4 + 2],
+                chunk[i * 4 + 3],
+            ]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ ((!e) & g);
+            let temp1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(maj);
+
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
+        }
+        let next = [a, b, c, d, e, f, g, hh];
+        for (dst, add) in h.iter_mut().zip(next.iter()) {
+            *dst = dst.wrapping_add(*add);
+        }
+    }
+
+    let mut hex = String::with_capacity(64);
+    for word in h {
+        hex.push_str(&format!("{:08x}", word));
+    }
+    hex
+}
+
+pub fn verify_sha256_manifest(
+    manifest_text: &str,
+    expected_filename: &str,
+    file_bytes: &[u8],
+) -> Result<(), String> {
+    let mut expected_hash: Option<String> = None;
+    for raw_line in manifest_text.trim_start_matches('\u{feff}').lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(hash_tok) = parts.next() else { continue };
+        let Some(file_tok) = parts.next() else { continue };
+        let clean_name = file_tok
+            .trim_start_matches('*')
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or("");
+        if hash_tok.len() == 64
+            && hash_tok.chars().all(|c| c.is_ascii_hexdigit())
+            && clean_name.eq_ignore_ascii_case(expected_filename)
+        {
+            expected_hash = Some(hash_tok.to_ascii_lowercase());
+            break;
+        }
+    }
+    let expected = expected_hash.ok_or_else(|| {
+        format!(
+            "Файл '{}' не найден в SHA256SUMS.txt — установка отменена по соображениям безопасности.",
+            expected_filename
+        )
+    })?;
+    let actual = sha256_hex(file_bytes);
+    if actual != expected {
+        return Err(format!(
+            "Несовпадение контрольной суммы SHA-256 для '{}': ожидалось {}, получено {}.",
+            expected_filename, expected, actual
+        ));
+    }
+    Ok(())
+}
+
+pub fn parse_github_release_json(raw_json: &str, current_version: &str) -> Result<UpdateInfo, String> {
+    let val: serde_json::Value = serde_json::from_str(raw_json.trim_start_matches('\u{feff}'))
+        .map_err(|e| format!("Ошибка разбора ответа GitHub Releases API: {}", e))?;
+
+    let tag_raw = val
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Ответ GitHub API не содержит tag_name".to_string())?;
+    let latest_version = tag_raw.trim().trim_start_matches(['v', 'V']).to_string();
+    let default_url = format!("https://github.com/{}/releases", GITHUB_REPO);
+    let html_url = val
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .filter(|u| is_allowed_github_url(u))
+        .unwrap_or(&default_url)
+        .to_string();
+    let published_at = val
+        .get("published_at")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let release_notes = val
+        .get("body")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .chars()
+        .take(2000)
+        .collect::<String>();
+
+    let mut exe_setup: Option<(String, String, Option<u64>)> = None;
+    let mut exe_any: Option<(String, String, Option<u64>)> = None;
+    let mut msi_any: Option<(String, String, Option<u64>)> = None;
+    let mut checksum_url: Option<String> = None;
+
+    if let Some(assets) = val.get("assets").and_then(|v| v.as_array()) {
+        for asset in assets {
+            let Some(name) = asset.get("name").and_then(|v| v.as_str()) else { continue };
+            let Some(url) = asset
+                .get("browser_download_url")
+                .and_then(|v| v.as_str())
+                .filter(|u| is_allowed_github_url(u))
+            else {
+                continue;
+            };
+            if !is_safe_asset_filename(name) {
+                continue;
+            }
+            let size = asset.get("size").and_then(|v| v.as_u64());
+            let lower = name.to_ascii_lowercase();
+            if lower == "sha256sums.txt" {
+                checksum_url = Some(url.to_string());
+            } else if lower.ends_with(".exe") {
+                if lower.contains("setup") && exe_setup.is_none() {
+                    exe_setup = Some((url.to_string(), name.to_string(), size));
+                } else if exe_any.is_none() {
+                    exe_any = Some((url.to_string(), name.to_string(), size));
+                }
+            } else if lower.ends_with(".msi") && msi_any.is_none() {
+                msi_any = Some((url.to_string(), name.to_string(), size));
+            }
+        }
+    }
+
+    let chosen = exe_setup.or(exe_any).or(msi_any);
+    let (installer_url, installer_name, size_bytes) = match chosen {
+        Some((u, n, s)) => (Some(u), Some(n), s),
+        None => (None, None, None),
+    };
+
+    Ok(UpdateInfo {
+        current_version: current_version.to_string(),
+        latest_version: latest_version.clone(),
+        has_update: is_newer_version(&latest_version, current_version),
+        release_url: html_url,
+        published_at,
+        release_notes,
+        installer_url,
+        installer_name,
+        checksum_url,
+        size_bytes,
+    })
+}
+
+fn resolve_curl_exe() -> PathBuf {
+    resolve_system32_binary("curl.exe")
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\curl.exe"))
+}
+
+fn http_get_text_github(url: &str, timeout_secs: &str) -> Result<String, String> {
+    if !is_allowed_github_url(url) {
+        return Err("URL не прошёл проверку белого списка GitHub.".to_string());
+    }
+    let curl = resolve_curl_exe();
+    let mut cmd = Command::new(&curl);
+    cmd.args([
+        "-fsSL",
+        "--proto",
+        "=https",
+        "--max-redirs",
+        "5",
+        "--max-time",
+        timeout_secs,
+        "-A",
+        &format!("UltraGamingMode/{}", APP_VERSION),
+        "-H",
+        "Accept: application/vnd.github+json",
+        "--",
+        url,
+    ]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Не удалось запустить curl.exe: {}", e))?;
+    if !output.status.success() {
+        let stderr = decode_powershell_output(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("HTTP-запрос завершился с кодом {:?}", output.status.code())
+        } else {
+            stderr
+        });
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn http_download_file_github(url: &str, dest_path: &Path) -> Result<(), String> {
+    if !is_allowed_github_url(url) {
+        return Err("URL скачивания не прошёл проверку белого списка GitHub.".to_string());
+    }
+    let dest_str = dest_path
+        .to_str()
+        .ok_or_else(|| "Недопустимый временный путь скачивания".to_string())?;
+    let curl = resolve_curl_exe();
+    let mut cmd = Command::new(&curl);
+    cmd.args([
+        "-fsSL",
+        "--proto",
+        "=https",
+        "--max-redirs",
+        "6",
+        "--max-time",
+        "180",
+        "-A",
+        &format!("UltraGamingMode/{}", APP_VERSION),
+        "-o",
+        dest_str,
+        "--",
+        url,
+    ]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Не удалось запустить curl.exe для загрузки: {}", e))?;
+    if !output.status.success() {
+        let stderr = decode_powershell_output(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("Ошибка загрузки (код {:?})", output.status.code())
+        } else {
+            stderr
+        });
+    }
+    Ok(())
+}
+
+fn resolve_latest_release_via_redirect(current_version: &str) -> Result<UpdateInfo, String> {
+    let url = format!("https://github.com/{}/releases/latest", GITHUB_REPO);
+    let curl = resolve_curl_exe();
+    let mut cmd = Command::new(&curl);
+    cmd.args([
+        "-sSLI",
+        "--proto",
+        "=https",
+        "--max-redirs",
+        "5",
+        "--max-time",
+        "10",
+        "-A",
+        &format!("UltraGamingMode/{}", APP_VERSION),
+        "-o",
+        "NUL",
+        "-w",
+        "%{url_effective}",
+        "--",
+        &url,
+    ]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Не удалось проверить редирект GitHub: {}", e))?;
+    let effective = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || !is_allowed_github_url(&effective) {
+        return Err("GitHub API и страница релизов временно недоступны.".to_string());
+    }
+    let tag = effective
+        .split("/releases/tag/")
+        .nth(1)
+        .and_then(|s| s.split(['?', '#']).next())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && parse_semver_tuple(s).is_some())
+        .ok_or_else(|| "Не удалось определить тег последнего релиза на GitHub.".to_string())?;
+    let clean_ver = tag.trim_start_matches(['v', 'V']).to_string();
+    Ok(UpdateInfo {
+        current_version: current_version.to_string(),
+        latest_version: clean_ver.clone(),
+        has_update: is_newer_version(&clean_ver, current_version),
+        release_url: effective,
+        published_at: None,
+        release_notes: "Подробности изменений доступны на странице релиза GitHub (API временно ограничен по лимиту).".to_string(),
+        installer_url: None,
+        installer_name: None,
+        checksum_url: None,
+        size_bytes: None,
+    })
+}
+
+#[tauri::command]
+async fn check_for_updates() -> Result<UpdateInfo, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let api_url = format!(
+            "https://api.github.com/repos/{}/releases/latest",
+            GITHUB_REPO
+        );
+        match http_get_text_github(&api_url, "10")
+            .and_then(|body| parse_github_release_json(&body, APP_VERSION))
+        {
+            Ok(info) => Ok(info),
+            Err(_) => resolve_latest_release_via_redirect(APP_VERSION),
+        }
+    })
+    .await
+    .map_err(|e| format!("Сбой проверки обновлений: {}", e))?
+}
+
+fn check_not_reparse_or_symlink(path: &Path) -> Result<(), String> {
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("Не удалось проверить путь '{}': {}", path.display(), e))?;
+    if meta.file_type().is_symlink() {
+        return Err(format!(
+            "Обнаружена символическая ссылка по пути '{}'.",
+            path.display()
+        ));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if (meta.file_attributes() & 0x0400) != 0 {
+            return Err(format!(
+                "Обнаружена точка повторного анализа (reparse point) по пути '{}'.",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn prepare_secure_update_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    let base = std::env::var_os("ProgramData")
+        .or_else(|| std::env::var_os("ALLUSERSPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"))
+        .join("UltraGamingMode")
+        .join("Updates");
+    #[cfg(not(target_os = "windows"))]
+    let base = std::env::temp_dir().join("UltraGamingModeUpdates");
+
+    if let Some(parent) = base.parent() {
+        if parent.exists() {
+            check_not_reparse_or_symlink(parent)?;
+        }
+    }
+    if base.exists() {
+        check_not_reparse_or_symlink(&base)?;
+    }
+
+    std::fs::create_dir_all(&base)
+        .map_err(|e| format!("Не удалось создать папку обновлений '{}': {}", base.display(), e))?;
+    check_not_reparse_or_symlink(&base)?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let icacls = resolve_system32_binary("icacls.exe")
+            .ok_or_else(|| "Не найден системный утилита icacls.exe в System32.".to_string())?;
+        let base_str = base
+            .to_str()
+            .ok_or_else(|| "Недопустимый путь папки обновлений.".to_string())?;
+        let mut cmd = Command::new(&icacls);
+        cmd.args([
+            base_str,
+            "/inheritance:r",
+            "/grant:r",
+            "*S-1-5-32-544:(OI)(CI)F",
+            "*S-1-5-18:(OI)(CI)F",
+            "/Q",
+        ]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let out = cmd
+            .output()
+            .map_err(|e| format!("Не удалось ограничить ACL папки обновлений: {}", e))?;
+        if !out.status.success() {
+            return Err(format!(
+                "Не удалось закрепить права Администратора на '{}': код {:?}",
+                base.display(),
+                out.status.code()
+            ));
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&base) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if name.starts_with("run_") {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+    }
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let run_dir = base.join(format!("run_{}_{}", std::process::id(), nanos));
+    std::fs::create_dir(&run_dir)
+        .map_err(|e| format!("Не удалось создать каталог загрузки обновления: {}", e))?;
+    check_not_reparse_or_symlink(&run_dir)?;
+    Ok(run_dir)
+}
+
+#[tauri::command]
+async fn install_github_update(
+    app: tauri::AppHandle,
+    installer_url: String,
+    checksum_url: Option<String>,
+    expected_file_name: String,
+) -> Result<ActionResult, String> {
+    let clean_name = expected_file_name.trim().to_string();
+    if !is_safe_asset_filename(&clean_name) {
+        return Err("Недопустимое имя файла установщика.".to_string());
+    }
+    let lower_name = clean_name.to_ascii_lowercase();
+    if !lower_name.ends_with(".exe") && !lower_name.ends_with(".msi") {
+        return Err("Поддерживается установка только .exe или .msi пакетов.".to_string());
+    }
+    let safe_checksum_url = checksum_url
+        .map(|u| u.trim().to_string())
+        .filter(|u| is_allowed_github_url(u))
+        .ok_or_else(|| {
+            "В этом релизе отсутствует SHA256SUMS.txt — скачайте обновление вручную со страницы GitHub Releases."
+                .to_string()
+        })?;
+    let _validated_tag =
+        validate_release_update_urls(&installer_url, &safe_checksum_url, &clean_name, APP_VERSION)?;
+
+    let launched_name = clean_name.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest_text = http_get_text_github(&safe_checksum_url, "15")?;
+
+        let update_dir = prepare_secure_update_dir()?;
+        let dest_path = update_dir.join(&clean_name);
+        if dest_path.exists() {
+            return Err("Целевой файл обновления уже существует; загрузка отклонена.".to_string());
+        }
+
+        http_download_file_github(&installer_url, &dest_path)?;
+
+        check_not_reparse_or_symlink(&dest_path)?;
+        let file_meta = std::fs::symlink_metadata(&dest_path)
+            .map_err(|e| format!("Не удалось проверить файл установщика: {}", e))?;
+        if !file_meta.is_file() {
+            let _ = std::fs::remove_file(&dest_path);
+            return Err("Скачанный объект не является обычным файлом.".to_string());
+        }
+
+        let bytes = std::fs::read(&dest_path)
+            .map_err(|e| format!("Не удалось прочитать скачанный установщик: {}", e))?;
+        if let Err(err) = verify_sha256_manifest(&manifest_text, &clean_name, &bytes) {
+            let _ = std::fs::remove_file(&dest_path);
+            return Err(err);
+        }
+
+        if lower_name.ends_with(".exe") {
+            Command::new(&dest_path)
+                .args(["/S", "/UPDATE", "/R"])
+                .spawn()
+                .map_err(|e| format!("Не удалось запустить установщик: {}", e))?;
+        } else {
+            let msiexec = resolve_system32_binary("msiexec.exe")
+                .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\msiexec.exe"));
+            let path_str = dest_path
+                .to_str()
+                .ok_or_else(|| "Недопустимый путь MSI".to_string())?;
+            Command::new(&msiexec)
+                .args(["/i", path_str, "/passive"])
+                .spawn()
+                .map_err(|e| format!("Не удалось запустить msiexec: {}", e))?;
+        }
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("Сбой фоновой загрузки обновления: {}", e))??;
+
+    // Exit the running app after spawning installer so files under Program Files unlock cleanly.
+    ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
+    app.exit(0);
+
+    Ok(ActionResult {
+        success: true,
+        message: format!("Установщик '{}' проверен по SHA-256 и запущен.", launched_name),
+    })
+}
+
+#[tauri::command]
+async fn open_release_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim().to_string();
+    if !is_allowed_github_url(&trimmed) {
+        return Err("Открытие разрешено только для официальных URL GitHub этого репозитория.".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let explorer = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+            .join("explorer.exe");
+        Command::new(&explorer)
+            .arg(&trimmed)
+            .spawn()
+            .map_err(|e| format!("Не удалось открыть браузер: {}", e))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Сбой открытия ссылки: {}", e))?
 }
 
 #[tauri::command]
@@ -2327,22 +3872,45 @@ async fn control_service(
             ));
         }
 
-        let script_path = root.join("UltraGamingMode.ps1");
-        run_powershell_script(
-            &root,
-            &script_path,
-            &[
-                "-Action",
-                "ServiceControl",
-                "-TargetName",
-                clean_name.as_str(),
-                "-ServiceOperation",
-                safe_op,
-                "-SkipUpdateCheck",
-            ],
-            format!("Операция [{}] для службы '{}' выполнена.", safe_op, clean_name),
-            "Не удалось выполнить управление службой",
-        )
+        #[cfg(target_os = "windows")]
+        {
+            match win_hw::control_service_win32(&clean_name, safe_op)? {
+                Ok(msg) => return Ok(ActionResult { success: true, message: msg }),
+                Err(1051) => {
+                    // Dependent services running: fall back cleanly to Stop-Service -Force
+                    let script_path = root.join("UltraGamingMode.ps1");
+                    return run_powershell_script(
+                        &root,
+                        &script_path,
+                        &[
+                            "-Action",
+                            "ServiceControl",
+                            "-TargetName",
+                            clean_name.as_str(),
+                            "-ServiceOperation",
+                            safe_op,
+                            "-SkipUpdateCheck",
+                        ],
+                        format!("Операция [{}] для службы '{}' выполнена.", safe_op, clean_name),
+                        "Не удалось выполнить управление службой",
+                    );
+                }
+                Err(code) => {
+                    return Err(format!(
+                        "Не удалось выполнить операцию '{}' для службы '{}' (Win32 {})",
+                        safe_op, clean_name, code
+                    ));
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            Ok(ActionResult {
+                success: true,
+                message: format!("Операция [{}] для службы '{}' выполнена.", safe_op, clean_name),
+            })
+        }
     })
     .await
     .map_err(|e| format!("Сбой управления службой: {}", e))?
@@ -2374,14 +3942,267 @@ async fn update_service_list(
     .map_err(|e| format!("Сбой обновления списка служб: {}", e))?
 }
 
+struct TrayController {
+    tray: tauri::tray::TrayIcon<tauri::Wry>,
+    status_item: tauri::menu::MenuItem<tauri::Wry>,
+    toggle_item: tauri::menu::MenuItem<tauri::Wry>,
+    last_mode: Mutex<String>,
+}
+
+pub fn build_tray_icon(mode: &str) -> tauri::image::Image<'static> {
+    const SIZE: usize = 32;
+    let mut rgba = vec![0u8; SIZE * SIZE * 4];
+    let (fill_r, fill_g, fill_b, rim_r, rim_g, rim_b) = match mode {
+        "Gaming" => (34u8, 197u8, 94u8, 21u8, 128u8, 61u8),
+        "Armed" => (245u8, 158u8, 11u8, 180u8, 83u8, 9u8),
+        _ => (239u8, 68u8, 68u8, 185u8, 28u8, 28u8),
+    };
+
+    let center = 15.5_f32;
+    let outer_r = 14.5_f32;
+    let rim_inner_r = 12.2_f32;
+
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let dx = x as f32 - center;
+            let dy = y as f32 - center;
+            let dist = (dx * dx + dy * dy).sqrt();
+            let idx = (y * SIZE + x) * 4;
+            if dist <= outer_r {
+                let alpha = if dist > outer_r - 1.1 {
+                    ((outer_r - dist) / 1.1).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                let (r, g, b) = if dist >= rim_inner_r {
+                    (rim_r, rim_g, rim_b)
+                } else {
+                    (fill_r, fill_g, fill_b)
+                };
+                rgba[idx] = r;
+                rgba[idx + 1] = g;
+                rgba[idx + 2] = b;
+                rgba[idx + 3] = (alpha * 255.0).round() as u8;
+            }
+        }
+    }
+
+    tauri::image::Image::new_owned(rgba, SIZE as u32, SIZE as u32)
+}
+
+fn mode_to_tray_meta(mode: &str) -> (&'static str, &'static str, &'static str) {
+    match mode {
+        "Gaming" => (
+            "Статус: Игровой режим активен",
+            "Ultra Gaming Mode — Игровой режим активен (зелёный)",
+            "Вернуть штатный режим",
+        ),
+        "Armed" => (
+            "Статус: Ожидает перезагрузки",
+            "Ultra Gaming Mode — Ожидает перезагрузки (оранжевый)",
+            "Вернуть штатный режим",
+        ),
+        _ => (
+            "Статус: Штатный режим (неактивен)",
+            "Ultra Gaming Mode — Штатный режим (красный)",
+            "Включить игровой режим",
+        ),
+    }
+}
+
+fn sync_tray_and_emit(app: &tauri::AppHandle, force_emit: bool) {
+    let mode = read_current_mode_fast(&get_workspace_root());
+    let mut changed = force_emit;
+
+    if let Some(ctrl) = TRAY_CONTROLLER.get() {
+        if let Ok(mut prev) = ctrl.last_mode.lock() {
+            if *prev != mode {
+                *prev = mode.clone();
+                changed = true;
+            } else if !force_emit {
+                return;
+            }
+        }
+        let (status_text, tooltip, toggle_text) = mode_to_tray_meta(&mode);
+        let _ = ctrl.status_item.set_text(status_text);
+        let _ = ctrl.toggle_item.set_text(toggle_text);
+        let _ = ctrl.tray.set_icon(Some(build_tray_icon(&mode)));
+        let _ = ctrl.tray.set_tooltip(Some(tooltip));
+    }
+
+    if changed && app.get_webview_window("main").is_some() {
+        let _ = app.emit("ugm://state-changed", mode);
+    }
+}
+
+fn show_or_recreate_main_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
+    }
+
+    if let Some(win_cfg) = app.config().app.windows.first().cloned() {
+        if let Ok(builder) = tauri::WebviewWindowBuilder::from_config(app, &win_cfg) {
+            if let Ok(win) = builder.build() {
+                let _ = win.set_focus();
+            }
+        }
+    }
+}
+
+fn setup_tray_and_watcher(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let initial_mode = read_current_mode_fast(&get_workspace_root());
+    let (status_text, tooltip, toggle_text) = mode_to_tray_meta(&initial_mode);
+
+    let status_item = tauri::menu::MenuItemBuilder::with_id("tray-status", status_text)
+        .enabled(false)
+        .build(app)?;
+    let open_item = tauri::menu::MenuItemBuilder::with_id("tray-open", "Открыть окно")
+        .build(app)?;
+    let toggle_item = tauri::menu::MenuItemBuilder::with_id("tray-toggle", toggle_text)
+        .build(app)?;
+    let clean_ram_item = tauri::menu::MenuItemBuilder::with_id("tray-clean-ram", "Очистить кэш ОЗУ")
+        .build(app)?;
+    let reboot_item = tauri::menu::MenuItemBuilder::with_id("tray-reboot", "Перезагрузить ПК...")
+        .build(app)?;
+    let exit_item = tauri::menu::MenuItemBuilder::with_id("tray-exit", "Выход")
+        .build(app)?;
+
+    let menu = tauri::menu::MenuBuilder::new(app)
+        .item(&status_item)
+        .separator()
+        .item(&open_item)
+        .separator()
+        .item(&toggle_item)
+        .item(&clean_ram_item)
+        .item(&reboot_item)
+        .separator()
+        .item(&exit_item)
+        .build()?;
+
+    let tray = tauri::tray::TrayIconBuilder::with_id("ugm-tray")
+        .icon(build_tray_icon(&initial_mode))
+        .tooltip(tooltip)
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray_icon, event| {
+            let open = matches!(
+                event,
+                tauri::tray::TrayIconEvent::Click {
+                    button: tauri::tray::MouseButton::Left,
+                    button_state: tauri::tray::MouseButtonState::Up,
+                    ..
+                }
+            );
+            if open {
+                show_or_recreate_main_window(tray_icon.app_handle());
+            }
+        })
+        .on_menu_event(|app_handle, event| {
+            let app_clone = app_handle.clone();
+            match event.id().as_ref() {
+                "tray-open" => show_or_recreate_main_window(app_handle),
+                "tray-toggle" => {
+                    std::thread::spawn(move || {
+                        let root = get_workspace_root();
+                        let cur = read_current_mode_fast(&root);
+                        let action = if cur == "Gaming" || cur == "Armed" {
+                            "Restore"
+                        } else {
+                            "Enable"
+                        };
+                        let profile = resolve_profile_name(&load_tuning_from_disk(&root));
+                        let _ = run_execute_mode_action_sync(action, &profile);
+                        sync_tray_and_emit(&app_clone, true);
+                    });
+                }
+                "tray-clean-ram" => {
+                    std::thread::spawn(|| {
+                        let _ = clean_memory_native_sync();
+                    });
+                }
+                "tray-reboot" => {
+                    std::thread::spawn(|| {
+                        #[cfg(target_os = "windows")]
+                        if win_hw::confirm_reboot_dialog_win32() {
+                            let _ = reboot_pc_sync();
+                        }
+                    });
+                }
+                "tray-exit" => {
+                    ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
+                    app_handle.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .build(app)?;
+
+    let _ = TRAY_CONTROLLER.set(TrayController {
+        tray,
+        status_item,
+        toggle_item,
+        last_mode: Mutex::new(initial_mode),
+    });
+
+    #[cfg(target_os = "windows")]
+    let wake_event = win_hw::create_wake_event();
+    #[cfg(not(target_os = "windows"))]
+    let wake_event: isize = 0;
+
+    let watcher_app = app.handle().clone();
+    std::thread::spawn(move || {
+        let root = get_workspace_root();
+        let active_state_path = root.join("Backups").join("active_state.json");
+        let mut last_sig: Option<(Option<std::time::SystemTime>, u64)> =
+            std::fs::metadata(&active_state_path)
+                .ok()
+                .map(|m| (m.modified().ok(), m.len()));
+        loop {
+            #[cfg(target_os = "windows")]
+            let woken = win_hw::wait_wake_event_ms(wake_event, 3000);
+            #[cfg(not(target_os = "windows"))]
+            let woken = {
+                let _ = wake_event;
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                false
+            };
+
+            if ALLOW_APP_EXIT.load(Ordering::SeqCst) {
+                break;
+            }
+            if woken {
+                show_or_recreate_main_window(&watcher_app);
+            }
+
+            let sig = std::fs::metadata(&active_state_path)
+                .ok()
+                .map(|m| (m.modified().ok(), m.len()));
+            if sig != last_sig {
+                last_sig = sig;
+                invalidate_active_state_cache();
+                sync_tray_and_emit(&watcher_app, false);
+            }
+        }
+    });
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[cfg(target_os = "windows")]
+    let _single_instance_guard = match win_hw::acquire_single_instance_or_wake() {
+        Some(h) => h,
+        None => return,
+    };
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
-        .setup(|_app| {
-            std::thread::spawn(|| {
-                let _ = get_workspace_root();
-            });
+        .setup(|app| {
+            setup_tray_and_watcher(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2398,13 +4219,26 @@ pub fn run() {
             execute_mode_action,
             execute_emergency_repair,
             lock_timer_resolution,
+            reboot_pc,
+            check_for_updates,
+            install_github_update,
+            open_release_url,
             close_window,
+            exit_app,
             minimize_window,
             toggle_maximize_window,
             start_dragging
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|_app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+            if code.is_none() && !ALLOW_APP_EXIT.load(Ordering::SeqCst) {
+                api.prevent_exit();
+            }
+        }
+    });
 }
 
 #[cfg(test)]
@@ -2793,5 +4627,222 @@ mod tests {
         assert!(!lists3.whitelist.iter().any(|s| s == "CustomTelemetrySvc"));
 
         let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_service_descriptions_cover_all_blacklist_and_whitelist_services() {
+        let root = get_workspace_root();
+        let lists =
+            read_services_lists_from_root(&root, false).expect("read_services_lists_from_root");
+        assert_eq!(lists.blacklist.len(), 207);
+        assert_eq!(lists.whitelist.len(), 90);
+        for item in &lists.blacklist {
+            assert!(
+                !item.summary_ru.trim().is_empty(),
+                "Missing SummaryRu for blacklisted service {}",
+                item.name
+            );
+            assert!(
+                !item.can_disable_hint.trim().is_empty(),
+                "Missing CanDisableHint for blacklisted service {}",
+                item.name
+            );
+        }
+        for wl_name in &lists.whitelist {
+            let desc = lists
+                .whitelist_descriptions
+                .get(wl_name)
+                .unwrap_or_else(|| panic!("Missing whitelist description for {}", wl_name));
+            assert!(
+                !desc.summary_ru.trim().is_empty(),
+                "Empty summaryRu for whitelisted service {}",
+                wl_name
+            );
+            assert!(
+                !desc.can_disable_ru.trim().is_empty(),
+                "Empty canDisableRu for whitelisted service {}",
+                wl_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_tray_icon_pixel_colors_for_all_three_modes() {
+        let center_idx = (15 * 32 + 15) * 4;
+        let red_icon = build_tray_icon("Normal");
+        assert_eq!(red_icon.width(), 32);
+        assert_eq!(red_icon.height(), 32);
+        assert_eq!(red_icon.rgba()[3], 0, "Corner must be transparent");
+        assert_eq!(
+            &red_icon.rgba()[center_idx..center_idx + 4],
+            &[239, 68, 68, 255]
+        );
+
+        let orange_icon = build_tray_icon("Armed");
+        assert_eq!(
+            &orange_icon.rgba()[center_idx..center_idx + 4],
+            &[245, 158, 11, 255]
+        );
+
+        let green_icon = build_tray_icon("Gaming");
+        assert_eq!(
+            &green_icon.rgba()[center_idx..center_idx + 4],
+            &[34, 197, 94, 255]
+        );
+    }
+
+    #[test]
+    fn test_semver_and_github_allowlist_and_release_json_parser() {
+        assert_eq!(parse_semver_tuple("v3.4.0"), Some((3, 4, 0)));
+        assert_eq!(parse_semver_tuple("3.5"), Some((3, 5, 0)));
+        assert!(is_newer_version("v3.4.1", "3.4.0"));
+        assert!(!is_newer_version("3.4.0", "3.4.0"));
+        assert!(!is_newer_version("3.3.9", "3.4.0"));
+
+        assert!(is_allowed_github_url(
+            "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest"
+        ));
+        assert!(is_allowed_github_url(
+            "https://api.github.com/repos/RagTagsky/Win11-Gaming-Optimizer/releases/latest"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://objects.githubusercontent.com/github-production-release-asset/foo"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://release-assets.githubusercontent.com/foo"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases\"test"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases;calc"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases|cmd"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases\\foo"
+        ));
+        assert!(!is_allowed_github_url(
+            "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://github.com/OtherUser/Repo/releases"
+        ));
+        assert!(!is_allowed_github_url(
+            "https://github.com@evil.com/RagTagsky/Win11-Gaming-Optimizer"
+        ));
+
+        let sample_json = r#"{
+          "tag_name": "v3.5.0",
+          "html_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.0",
+          "published_at": "2026-12-01T12:00:00Z",
+          "body": "Performance improvements",
+          "assets": [
+            {
+              "name": "UltraGamingMode_3.5.0_x64_en-US.msi",
+              "browser_download_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.5.0/UltraGamingMode_3.5.0_x64_en-US.msi",
+              "size": 123456
+            },
+            {
+              "name": "UltraGamingMode_3.5.0_x64-setup.exe",
+              "browser_download_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.5.0/UltraGamingMode_3.5.0_x64-setup.exe",
+              "size": 234567
+            },
+            {
+              "name": "SHA256SUMS.txt",
+              "browser_download_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.5.0/SHA256SUMS.txt",
+              "size": 512
+            }
+          ]
+        }"#;
+        let info = parse_github_release_json(sample_json, "3.4.0").expect("parse release JSON");
+        assert!(info.has_update);
+        assert_eq!(info.latest_version, "3.5.0");
+        assert_eq!(
+            info.installer_name.as_deref(),
+            Some("UltraGamingMode_3.5.0_x64-setup.exe")
+        );
+        assert!(info.checksum_url.is_some());
+    }
+
+    #[test]
+    fn test_sha256_manifest_verification_and_shader_flush_temp() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        let payload = b"ultra gaming mode installer payload";
+        let digest = sha256_hex(payload);
+        let manifest = format!("{}  UltraGamingMode_3.5.0_x64-setup.exe\n", digest);
+        assert!(verify_sha256_manifest(
+            &manifest,
+            "UltraGamingMode_3.5.0_x64-setup.exe",
+            payload
+        )
+        .is_ok());
+        assert!(verify_sha256_manifest(
+            &manifest,
+            "UltraGamingMode_3.5.0_x64-setup.exe",
+            b"tampered payload"
+        )
+        .is_err());
+
+        let temp_local =
+            std::env::temp_dir().join(format!("ugm_shader_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_local);
+        let dx_dir = temp_local.join("AMD").join("DxCache");
+        std::fs::create_dir_all(&dx_dir).expect("create shader test dir");
+        std::fs::write(dx_dir.join("shader.bin"), vec![1u8; 2048]).expect("write shader cache");
+        let (files, _mb) = flush_shader_cache_native_impl(Some(&temp_local), None);
+        assert_eq!(files, 1);
+        assert!(dx_dir.exists(), "Parent DxCache folder should remain intact");
+        assert!(!dx_dir.join("shader.bin").exists());
+        let _ = std::fs::remove_dir_all(&temp_local);
+    }
+
+    #[test]
+    fn test_validate_release_update_urls_enforces_same_tag_and_no_downgrade() {
+        let valid_inst = "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.5.0/UltraGamingMode-Setup.exe";
+        let valid_sum = "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.5.0/SHA256SUMS.txt";
+        assert_eq!(
+            validate_release_update_urls(valid_inst, valid_sum, "UltraGamingMode-Setup.exe", "3.4.0"),
+            Ok("v3.5.0".to_string())
+        );
+
+        // Downgrade or same-version install must be rejected
+        let old_inst = "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.3.0/UltraGamingMode-Setup.exe";
+        let old_sum = "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.3.0/SHA256SUMS.txt";
+        assert!(validate_release_update_urls(old_inst, old_sum, "UltraGamingMode-Setup.exe", "3.4.0").is_err());
+
+        let same_inst = "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.4.0/UltraGamingMode-Setup.exe";
+        let same_sum = "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v3.4.0/SHA256SUMS.txt";
+        assert!(validate_release_update_urls(same_inst, same_sum, "UltraGamingMode-Setup.exe", "3.4.0").is_err());
+
+        // Mismatched tags across installer & SHA256SUMS.txt must fail
+        assert!(validate_release_update_urls(valid_inst, old_sum, "UltraGamingMode-Setup.exe", "3.2.0").is_err());
+
+        // Non-matching installer filename or non-github.com host must fail
+        assert!(validate_release_update_urls(valid_inst, valid_sum, "OtherSetup.exe", "3.4.0").is_err());
+        let cdn_inst = "https://objects.githubusercontent.com/github-production-release-asset/12345";
+        assert!(validate_release_update_urls(cdn_inst, valid_sum, "UltraGamingMode-Setup.exe", "3.4.0").is_err());
+    }
+
+    #[test]
+    fn test_mode_action_busy_guard_prevents_concurrent_entry() {
+        let g1 = try_acquire_mode_action_guard();
+        assert!(g1.is_some(), "First guard acquisition should succeed");
+        assert!(
+            try_acquire_mode_action_guard().is_none(),
+            "Concurrent second acquisition must be rejected while first guard is held"
+        );
+        drop(g1);
+        assert!(
+            try_acquire_mode_action_guard().is_some(),
+            "Acquisition must succeed again once previous guard is dropped"
+        );
     }
 }

@@ -4,6 +4,8 @@
     Check,
     Clock,
     Cpu,
+    Download,
+    ExternalLink,
     HardDrive,
     Layers,
     Loader2,
@@ -18,7 +20,7 @@
     Timer,
     Zap
   } from '@lucide/svelte';
-  import type { HardwareInfo, ModeState, OptimizationProfile } from '../types';
+  import type { HardwareInfo, ModeState, OptimizationProfile, UpdateInfo } from '../types';
 
   interface Props {
     mode: ModeState;
@@ -30,10 +32,19 @@
     activeSince?: string;
     timerLocked: boolean;
     isTimerLocking: boolean;
+    isRebooting?: boolean;
+    updateInfo?: UpdateInfo | null;
+    isCheckingUpdates?: boolean;
+    isInstallingUpdate?: boolean;
+    updateError?: string | null;
     onToggleMode: () => void;
     onProfileChange: (p: OptimizationProfile) => void;
     onLockTimer: () => void;
     onRetryStatus: () => void;
+    onRebootPc: () => void;
+    onCheckUpdates: () => void;
+    onInstallUpdate: () => void;
+    onOpenReleasePage: () => void;
   }
 
   let {
@@ -46,10 +57,19 @@
     activeSince,
     timerLocked,
     isTimerLocking,
+    isRebooting = false,
+    updateInfo = null,
+    isCheckingUpdates = false,
+    isInstallingUpdate = false,
+    updateError = null,
     onToggleMode,
     onProfileChange,
     onLockTimer,
-    onRetryStatus
+    onRetryStatus,
+    onRebootPc,
+    onCheckUpdates,
+    onInstallUpdate,
+    onOpenReleasePage
   }: Props = $props();
 
   const isActiveMode = $derived(mode === 'Gaming' || mode === 'Armed');
@@ -76,9 +96,9 @@
         };
       case 'Armed':
         return {
-          title: 'Авторежим включён',
-          subtitle: 'Движок отслеживает запуск игры и автоматически переключит систему при старте.',
-          badgeText: 'Ожидание игры',
+          title: 'Ожидает перезагрузки ПК',
+          subtitle: 'Игровой режим подготовлен к следующему запуску Windows. Перезагрузите ПК для активации.',
+          badgeText: 'Ждёт перезагрузки',
           pillClass:
             'bg-[var(--status-warn-soft)] text-[var(--status-warn-text)] border-[var(--status-warn-border)]'
         };
@@ -190,11 +210,11 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-2.5 shrink-0">
+      <div class="flex flex-wrap items-center gap-2.5 shrink-0">
         <button
           type="button"
           onclick={onToggleMode}
-          disabled={isBusy}
+          disabled={isBusy || isRebooting}
           class="{isActiveMode ? 'ui-btn-danger' : 'ui-btn-primary'} ui-pressable min-h-11 px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
         >
           {#if isBusy}
@@ -206,6 +226,22 @@
           {:else}
             <Power size={17} strokeWidth={2} aria-hidden="true" />
             <span>Включить игровой режим</span>
+          {/if}
+        </button>
+
+        <button
+          type="button"
+          onclick={onRebootPc}
+          disabled={isBusy || isRebooting}
+          class="{mode === 'Armed' ? 'ui-btn-warn' : 'ui-btn-secondary'} ui-pressable min-h-11 px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 w-full sm:w-auto disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+          title="Перезагрузить компьютер для применения или сброса настроек ядра"
+        >
+          {#if isRebooting}
+            <Loader2 size={16} strokeWidth={2} class="ui-spin" aria-hidden="true" />
+            <span>Перезагрузка…</span>
+          {:else}
+            <RotateCcw size={16} strokeWidth={1.85} aria-hidden="true" />
+            <span>Перезагрузить ПК</span>
           {/if}
         </button>
       </div>
@@ -419,6 +455,101 @@
           <span>Повторить</span>
         </button>
       </div>
+    {/if}
+  </section>
+
+  <!-- GitHub Releases Updates Card -->
+  <section class="ui-card rounded-2xl p-5 sm:p-6 space-y-3">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="space-y-1">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-base font-semibold text-[var(--text-primary)]">
+            Обновления приложения
+          </h2>
+          <span
+            class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
+          >
+            v{updateInfo?.currentVersion ?? '3.4.0'}
+          </span>
+        </div>
+        <p class="text-[0.8125rem] text-[var(--text-secondary)]">
+          Автоматическая проверка сборок на GitHub Releases с проверкой контрольной суммы SHA-256.
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <button
+          type="button"
+          onclick={onCheckUpdates}
+          disabled={isCheckingUpdates || isInstallingUpdate}
+          class="ui-btn-secondary ui-pressable rounded-lg px-3.5 py-2 min-h-9 text-[0.8125rem] font-medium inline-flex items-center gap-1.5 disabled:opacity-55 cursor-pointer"
+        >
+          <RefreshCw
+            size={14}
+            strokeWidth={1.75}
+            class={isCheckingUpdates ? 'ui-spin' : ''}
+            aria-hidden="true"
+          />
+          <span>{isCheckingUpdates ? 'Проверка…' : 'Проверить обновления'}</span>
+        </button>
+
+        <button
+          type="button"
+          onclick={onOpenReleasePage}
+          class="ui-btn-ghost ui-pressable rounded-lg px-3 py-2 min-h-9 text-[0.8125rem] font-medium inline-flex items-center gap-1.5 border border-[var(--border-subtle)] cursor-pointer"
+        >
+          <ExternalLink size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span>GitHub Releases</span>
+        </button>
+      </div>
+    </div>
+
+    {#if updateError}
+      <div
+        role="status"
+        class="rounded-xl p-3.5 bg-[var(--status-danger-soft)] border border-[var(--status-danger-border)] text-[0.8125rem] text-[var(--status-danger-text)]"
+      >
+        Не удалось проверить обновления: {updateError}
+      </div>
+    {:else if updateInfo?.hasUpdate}
+      <div
+        class="rounded-xl p-4 bg-[var(--accent-soft)] border border-[var(--accent-border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+      >
+        <div class="min-w-0 space-y-1">
+          <p class="text-sm font-semibold text-[var(--accent-text)]">
+            Доступна новая версия v{updateInfo.latestVersion}
+          </p>
+          {#if updateInfo.releaseNotes}
+            <p class="text-xs text-[var(--text-secondary)] line-clamp-3 whitespace-pre-line">
+              {updateInfo.releaseNotes}
+            </p>
+          {/if}
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
+          {#if updateInfo.installerUrl && updateInfo.checksumUrl}
+            <button
+              type="button"
+              onclick={onInstallUpdate}
+              disabled={isInstallingUpdate}
+              class="ui-btn-primary ui-pressable rounded-lg px-4 py-2 min-h-9 text-[0.8125rem] font-semibold inline-flex items-center gap-1.5 disabled:opacity-55 cursor-pointer"
+            >
+              {#if isInstallingUpdate}
+                <Loader2 size={14} strokeWidth={2} class="ui-spin" aria-hidden="true" />
+                <span>Загрузка…</span>
+              {:else}
+                <Download size={14} strokeWidth={2} aria-hidden="true" />
+                <span>Установить v{updateInfo.latestVersion}</span>
+              {/if}
+            </button>
+          {/if}
+        </div>
+      </div>
+    {:else if updateInfo}
+      <p class="text-[0.8125rem] text-[var(--status-active-text)] flex items-center gap-1.5">
+        <Check size={14} strokeWidth={2} aria-hidden="true" />
+        <span>Установлена актуальная версия v{updateInfo.currentVersion} (последний релиз v{updateInfo.latestVersion}).</span>
+      </p>
     {/if}
   </section>
 </div>
