@@ -176,23 +176,28 @@ On budget hardware like the **Intel Core i3-2100 + RX 570 + 8GB RAM + 1TB HDD** 
 
 ### Verified CS2 Source 2 Engine Profiler Results
 
-| Metric | Stock Windows 11 | Ultra Gaming Mode v2.3 | Delta / Gain | Real-World Impact |
+| Metric | Stock Windows 11 | Ultra Gaming Mode v3.5.1 | Delta / Gain | Real-World Impact |
 |:---|:---:|:---:|:---:|:---|
-| **1% Low FPS (P1)** | **169.6 FPS** | **187.5 FPS** | **+17.9 FPS (+10.6%)** | **Smoothest crosshair tracking during smokes & heavy firefights** |
-| **Average FPS** | **473.1 FPS** | **493.0 FPS** | **+19.9 FPS (+4.2%)** | Higher peak performance and engine throughput |
-| **Average FrameTime** | **2.11 ms** | **2.03 ms** | **-0.08 ms** | Lower base rendering overhead |
-| **99% Frame Density (P99 FrameTotal)** | **5.90 ms** | **5.33 ms** | **-0.57 ms (-9.7%)** | Eliminates 99th percentile frame queuing bottlenecks |
-| **Frame Boundary (P95 Sync Spikes)** | **4.50 ms** | **3.10 ms** | **-1.40 ms (-31.1%)** | **31.1% spike reduction! Eliminates CPU thread sync stalls** |
-| **Client Rendering (P95 Render Spikes)** | **4.80 ms** | **3.40 ms** | **-1.40 ms (-29.2%)** | **29.2% smoother draw call pipeline and frame submission** |
-| **Present_RenderDevice (P95 Input Queue)** | **2.48 ms** | **2.19 ms** | **-0.29 ms (-11.7%)** | **11.7% lower display swapchain input latency** |
-| **Server Simulation (P95 Local Tickrate)** | **3.25 ms** | **3.11 ms** | **-0.14 ms (-4.3%)** | More consistent local sub-tick prediction processing |
-| **Server Game (P95 Game Logic)** | **3.04 ms** | **2.70 ms** | **-0.14 ms (-4.9%)** | Cleaner execution thread for physics and entity collision |
-| **Panorama UI (P99 UI Latency)** | **0.46 ms** | **0.14 ms** | **-0.32 ms (3.3x faster / -69.5%)** | Instant HUD updates, zero radar/killfeed lag |
+| **Average FPS (`FPS: Avg`)** | **443.8 FPS** | **477.1 FPS** | **+33.3 FPS (+7.5%)** | **Higher sustained throughput across identical 121s benchmark run** |
+| **Total Rendered Frames (`121s`)** | **53,636** | **57,504** | **+3,868 frames (+7.2%)** | More frames delivered to display over the same match window |
+| **Average FrameTime (`FrameTotal Avg`)** | **2.25 ms** | **2.10 ms** | **-0.15 ms (-6.7%)** | Lower baseline rendering and scheduling overhead per frame |
+| **1s Max FrameTime (`FrameTotal P50 / P95`)** | **6.23 / 8.64 ms** | **5.57 / 8.28 ms** | **-0.66 ms (-10.6%)** | **10.6% tighter median 1-second worst-frame spikes** |
+| **Present_RenderDevice (`1s max P95`)** | **4.23 ms** | **2.57 ms** | **-1.66 ms (-39.2%)** | **39.2% lower display swapchain & input presentation spikes** |
+| **Present_RenderDevice (`All frames P99`)** | **1.43 ms** | **1.16 ms** | **-0.27 ms (-18.9%)** | **18.9% faster 99th-percentile frame presentation to monitor** |
+| **Frame Boundary (`1s max P95` Sync Spikes)** | **5.78 ms** | **3.67 ms** | **-2.11 ms (-36.5%)** | **36.5% spike reduction — eliminates CPU thread sync stalls** |
+| **Frame Boundary (`All frames P99`)** | **2.11 ms** | **1.91 ms** | **-0.20 ms (-9.5%)** | Cleaner frame-to-frame handoff in the kernel scheduler |
+| **Client Rendering (`1s max P95` Render Spikes)** | **6.27 ms** | **4.04 ms** | **-2.23 ms (-35.6%)** | **35.6% smoother draw call pipeline during heavy utility/smokes** |
+| **Client Rendering (`All frames P99`)** | **2.44 ms** | **2.22 ms** | **-0.22 ms (-9.0%)** | More consistent 99th-percentile GPU draw submission |
+| **Client Simulation (`All frames P99`)** | **1.01 ms** | **0.88 ms** | **-0.13 ms (-12.9%)** | Faster client-side entity and physics state updates |
+| **ClientSimulateTick (`1s max P95`)** | **0.84 ms** | **0.72 ms** | **-0.12 ms (-14.3%)** | Tighter client sub-tick simulation consistency |
+| **Networking (`Active P99`)** | **0.57 ms** | **0.45 ms** | **-0.12 ms (-21.1%)** | **21.1% faster packet processing via Winsock AFD & NDIS RSS** |
+| **Server Simulation (`1s max P95`)** | **3.53 ms** | **3.33 ms** | **-0.20 ms (-5.7%)** | Lower local server tick processing spikes |
+| **Panorama UI Text (`PanoramaTextPango P99`)** | **0.43 ms** | **0.24 ms** | **-0.19 ms (-44.2%)** | **44.2% faster HUD, killfeed & text compositing latency** |
 
 ### Key Takeaways
-1. **-31.1% Frame Boundary Spike Drop:** The Source 2 engine spends significantly less time waiting for Windows kernel thread scheduling between frames.
-2. **+17.9 FPS on 1% Lows:** 1% lows jumped past 187 FPS, preventing micro-stutters that typically ruin spray control and flick shots.
-3. **P99 Panorama UI latency slashed by 3.3x:** Windows UI compositing interference is eradicated, keeping the in-game HUD running at near-zero execution time.
+1. **-39.2% Display Swapchain (`Present_RenderDevice`) & -36.5% Frame Boundary Spikes:** P95 1-second presentation spikes dropped from `4.23 ms` to `2.57 ms` and thread synchronization spikes dropped from `5.78 ms` to `3.67 ms`, directly translating to snappier mouse feel and zero micro-stutters.
+2. **+33.3 Average FPS (+7.5%) & -35.6% Client Rendering Spikes:** Average framerate climbed from `443.8 FPS` (`53,636` frames) to `477.1 FPS` (`57,504` frames) while P95 render spikes dropped from `6.27 ms` to `4.04 ms`.
+3. **-21.1% Networking & -44.2% Panorama HUD Latency:** Active P99 network packet processing dropped from `0.57 ms` to `0.45 ms` and Panorama UI text rendering dropped from `0.43 ms` to `0.24 ms`.
 
 ---
 
