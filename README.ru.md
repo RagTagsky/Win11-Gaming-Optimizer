@@ -11,7 +11,7 @@
 [![Стек](https://img.shields.io/badge/Tauri%20v2-Rust%20%2B%20Svelte%205-3B82F6?style=for-the-badge&logo=rust&logoColor=white&labelColor=0F172A)](#вариант-а-нативное-десктопное-приложение-gui-v351---рекомендуется)
 [![Сторож](https://img.shields.io/badge/Fail--Safe-HKLM%20RunOnce-10B981?style=for-the-badge&labelColor=0F172A)](#гарантия-безопасности-и-fail-safe-сторож)
 [![Античиты](https://img.shields.io/badge/Античиты-FACEIT%20%7C%20Vanguard%20%7C%20EAC%20%7C%20VAC-10B981?style=for-the-badge&labelColor=0F172A)](#2-неприкосновенный-белый-список-92-защищенных-компонента)
-[![Тесты](https://img.shields.io/badge/Тесты-381%20PS%20%2B%2020%20Rust-475569?style=for-the-badge&labelColor=0F172A)](#структура-проекта)
+[![Тесты](https://img.shields.io/badge/Тесты-72%20PS%20%2B%2020%20Rust-475569?style=for-the-badge&labelColor=0F172A)](#структура-проекта)
 [![Лицензия: MIT](https://img.shields.io/badge/Лицензия-MIT-475569?style=for-the-badge&labelColor=0F172A)](LICENSE)
 
 <br />
@@ -33,7 +33,7 @@
 > [!TIP]
 > **Что нового в v3.5.1:**
 > - **Чистый список изменений и метаданные в карточке обновлений:** встроенный парсер Markdown (`parseReleaseNotesLines`), плашка с именем установщика, размером (`МБ`) и датой релиза, а также раскрытие полного списка изменений.
-> - **Полировка дизайна (`/better-colors`, `/better-layout`, `/better-ui`):** семантические цветовые токены (`--text-on-solid`, `--backdrop-overlay`, `--close-hover-bg`), многослойные тени карточек в тёмной теме, логические CSS-свойства (`text-start`/`text-end`, `ps-`/`pe-`), оптическое выравнивание кнопок с иконками и мгновенное переключение темы без смазывания анимаций.
+> - **Визуальная полировка интерфейса и тем:** семантические цветовые токены (`--text-on-solid`, `--backdrop-overlay`, `--close-hover-bg`), многослойные тени карточек в тёмной теме, логические CSS-свойства (`text-start`/`text-end`, `ps-`/`pe-`), оптическое выравнивание кнопок с иконками и мгновенное переключение темы без смазывания анимаций.
 > - **Автозапуск и обновлённые разделы «Программы» и «Службы» (v3.5.x):** задача `UltraGamingMode_AutoStart`, быстрые переключатели (`Wi-Fi`, `Bluetooth`, `FACEIT`, `Веб-камера`, `Xbox / Store`, `VPN`, `Принтер`), группировка программ с названиями из `version.dll` и менеджер автозагрузки Windows.
 
 ---
@@ -561,7 +561,7 @@ Win11-Gaming-Optimizer/
 │   └── SystemOptimizer.ps1          # Управление питанием, MMCSS, сетью, RAM и Защитником
 │
 └── Tests/
-    └── Verify-UniversalEngine.ps1   # 381 автоматический модульный тест движка и симуляции оборудования
+    └── Verify-UniversalEngine.ps1   # 72 автоматических модульных теста движка и симуляции оборудования
 ```
 
 ---

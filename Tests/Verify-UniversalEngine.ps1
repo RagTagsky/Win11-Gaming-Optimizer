@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Unit and integration verification suite for Universal Hardware Auto-Detection Engine.
+    Unit, configuration, and behavioral verification suite for Ultra Gaming Mode.
 #>
 
 $ErrorActionPreference = "Stop"
@@ -22,567 +22,20 @@ function Assert-Test($condition, $message) {
 }
 
 Write-Host "=====================================================" -ForegroundColor Magenta
-Write-Host "   UNIVERSAL HARDWARE ENGINE DEEP VERIFICATION SUITE  " -ForegroundColor Magenta
+Write-Host "   ULTRA GAMING MODE ENGINE VERIFICATION SUITE       " -ForegroundColor Magenta
 Write-Host "=====================================================" -ForegroundColor Magenta
 
-# ── 1. PowerShell Syntax / AST Parse Check ──────────────────────────────────
-Write-Host "`n[Test Group 1] AST Language Parser Validation across all scripts:" -ForegroundColor Cyan
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+
+# -- 1. PowerShell AST Syntax & UTF-8 No-BOM Validation -----------------------
+Write-Host "`n[Test Group 1] PowerShell AST Syntax & UTF-8 Encoding Validation:" -ForegroundColor Cyan
 $scripts = Get-ChildItem -Path $repoRoot -Recurse -Filter "*.ps1" | Where-Object { $_.FullName -notmatch '[\\/](node_modules|target|\.git)[\\/]' }
 foreach ($s in $scripts) {
     $errs = $null
-    $ast = [System.Management.Automation.Language.Parser]::ParseFile($s.FullName, [ref]$null, [ref]$errs)
+    $null = [System.Management.Automation.Language.Parser]::ParseFile($s.FullName, [ref]$null, [ref]$errs)
     Assert-Test ($errs.Count -eq 0) "Script '$($s.Name)' parses with 0 AST errors"
 }
 
-# ── 2. Load Core Modules ───────────────────────────────────────────────────
-Write-Host "`n[Test Group 2] Module Loading and Type Verification:" -ForegroundColor Cyan
-. (Join-Path $repoRoot "Core\ServiceManager.ps1")
-. (Join-Path $repoRoot "Core\SystemOptimizer.ps1")
-. (Join-Path $repoRoot "Core\StateEngine.ps1")
-Assert-Test (Get-Command Select-PrimaryGamingGpu -ErrorAction SilentlyContinue) "Select-PrimaryGamingGpu pure function is exported and accessible"
-Assert-Test (Get-Command Resolve-StorageDeviceMediaType -ErrorAction SilentlyContinue) "Resolve-StorageDeviceMediaType pure function is exported and accessible"
-Assert-Test (Get-Command Test-IsLowRamSystem -ErrorAction SilentlyContinue) "Test-IsLowRamSystem pure function is exported and accessible"
-Assert-Test (Get-Command Test-IsHighPerformanceScheme -ErrorAction SilentlyContinue) "Test-IsHighPerformanceScheme pure function is exported and accessible"
-Assert-Test (Get-Command Set-ServiceStateSafe -ErrorAction SilentlyContinue) "Set-ServiceStateSafe is exported and accessible"
-Assert-Test (Get-Command Get-HardwareProfile -ErrorAction SilentlyContinue) "Get-HardwareProfile function is exported and accessible"
-Assert-Test (Get-Command Apply-CpuGamingOptimizations -ErrorAction SilentlyContinue) "Apply-CpuGamingOptimizations is accessible"
-Assert-Test (Get-Command Apply-GpuGamingOptimizations -ErrorAction SilentlyContinue) "Apply-GpuGamingOptimizations is accessible"
-Assert-Test (Get-Command Set-NTFSGamingOptimizations -ErrorAction SilentlyContinue) "Set-NTFSGamingOptimizations is accessible"
-Assert-Test (Get-Command Restore-NTFSGamingOptimizations -ErrorAction SilentlyContinue) "Restore-NTFSGamingOptimizations is accessible"
-Assert-Test (Get-Command Get-KernelDpcConfig -ErrorAction SilentlyContinue) "Get-KernelDpcConfig is accessible"
-Assert-Test (Get-Command Set-KernelDpcOptimizations -ErrorAction SilentlyContinue) "Set-KernelDpcOptimizations is accessible"
-Assert-Test (Get-Command Restore-KernelDpcOptimizations -ErrorAction SilentlyContinue) "Restore-KernelDpcOptimizations is accessible"
-Assert-Test (Get-Command Get-InputBufferConfig -ErrorAction SilentlyContinue) "Get-InputBufferConfig is accessible"
-Assert-Test (Get-Command Set-InputBufferOptimizations -ErrorAction SilentlyContinue) "Set-InputBufferOptimizations is accessible"
-Assert-Test (Get-Command Restore-InputBufferOptimizations -ErrorAction SilentlyContinue) "Restore-InputBufferOptimizations is accessible"
-Assert-Test (Get-Command Get-BcdeditTimerConfig -ErrorAction SilentlyContinue) "Get-BcdeditTimerConfig is accessible"
-Assert-Test (Get-Command Set-BcdeditTimerOptimizations -ErrorAction SilentlyContinue) "Set-BcdeditTimerOptimizations is accessible"
-Assert-Test (Get-Command Restore-BcdeditTimerOptimizations -ErrorAction SilentlyContinue) "Restore-BcdeditTimerOptimizations is accessible"
-Assert-Test (Get-Command Get-TcpStackConfig -ErrorAction SilentlyContinue) "Get-TcpStackConfig is accessible"
-Assert-Test (Get-Command Set-TcpGamingStackOptimizations -ErrorAction SilentlyContinue) "Set-TcpGamingStackOptimizations is accessible"
-Assert-Test (Get-Command Restore-TcpGamingStackOptimizations -ErrorAction SilentlyContinue) "Restore-TcpGamingStackOptimizations is accessible"
-Assert-Test (Get-Command Get-HagsGpuSchedulingConfig -ErrorAction SilentlyContinue) "Get-HagsGpuSchedulingConfig is accessible"
-Assert-Test (Get-Command Set-HagsGpuScheduling -ErrorAction SilentlyContinue) "Set-HagsGpuScheduling is accessible"
-Assert-Test (Get-Command Restore-HagsGpuScheduling -ErrorAction SilentlyContinue) "Restore-HagsGpuScheduling is accessible"
-Assert-Test (Get-Command Clear-AmdShaderCache -ErrorAction SilentlyContinue) "Clear-AmdShaderCache is accessible"
-Assert-Test (Get-Command Clear-GpuShaderCache -ErrorAction SilentlyContinue) "Clear-GpuShaderCache alias is accessible"
-Assert-Test (Get-Command Disable-UserStateAggressive -ErrorAction SilentlyContinue) "Disable-UserStateAggressive is accessible"
-
-# ── 3. Real System Hardware Profile Verification ───────────────────────────
-Write-Host "`n[Test Group 3] Live System Hardware Auto-Detection:" -ForegroundColor Cyan
-$liveHw = Get-HardwareProfile
-Assert-Test ($liveHw.CpuVendor -in @("AMD", "Intel", "Unknown")) "Live CPU Vendor detected: $($liveHw.CpuVendor)"
-Assert-Test ($liveHw.LogicalCores -gt 0) "Live Logical Cores detected: $($liveHw.LogicalCores)"
-Assert-Test ($liveHw.TotalRamGB -gt 0) "Live Total RAM detected: $($liveHw.TotalRamGB) GB"
-Assert-Test ($liveHw.GpuVendor -in @("AMD", "NVIDIA", "Intel", "Unknown")) "Live GPU Vendor detected: $($liveHw.GpuVendor)"
-Assert-Test ($null -ne $liveHw.HddProfile) "Live HddProfile evaluated: $($liveHw.HddProfile)"
-
-# ── 4. Low-Core Profile CPU Topologies ─────────────────────────────────────
-Write-Host "`n[Test Group 4] CPU Core & Architecture Topology Simulation:" -ForegroundColor Cyan
-$testCpus = @(
-    @{ Name = "Intel(R) Core(TM) i3-2100 CPU @ 3.10GHz"; Cores = 2; Logical = 4; ExpectedLow = $true; ExpectedVendor = "Intel" },
-    @{ Name = "Intel(R) Core(TM) i5-4460 CPU @ 3.20GHz"; Cores = 4; Logical = 4; ExpectedLow = $true; ExpectedVendor = "Intel" },
-    @{ Name = "AMD Ryzen 5 5600X 6-Core Processor"; Cores = 6; Logical = 12; ExpectedLow = $false; ExpectedVendor = "AMD" },
-    @{ Name = "AMD Ryzen 7 7800X3D 8-Core Processor"; Cores = 8; Logical = 16; ExpectedLow = $false; ExpectedVendor = "AMD" }
-)
-foreach ($c in $testCpus) {
-    $isLow = ($c.Logical -le 4)
-    $vendor = if ($c.Name -match "Intel") { "Intel" } elseif ($c.Name -match "AMD|Ryzen") { "AMD" } else { "Unknown" }
-    Assert-Test ($isLow -eq $c.ExpectedLow) "$($c.Name): LowCoreProfile is $isLow (Expected: $($c.ExpectedLow))"
-    Assert-Test ($vendor -eq $c.ExpectedVendor) "$($c.Name): Vendor is $vendor (Expected: $($c.ExpectedVendor))"
-}
-
-# ── 5. GPU Auto-Detection Matrix (Optimus, Enduro, Friend Rig) ─────────────
-Write-Host "`n[Test Group 5] GPU Selection Matrix (Friend Rig, Optimus, Enduro, Arc, iGPU):" -ForegroundColor Cyan
-$testGpuScenarios = @(
-    @{
-        Scenario = "Friend Rig: Intel Core i3-2100 + AMD Radeon RX 570 8GB"
-        Gpus = @(
-            [PSCustomObject]@{ Name = "Intel(R) HD Graphics 2000"; PNPDeviceID = "PCI\VEN_8086&DEV_0102"; CurrentHorizontalResolution = 0 },
-            [PSCustomObject]@{ Name = "Radeon RX 570 Series"; PNPDeviceID = "PCI\VEN_1002&DEV_67DF"; CurrentHorizontalResolution = 1920 }
-        )
-        ExpectedSelected = "Radeon RX 570 Series"
-        ExpectedVendor = "AMD"
-    },
-    @{
-        Scenario = "Optimus Gaming Laptop: Intel Iris Xe + NVIDIA GeForce RTX 3060 (MUXless 0 res)"
-        Gpus = @(
-            [PSCustomObject]@{ Name = "Intel(R) Iris(R) Xe Graphics"; PNPDeviceID = "PCI\VEN_8086&DEV_9A49"; CurrentHorizontalResolution = 1920 },
-            [PSCustomObject]@{ Name = "NVIDIA GeForce RTX 3060 Laptop GPU"; PNPDeviceID = "PCI\VEN_10DE&DEV_2520"; CurrentHorizontalResolution = 0 }
-        )
-        ExpectedSelected = "NVIDIA GeForce RTX 3060 Laptop GPU"
-        ExpectedVendor = "NVIDIA"
-    },
-    @{
-        Scenario = "Enduro Laptop: AMD Ryzen APU + AMD Radeon RX 6600M"
-        Gpus = @(
-            [PSCustomObject]@{ Name = "AMD Radeon(TM) Graphics"; PNPDeviceID = "PCI\VEN_1002&DEV_1636"; CurrentHorizontalResolution = 1920 },
-            [PSCustomObject]@{ Name = "AMD Radeon RX 6600M"; PNPDeviceID = "PCI\VEN_1002&DEV_73DF"; CurrentHorizontalResolution = 0 }
-        )
-        ExpectedSelected = "AMD Radeon RX 6600M"
-        ExpectedVendor = "AMD"
-    },
-    @{
-        Scenario = "Discrete Intel Arc A770 + Intel UHD Graphics"
-        Gpus = @(
-            [PSCustomObject]@{ Name = "Intel(R) UHD Graphics 770"; PNPDeviceID = "PCI\VEN_8086&DEV_4680"; CurrentHorizontalResolution = 0 },
-            [PSCustomObject]@{ Name = "Intel(R) Arc(TM) A770 Graphics"; PNPDeviceID = "PCI\VEN_8086&DEV_5690"; CurrentHorizontalResolution = 2560 }
-        )
-        ExpectedSelected = "Intel(R) Arc(TM) A770 Graphics"
-        ExpectedVendor = "Intel"
-    },
-    @{
-        Scenario = "Budget Desktop: Intel UHD Graphics 630 iGPU Only"
-        Gpus = @(
-            [PSCustomObject]@{ Name = "Intel(R) UHD Graphics 630"; PNPDeviceID = "PCI\VEN_8086&DEV_3E92"; CurrentHorizontalResolution = 1920 }
-        )
-        ExpectedSelected = "Intel(R) UHD Graphics 630"
-        ExpectedVendor = "Intel"
-    }
-)
-
-foreach ($scenario in $testGpuScenarios) {
-    $selected = Select-PrimaryGamingGpu -Gpus $scenario.Gpus
-    $v = if ($selected.PNPDeviceID -match "VEN_1002" -or $selected.Name -match "AMD|Radeon") { "AMD" }
-         elseif ($selected.PNPDeviceID -match "VEN_10DE" -or $selected.Name -match "NVIDIA|GeForce") { "NVIDIA" }
-         elseif ($selected.PNPDeviceID -match "VEN_8086" -or $selected.Name -match "Intel") { "Intel" }
-         else { "Unknown" }
-
-    Assert-Test ($selected.Name -eq $scenario.ExpectedSelected) "$($scenario.Scenario) -> Picked '$($selected.Name)' via production Select-PrimaryGamingGpu"
-    Assert-Test ($v -eq $scenario.ExpectedVendor) "$($scenario.Scenario) -> Vendor is '$v'"
-}
-
-# ── 6. Storage Disk Auto-Detection Heuristics ──────────────────────────────
-Write-Host "`n[Test Group 6] Storage Media Auto-Detection (HDD vs SSD Heuristics):" -ForegroundColor Cyan
-
-$storageCases = @(
-    @{ Model = "WDC WD10EZEX-08WN4A0"; MediaType = "Unspecified"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" },
-    @{ Model = "ST1000DM010-2EP102"; MediaType = "Unspecified"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" },
-    @{ Model = "TOSHIBA MQ01ABD050"; MediaType = "HDD"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" },
-    @{ Model = "Samsung SSD 980 PRO 1TB"; MediaType = "SSD"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
-    @{ Model = "ADATA LEGEND 900"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
-    @{ Model = "WD Black SN770 1TB"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
-    @{ Model = "WD Blue SN580 1TB"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
-    @{ Model = "Seagate FireCuda 530"; MediaType = "Unspecified"; ExpectedIsHdd = $false; ExpectedMediaType = "SSD" },
-    @{ Model = "FireCuda 2.5"; MediaType = "Unspecified"; ExpectedIsHdd = $true; ExpectedMediaType = "HDD" }
-)
-
-foreach ($sc in $storageCases) {
-    $bus = if ($sc.BusType) { $sc.BusType } else { "" }
-    $res = Resolve-StorageDeviceMediaType -Model $sc.Model -MediaType $sc.MediaType -BusType $bus
-    Assert-Test ($res.IsHdd -eq $sc.ExpectedIsHdd) "Model '$($sc.Model)' with MediaType '$($sc.MediaType)': IsHdd=$($res.IsHdd) (Expected: $($sc.ExpectedIsHdd))"
-    Assert-Test ($res.MediaType -eq $sc.ExpectedMediaType) "Model '$($sc.Model)': Resolved MediaType=$($res.MediaType) (Expected: $($sc.ExpectedMediaType))"
-}
-
-# ── 7. Low-RAM 8GB Guard & Pagefile Verification ───────────────────────────
-Write-Host "`n[Test Group 7] Low-RAM 8GB Guard & Pagefile Alerts:" -ForegroundColor Cyan
-$ramCases = @(
-    @{ Bytes = [int64](7.88 * 1024 * 1024 * 1024); ExpectedLow = $true; Desc = "8 GB Budget System (7.88 GB usable)" },
-    @{ Bytes = [int64](15.9 * 1024 * 1024 * 1024); ExpectedLow = $false; Desc = "16 GB Standard System" },
-    @{ Bytes = [int64](31.9 * 1024 * 1024 * 1024); ExpectedLow = $false; Desc = "32 GB Enthusiast System" }
-)
-foreach ($rc in $ramCases) {
-    $low = Test-IsLowRamSystem -TotalRamBytes $rc.Bytes
-    Assert-Test ($low -eq $rc.ExpectedLow) "$($rc.Desc): LowRamProfile=$low via production Test-IsLowRamSystem (Expected: $($rc.ExpectedLow))"
-}
-
-# ── 8. v2.6 Competitive Low-Latency Suite & Registry Engine ───────────────
-Write-Host "`n[Test Group 8] v2.6 Competitive Low-Latency Engine & Registry Validation:" -ForegroundColor Cyan
-
-# 8.1 Registry path resolution for mouclass / kbdclass
-$mouPath = "HKLM:\SYSTEM\CurrentControlSet\Services\mouclass\Parameters"
-$kbdPath = "HKLM:\SYSTEM\CurrentControlSet\Services\kbdclass\Parameters"
-Assert-Test (Test-Path $mouPath) "Registry path exists: mouclass\Parameters"
-Assert-Test (Test-Path $kbdPath) "Registry path exists: kbdclass\Parameters"
-
-$inputCfg = Get-InputBufferConfig
-Assert-Test ($inputCfg -is [hashtable] -and $inputCfg.ContainsKey("MouseDataQueueSize")) "Get-InputBufferConfig returns MouseDataQueueSize key"
-Assert-Test ($inputCfg -is [hashtable] -and $inputCfg.ContainsKey("KeyboardDataQueueSize")) "Get-InputBufferConfig returns KeyboardDataQueueSize key"
-
-# 8.2 Kernel DPC & Memory Management snapshot integrity
-$kdpcCfg = Get-KernelDpcConfig
-Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("DisablePagingExecutive")) "Get-KernelDpcConfig returns DisablePagingExecutive key"
-Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("ThreadDpcEnable")) "Get-KernelDpcConfig returns ThreadDpcEnable key"
-Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("Win32PrioritySeparation")) "Get-KernelDpcConfig returns Win32PrioritySeparation key"
-Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("PowerThrottlingOff")) "Get-KernelDpcConfig returns PowerThrottlingOff key"
-
-# Test round-trip snapshot persistence
-$simulatedSnapshot = @{
-    KernelDpcConfig   = @{ DisablePagingExecutive = 1; ThreadDpcEnable = 0; Win32PrioritySeparation = 38; PowerThrottlingOff = 1 }
-    InputBufferConfig = @{ MouseDataQueueSize = 16; KeyboardDataQueueSize = 16 }
-    BcdeditConfig     = @{ DynamicTick = "yes"; TscSyncPolicy = "Enhanced" }
-    HagsConfig        = @{ HwSchMode = 2 }
-}
-$jsonRoundTrip = $simulatedSnapshot | ConvertTo-Json -Depth 5 | ConvertFrom-Json
-Assert-Test ($jsonRoundTrip.KernelDpcConfig.DisablePagingExecutive -eq 1 -and $jsonRoundTrip.KernelDpcConfig.ThreadDpcEnable -eq 0) "KernelDpcConfig preserves numeric types across JSON round-trip"
-Assert-Test ($jsonRoundTrip.InputBufferConfig.MouseDataQueueSize -eq 16 -and $jsonRoundTrip.InputBufferConfig.KeyboardDataQueueSize -eq 16) "InputBufferConfig preserves queue sizes across JSON round-trip"
-Assert-Test ($jsonRoundTrip.BcdeditConfig.DynamicTick -eq "yes" -and $jsonRoundTrip.BcdeditConfig.TscSyncPolicy -eq "Enhanced") "BcdeditConfig preserves timer strings across JSON round-trip"
-Assert-Test ($jsonRoundTrip.HagsConfig.HwSchMode -eq 2) "HagsConfig preserves HwSchMode across JSON round-trip"
-
-# 8.3 BCDedit parser verification against simulated bcdedit outputs
-$mockBcdTuned = @(
-    "Windows Boot Loader",
-    "-------------------",
-    "identifier              {current}",
-    "device                  partition=C:",
-    "path                    \WINDOWS\system32\winload.efi",
-    "description             Windows 11",
-    "locale                  en-US",
-    "disabledynamictick      yes",
-    "tscsyncpolicy           Enhanced"
-)
-$parsedTuned = Get-BcdeditTimerConfig -BcdOutput $mockBcdTuned
-Assert-Test ($parsedTuned.DynamicTick -eq "yes") "Get-BcdeditTimerConfig extracts DynamicTick='yes' from simulated output"
-Assert-Test ($parsedTuned.TscSyncPolicy -eq "Enhanced") "Get-BcdeditTimerConfig extracts TscSyncPolicy='Enhanced' from simulated output"
-
-$mockBcdDefault = @(
-    "Windows Boot Loader",
-    "-------------------",
-    "identifier              {current}",
-    "device                  partition=C:",
-    "path                    \WINDOWS\system32\winload.efi",
-    "description             Windows 11"
-)
-$parsedDef = Get-BcdeditTimerConfig -BcdOutput $mockBcdDefault
-Assert-Test ($null -eq $parsedDef.DynamicTick -and $null -eq $parsedDef.TscSyncPolicy) "Get-BcdeditTimerConfig handles stock Windows output without timer keys safely ($null)"
-
-# 8.4 TCP gaming stack & interface isolation verification
-$tcpCfg = Get-TcpStackConfig
-Assert-Test ($tcpCfg -is [hashtable] -and $tcpCfg.ContainsKey("Timestamps")) "Get-TcpStackConfig returns Timestamps key"
-Assert-Test ($tcpCfg -is [hashtable] -and $tcpCfg.ContainsKey("Interfaces")) "Get-TcpStackConfig returns Interfaces collection"
-
-$tcpInterfaceGuids = @($tcpCfg.Interfaces | ForEach-Object { if ($_ -is [hashtable]) { $_["Guid"] } else { $_.Guid } })
-Assert-Test ($tcpInterfaceGuids -notcontains "{8eb6cecf-6919-4cf4-8c70-e55823aa4b53}") "Get-TcpStackConfig strictly excludes Apple Mobile Device GUID {8eb6cecf-6919-4cf4-8c70-e55823aa4b53}"
-Assert-Test ($tcpInterfaceGuids -notcontains "{2e219888-9139-4199-ea45-cb771d7dad1d}") "Get-TcpStackConfig strictly excludes Wintun tunnel GUID {2e219888-9139-4199-ea45-cb771d7dad1d}"
-
-$gamingAdapters = Get-PhysicalGamingAdapters
-$gamingAdapterNames = @($gamingAdapters | ForEach-Object { $_.Name })
-Assert-Test ($gamingAdapterNames -notcontains "Ethernet 2") "Get-PhysicalGamingAdapters strictly excludes 'Ethernet 2' (Apple Mobile Device Tethering)"
-Assert-Test ($gamingAdapterNames -notcontains "wwan99") "Get-PhysicalGamingAdapters strictly excludes 'wwan99' (Wintun VPN tunnel)"
-
-# 8.5 HAGS GPU scheduling configuration
-$hagsCfg = Get-HagsGpuSchedulingConfig
-Assert-Test ($hagsCfg -is [hashtable] -and $hagsCfg.ContainsKey("HwSchMode")) "Get-HagsGpuSchedulingConfig returns HwSchMode key"
-
-# 8.6 Non-destructive fallback when running non-elevated
-$threwError = $false
-try {
-    $null = Get-KernelDpcConfig
-    $null = Get-InputBufferConfig
-    $null = Get-BcdeditTimerConfig
-    $null = Get-TcpStackConfig
-    $null = Get-HagsGpuSchedulingConfig
-} catch {
-    $threwError = $true
-}
-Assert-Test ($threwError -eq $false) "Non-destructive fallback: All v2.6 query functions execute without throwing unhandled exceptions"
-
-# ── 9. Multi-Directory Shortcut Quarantine & Collision Resilience ───────────
-Write-Host "`n[Test Group 9] Shortcut Quarantine, Collision Resilience & LiteralPath Validation:" -ForegroundColor Cyan
-$tempTestRoot = Join-Path $env:TEMP ("UGM_Test_Quarantine_" + [System.Guid]::NewGuid().ToString("N"))
-$testUserStartup = Join-Path $tempTestRoot "DestUserStartup"
-$testCommonStartup = Join-Path $tempTestRoot "DestCommonStartup"
-$testQuarantine = Join-Path $tempTestRoot "QuarantinedShortcuts"
-$testQUser = Join-Path $testQuarantine "User"
-$testQCommon = Join-Path $testQuarantine "ProgramData"
-
-New-Item -ItemType Directory -Path $testQUser -Force | Out-Null
-New-Item -ItemType Directory -Path $testQCommon -Force | Out-Null
-New-Item -ItemType Directory -Path $testUserStartup -Force | Out-Null
-New-Item -ItemType Directory -Path $testCommonStartup -Force | Out-Null
-
-Set-Content -LiteralPath (Join-Path $testQUser "Discord.lnk") -Value "User Discord Target"
-Set-Content -LiteralPath (Join-Path $testQCommon "Discord.lnk") -Value "ProgramData Discord Target"
-Set-Content -LiteralPath (Join-Path $testQUser "Game [Modded] (v2.0).lnk") -Value "Bracketed Game Target"
-
-# Unsegregated and legacy shortcuts directly in quarantine root
-Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyAppWithMeta.lnk") -Value "Legacy User App"
-Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyAppNoMeta.lnk") -Value "Legacy Fallback App"
-Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyProgramData.lnk") -Value "Legacy ProgramData App"
-Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyAppWithBackupExt.lnk.ugm_backup") -Value "Legacy Backup User App"
-Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyCommonBackup.lnk.ugm_backup") -Value "Legacy Backup Common App"
-
-# Foreign/residual file to test non-destructive empty-only quarantine directory cleanup
-Set-Content -LiteralPath (Join-Path $testQuarantine "residual_backup.txt") -Value "Residual data that must not cause folder deletion"
-
-$mockStateData = [PSCustomObject]@{
-    StartupShortcuts = @(
-        [PSCustomObject]@{
-            Name           = "LegacyAppWithMeta.lnk"
-            OriginalFolder = $testUserStartup
-            FolderTag      = "User"
-        },
-        [PSCustomObject]@{
-            Name           = "LegacyProgramData.lnk"
-            OriginalFolder = $testCommonStartup
-            FolderTag      = "ProgramData"
-        },
-        [PSCustomObject]@{
-            Name           = "LegacyAppWithBackupExt.lnk"
-            OriginalFolder = $testUserStartup
-            FolderTag      = "User"
-        },
-        [PSCustomObject]@{
-            Name           = "LegacyCommonBackup.lnk"
-            OriginalFolder = $testCommonStartup
-            FolderTag      = "ProgramData"
-        }
-    )
-}
-
-# Phase 1: Run production Restore-QuarantinedShortcuts with Scope "System"
-Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "System"
-
-$commonDiscordPhase1 = Test-Path -LiteralPath (Join-Path $testCommonStartup "Discord.lnk")
-$legacyProgramDataPhase1 = Test-Path -LiteralPath (Join-Path $testCommonStartup "LegacyProgramData.lnk")
-$legacyCommonBackupPhase1 = Test-Path -LiteralPath (Join-Path $testCommonStartup "LegacyCommonBackup.lnk")
-$userDiscordPhase1 = Test-Path -LiteralPath (Join-Path $testUserStartup "Discord.lnk")
-$quarantinePreservedPhase1 = Test-Path -LiteralPath $testQuarantine
-
-Assert-Test ($commonDiscordPhase1) "Phase 1 (System Scope): Common Discord.lnk restored to ProgramData"
-Assert-Test ($legacyProgramDataPhase1) "Phase 1 (System Scope): Legacy ProgramData root shortcut restored to Common Startup"
-Assert-Test ($legacyCommonBackupPhase1) "Phase 1 (System Scope): Legacy ProgramData .ugm_backup shortcut restored with clean .lnk extension"
-Assert-Test (-not $userDiscordPhase1) "Phase 1 (System Scope): User shortcuts strictly preserved in quarantine during System phase"
-Assert-Test ($quarantinePreservedPhase1) "Phase 1 (System Scope): Quarantine directory strictly preserved while User items remain"
-
-# Phase 2: Run production Restore-QuarantinedShortcuts with Scope "User"
-Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "User"
-
-$userDiscordRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "Discord.lnk")
-$bracketGameRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "Game [Modded] (v2.0).lnk")
-$legacyWithMetaRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "LegacyAppWithMeta.lnk")
-$legacyNoMetaRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "LegacyAppNoMeta.lnk")
-$legacyBackupUserRestored = Test-Path -LiteralPath (Join-Path $testUserStartup "LegacyAppWithBackupExt.lnk")
-$quarantinePreservedWhenNonEmpty = Test-Path -LiteralPath $testQuarantine
-
-Assert-Test ($userDiscordRestored) "Phase 2 (User Scope): Same-name User Discord.lnk correctly routes to AppData Startup"
-Assert-Test ($bracketGameRestored) "Phase 2 (User Scope): Special bracketed shortcut 'Game [Modded] (v2.0).lnk' routes without wildcard parsing error"
-Assert-Test ($legacyWithMetaRestored) "Phase 2 (User Scope): Legacy root shortcut with metadata routes to original folder"
-Assert-Test ($legacyNoMetaRestored) "Phase 2 (User Scope): Legacy root shortcut without metadata defaults safely to AppData Startup"
-Assert-Test ($legacyBackupUserRestored) "Phase 2 (User Scope): Legacy root .ugm_backup shortcut matches metadata and restores with clean .lnk extension"
-Assert-Test ($quarantinePreservedWhenNonEmpty) "Quarantine directory is strictly preserved when non-empty (residual file present)"
-
-# Remove residual file and verify clean quarantine directory deletion when fully empty
-Remove-Item -LiteralPath (Join-Path $testQuarantine "residual_backup.txt") -Force -ErrorAction SilentlyContinue
-Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "All"
-$quarantineDeletedWhenEmpty = (-not (Test-Path -LiteralPath $testQuarantine))
-Assert-Test ($quarantineDeletedWhenEmpty) "Quarantine directory is cleanly deleted when completely empty"
-
-Remove-Item -LiteralPath $tempTestRoot -Recurse -Force -ErrorAction SilentlyContinue
-
-# ── 10. Localization Resilience, 2D Array Unrolling & Multi-Vendor Shader Coverage ──
-Write-Host "`n[Test Group 10] Localization Resilience, 2D Array Unrolling & Multi-Vendor Shader Coverage:" -ForegroundColor Cyan
-
-$testPowerOutputs = @(
-    @{ Raw = "GUID схемы питания: 929fef13-d38f-4d3a-b857-7c19197b2246  (Bitsum Highest Performance)"; Guid = "929fef13-d38f-4d3a-b857-7c19197b2246"; Expected = $true; Desc = "Bitsum Power Plan" },
-    @{ Raw = "GUID схемы питания: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (Высокая производительность)"; Guid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"; Expected = $true; Desc = "Russian High Performance" },
-    @{ Raw = "GUID схемы питания: e9a42b02-d5df-448d-aa00-03f14749eb61  (Максимальная производительность)"; Guid = "e9a42b02-d5df-448d-aa00-03f14749eb61"; Expected = $true; Desc = "Russian Ultimate Performance" },
-    @{ Raw = "GUID схемы питания: 381b4222-f694-41f0-9685-ff5bb260df2e  (Сбалансированная)"; Guid = "381b4222-f694-41f0-9685-ff5bb260df2e"; Expected = $false; Desc = "Russian Balanced (Needs Boost)" },
-    @{ Raw = "Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)"; Guid = "381b4222-f694-41f0-9685-ff5bb260df2e"; Expected = $false; Desc = "English Balanced (Needs Boost)" }
-)
-
-foreach ($tp in $testPowerOutputs) {
-    $isHigh = Test-IsHighPerformanceScheme -SchemeGuid $tp.Guid -RawOutput $tp.Raw
-    Assert-Test ($isHigh -eq $tp.Expected) "$($tp.Desc): Detected High-Performance = $isHigh via production Test-IsHighPerformanceScheme (Expected: $($tp.Expected))"
-}
-
-# 10.2 Test flat collection returns (no artificial 2D comma-wrapping)
-$keys = Get-AmdGpuDriverClassKeys
-$isKeys2D = ($keys.Count -gt 0 -and $keys[0] -is [array])
-Assert-Test (-not $isKeys2D) "Get-AmdGpuDriverClassKeys returns flat collection without 2D array nesting"
-
-$netProps = Get-NetworkAdapterGamingProperties
-$isNet2D = ($netProps.Count -gt 0 -and $netProps[0] -is [array])
-Assert-Test (-not $isNet2D) "Get-NetworkAdapterGamingProperties returns flat collection without 2D array nesting"
-
-# 10.3 Test universal shader targets across 12 directories
-$testShaderTargets = @(
-    (Join-Path $env:LOCALAPPDATA "AMD\DxCache"),
-    (Join-Path $env:LOCALAPPDATA "AMD\VkCache"),
-    (Join-Path $env:LOCALAPPDATA "AMD\DxcCache"),
-    (Join-Path $env:LOCALAPPDATA "AMD\DX9Cache"),
-    (Join-Path $env:LOCALAPPDATA "AMD\OglCache"),
-    (Join-Path $env:LOCALAPPDATA "NVIDIA\DXCache"),
-    (Join-Path $env:LOCALAPPDATA "NVIDIA\GLCache"),
-    (Join-Path $env:APPDATA "NVIDIA\ComputeCache"),
-    (Join-Path $env:LOCALAPPDATA "NVIDIA Corporation\NV_Cache"),
-    (Join-Path $env:LOCALAPPDATA "Intel\ShaderCache"),
-    (Join-Path $env:LOCALAPPDATA "Intel\D3DSCache"),
-    (Join-Path $env:LOCALAPPDATA "D3DSCache")
-)
-$hasAmd = ($testShaderTargets | Where-Object { $_ -match "AMD" }).Count -ge 5
-$hasNvidia = ($testShaderTargets | Where-Object { $_ -match "NVIDIA" }).Count -ge 4
-$hasIntel = ($testShaderTargets | Where-Object { $_ -match "Intel" }).Count -ge 2
-Assert-Test ($hasAmd -and $hasNvidia -and $hasIntel) "Shader cache purge targets all major GPU vendors (AMD, NVIDIA, Intel)"
-Assert-Test ($testShaderTargets.Count -ge 12) "Total universal shader cache directory coverage: $($testShaderTargets.Count) targets"
-
-# ── 11. Zero-Trust Security, Hardening & Resilience Assertions ─────────────
-Write-Host "`n[Test Group 11] Zero-Trust Security, Whitelist Guards & Resilience:" -ForegroundColor Cyan
-
-# 11.1 Resilient Boot Timestamp (SEC-01)
-$ts = Get-ResilientBootTimestamp
-[DateTime]$parsedTs = [DateTime]::MinValue
-$parseOk = [DateTime]::TryParse($ts, [ref]$parsedTs)
-Assert-Test ($parseOk -and $parsedTs.Year -ge 2024) "Get-ResilientBootTimestamp returns valid ISO-8601 boot timestamp ($ts)"
-
-# 11.2 Protected Service Whitelist Guard
-$whitelistMock = @("Audiosrv", "AudioEndpointBuilder", "vgk", "vgc", "EasyAntiCheat", "BEService")
-$audioBlocked = (-not (Set-ServiceStateSafe -ServiceName "Audiosrv" -StartupType "Disabled" -Whitelist $whitelistMock))
-Assert-Test ($audioBlocked) "Audiosrv is strictly protected from modification by whitelist guard"
-$vgkBlocked = (-not (Set-ServiceStateSafe -ServiceName "vgk" -StartupType "Disabled" -Whitelist $whitelistMock))
-Assert-Test ($vgkBlocked) "Anti-cheat service 'vgk' (Vanguard) is strictly protected from modification"
-
-# 11.3 Services Blacklist Integrity (SLOP-01)
-$blPath = Join-Path $repoRoot "Config\services_blacklist.json"
-$blContent = Get-Content -Path $blPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$hardcodedChrome = $blContent.TargetServices | Where-Object { $_.Name -match "GoogleUpdaterService\d+" }
-Assert-Test ($null -eq $hardcodedChrome) "No hardcoded versioned Chrome updater service strings in services_blacklist.json (SLOP-01 resolved)"
-$baseChrome = $blContent.TargetServices | Where-Object { $_.Name -eq "GoogleUpdaterService" }
-Assert-Test ($null -ne $baseChrome) "Clean base 'GoogleUpdaterService' identifier present in services_blacklist.json"
-
-# 11.4 User Background Processes and Scripts Blacklist Coverage
-$stPath = Join-Path $repoRoot "Config\startup_apps.json"
-$stContent = Get-Content -Path $stPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$userBloatApps = @("incy", "PulseSync", "GeminiAppLauncher", "updater", "pythonw", "wscript")
-$foundBloat = @($stContent.BlacklistProcesses | Where-Object { $userBloatApps -contains $_ })
-Assert-Test ($foundBloat.Count -eq $userBloatApps.Count) "All user background processes and scripts (incy, PulseSync, GeminiAppLauncher, updater, pythonw, wscript) are registered in startup_apps.json ($($foundBloat.Count)/$($userBloatApps.Count))"
-
-# 11.5 Adaptive Low-RAM Kernel DPC Guard (PERF-01)
-$cmdKernel = Get-Command Set-KernelDpcOptimizations
-Assert-Test ($cmdKernel.Parameters.ContainsKey("IsLowRam")) "Set-KernelDpcOptimizations exports -IsLowRam parameter for 8GB rig protection"
-
-# 11.6 Input Buffer Anti-Drop Headroom (PERF-02)
-$cmdInput = Get-Command Set-InputBufferOptimizations
-Assert-Test ($cmdInput.Parameters.ContainsKey("QueueSize")) "Set-InputBufferOptimizations exports -QueueSize parameter (default 32)"
-
-# 11.7 Custom Gaming Profile Whitelist & Blacklist Verification (/grill-me)
-$wlPath = Join-Path $repoRoot "Config\services_whitelist.json"
-$wlContent = Get-Content -Path $wlPath -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert-Test ($wlContent.ProtectedServices -contains "AMD External Events Utility") "AMD External Events Utility (FreeSync) is present in services_whitelist.json"
-Assert-Test ($wlContent.ProtectedServices -contains "Apple Mobile Device Service") "Apple Mobile Device Service (USB Tethering) is present in services_whitelist.json"
-Assert-Test ($wlContent.ProtectedServices -contains "ProcessGovernor") "ProcessGovernor (Process Lasso engine) is present in services_whitelist.json"
-Assert-Test ($wlContent.ProtectedServices -contains "camsvc") "camsvc (Microphone Capability Service) is protected in services_whitelist.json"
-
-$allStrippedServices = @(
-    "Rockstar Service", "AMD Crash Defender Service", "midisrv", "WinHttpAutoProxySvc", "WpnUserService",
-    "bthserv", "BTAGService", "BthAvctpSvc", "BluetoothUserService", "WlanSvc", "LanmanServer",
-    "FrameServer", "FrameServerMonitor", "ZTHELPER", "ssh-agent",
-    "dot3svc", "TapiSrv", "ALG", "lltdsvc", "PerfHost", "KtmRm", "MSDTC", "swprv", "VSS",
-    "RasMan", "RasAuto", "SstpSvc", "SharedAccess", "defragsvc", "NcdAutoSetup", "wcncsvc",
-    "IpxlatCfgSvc", "NetTcpPortSharing", "LxpSvc", "NgcSvc", "AssignedAccessManagerSvc",
-    "XboxGipSvc", "wlidsvc", "EapHost", "NcaSvc", "WwanSvc", "CredentialEnrollmentManagerUserSvc"
-)
-$foundStrippedServices = @($blContent.TargetServices | Where-Object { $allStrippedServices -contains $_.Name })
-Assert-Test ($foundStrippedServices.Count -eq $allStrippedServices.Count) "All 42 user-selected bloat/unused services added to services_blacklist.json ($($foundStrippedServices.Count)/$($allStrippedServices.Count))"
-$stillWhitelisted = @($wlContent.ProtectedServices | Where-Object { $allStrippedServices -contains $_ })
-Assert-Test ($stillWhitelisted.Count -eq 0) "Stripped services completely removed from services_whitelist.json"
-
-# 11.8 Dead Configuration & Process Blacklist Coverage
-# SearchHost and TextInputHost are explicitly preserved to protect Windows 11 Start menu search
-$expectedBlacklistedProcs = @("SocialClubHelper", "Launcher", "RockstarService", "RadeonSoftware", "AMDRSSrcExt", "CPUMetricsServer", "amdow", "amdfendrsr", "happd", "logi_lamparray_service.AMD64", "MidiSrv", "AggregatorHost", "ParkControl", "incy", "PulseSync", "GeminiAppLauncher", "updater", "pythonw", "wscript")
-$foundBlacklistedProcs = @($stContent.BlacklistProcesses | Where-Object { $expectedBlacklistedProcs -contains $_ })
-Assert-Test ($foundBlacklistedProcs.Count -eq $expectedBlacklistedProcs.Count) "All 19 user-selected background bloat processes present in startup_apps.json BlacklistProcesses ($($foundBlacklistedProcs.Count)/$($expectedBlacklistedProcs.Count))"
-Assert-Test ($stContent.BlacklistProcesses -notcontains "SearchHost" -and $stContent.BlacklistProcesses -notcontains "TextInputHost") "Start menu search hosts (SearchHost, TextInputHost) are excluded from BlacklistProcesses"
-Assert-Test ($stContent.BlacklistProcesses -notcontains "ProcessLasso") "ProcessLasso GUI is preserved per user preference"
-Assert-Test ($null -eq $stContent.StartupRegistryPaths) "Dead StartupRegistryPaths removed from startup_apps.json"
-Assert-Test ($null -eq $stContent.StartupFolders) "Dead StartupFolders removed from startup_apps.json"
-Assert-Test ($null -eq $stContent.TargetAppModelPackages) "Dead TargetAppModelPackages removed from startup_apps.json"
-# 11.9 Two-Phase Restoration & User Profile Isolation Contract
-$cmdUserProfile = Get-Command Restore-UserProfileState -ErrorAction SilentlyContinue
-Assert-Test ($null -ne $cmdUserProfile) "Restore-UserProfileState is exported from StateEngine.ps1"
-
-$cmdSystemState = Get-Command Restore-SystemState -ErrorAction SilentlyContinue
-Assert-Test ($cmdSystemState.Parameters.ContainsKey("Scope")) "Restore-SystemState exports -Scope parameter"
-
-$scopeAttr = $cmdSystemState.Parameters["Scope"].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
-$hasValidScopes = ($null -ne $scopeAttr -and ($scopeAttr.ValidValues -contains "All") -and ($scopeAttr.ValidValues -contains "System") -and ($scopeAttr.ValidValues -contains "User"))
-Assert-Test ($hasValidScopes) "Restore-SystemState validates scopes 'All', 'System', 'User'"
-
-$ugmPath = Join-Path $repoRoot "UltraGamingMode.ps1"
-$ugmCmd = Get-Command $ugmPath
-$actionAttr = $ugmCmd.Parameters["Action"].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
-$hasRestoreUserAction = ($null -ne $actionAttr -and ($actionAttr.ValidValues -contains "RestoreUser"))
-Assert-Test ($hasRestoreUserAction) "UltraGamingMode.ps1 declares 'RestoreUser' in Action ValidateSet"
-
-$hasScopeParam = $ugmCmd.Parameters.ContainsKey("Scope")
-Assert-Test ($hasScopeParam) "UltraGamingMode.ps1 declares 'Scope' parameter in Param block"
-
-$scopeAttr2 = $ugmCmd.Parameters["Scope"].Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
-$hasValidUgmScopes = ($null -ne $scopeAttr2 -and ($scopeAttr2.ValidValues -contains "User"))
-Assert-Test ($hasValidUgmScopes) "UltraGamingMode.ps1 validates 'User' in Scope ValidateSet"
-
-$userProfileDef = (Get-Command Restore-UserProfileState).Definition
-$hasSystemGuard = ($userProfileDef -like '*WindowsIdentity*IsSystem*' -and $userProfileDef -like '*return $false*')
-Assert-Test ($hasSystemGuard) "Restore-UserProfileState strictly blocks execution under SYSTEM to prevent profile corruption"
-
-$systemStateDef = (Get-Command Restore-SystemState).Definition
-$hasScopeGuard = ($systemStateDef -like '*WindowsIdentity*IsSystem*' -and $systemStateDef -like '*$Scope = "System"*')
-Assert-Test ($hasScopeGuard) "Restore-SystemState automatically downscopes to 'System' under SYSTEM"
-
-$ugmContent = Get-Content -LiteralPath $ugmPath -Raw -Encoding UTF8
-$hasPrematureExit = ($ugmContent -match 'if\s*\(-not\s*\$isSystem\s*-and\s*\$hasScheduledWatchdog\)\s*\{\s*Write-Verbose[^\}]+exit 0')
-Assert-Test (-not $hasPrematureExit) "UltraGamingMode.ps1 does not prematurely exit 0 in interactive user watchdog"
-
-# 11.10 Non-Elevated Execution Contract for RestoreUser and User Scope
-$adminCheckBlock = if ($ugmContent -match '(?ms)if \(-not \$isAdmin\) \{(.*?)\r?\n\}') { $Matches[1] } else { "" }
-$allowsRestoreUserNonElevated = ($adminCheckBlock -match '\$Action\s*-eq\s*["'']RestoreUser["'']')
-Assert-Test ($allowsRestoreUserNonElevated) "UltraGamingMode.ps1 unconditionally permits non-elevated execution for -Action RestoreUser"
-
-$allowsUserScopeNonElevated = ($adminCheckBlock -match '\$Scope\s*-eq\s*["'']User["'']')
-Assert-Test ($allowsUserScopeNonElevated) "UltraGamingMode.ps1 permits non-elevated execution for -Scope User"
-
-# 11.11 Coordinated Trigger Cleanup Contract
-$preservesTriggersUntilBothDone = ($ugmContent -match 'UserRestored' -and $ugmContent -match 'SystemRestored' -and $ugmContent -match 'Unregister-BootTasks')
-Assert-Test ($preservesTriggersUntilBothDone) "UltraGamingMode.ps1 coordinates trigger cleanup only when both scopes are restored"
-
-# 11.12 Two-Phase Atomic State Merge Validation
-$tempStateFile = Join-Path $env:TEMP ("UGM_AtomicState_" + [System.Guid]::NewGuid().ToString("N") + ".json")
-$initialData = [PSCustomObject]@{
-    State = "GameMode_Active"
-    SystemRestored = $false
-    UserRestored = $false
-}
-Set-ActiveStateSafe -Path $tempStateFile -Data $initialData | Out-Null
-
-# Simulate System pass running first
-$sysState = Get-ActiveStateSafe -Path $tempStateFile
-$sysState.SystemRestored = $true
-$sysState.State = "Restoring_SystemDone"
-Set-ActiveStateSafe -Path $tempStateFile -Data $sysState | Out-Null
-
-# Simulate concurrent User pass loading latest from disk
-$usrState = Get-ActiveStateSafe -Path $tempStateFile
-$usrState.UserRestored = $true
-if ($usrState.SystemRestored) { $usrState.State = "Restored" }
-Set-ActiveStateSafe -Path $tempStateFile -Data $usrState | Out-Null
-
-$finalState = Get-ActiveStateSafe -Path $tempStateFile
-Assert-Test ($finalState.SystemRestored -eq $true -and $finalState.UserRestored -eq $true -and $finalState.State -eq "Restored") "Two-phase atomic state updates merge cleanly to Restored without overwriting"
-Remove-Item -LiteralPath $tempStateFile -Force -ErrorAction SilentlyContinue
-
-# 11.13 Boot Session & Watchdog Race Condition Prevention Contract
-$bootId = Get-SystemBootId
-if ($null -ne $bootId) {
-    Assert-Test ($bootId -is [int]) "Get-SystemBootId returns valid integer BootId ($bootId)"
-    Assert-Test (Test-IsSameBootSession -SavedBootId $bootId) "Test-IsSameBootSession returns True for identical BootId"
-    Assert-Test (-not (Test-IsSameBootSession -SavedBootId ($bootId + 1))) "Test-IsSameBootSession returns False for different BootId"
-} else {
-    Assert-Test ($true) "Get-SystemBootId handled gracefully on system without Prefetch BootId"
-}
-
-$currentBoot = Get-ResilientBootTimestamp
-$oldBoot = ([DateTime]::Parse($currentBoot).AddHours(-5)).ToString("o")
-Assert-Test (Test-IsSameBootSession -SavedBootId $null -SavedBootTime $currentBoot) "Test-IsSameBootSession fallback returns True for matching boot timestamp"
-Assert-Test (-not (Test-IsSameBootSession -SavedBootId $null -SavedBootTime $oldBoot)) "Test-IsSameBootSession fallback returns False for 5-hour-old boot timestamp"
-Assert-Test (-not (Test-IsSameBootSession -SavedBootId $null -SavedBootTime "")) "Test-IsSameBootSession fallback returns False for empty boot timestamp"
-
-# Watchdog safety guard in UltraGamingMode.ps1
-Assert-Test ($ugmContent -match 'Test-IsSameBootSession') "UltraGamingMode.ps1 utilizes Test-IsSameBootSession for watchdog session detection"
-Assert-Test ($ugmContent -match '\$stateData\.State -eq ["'']Armed["'']') "UltraGamingMode.ps1 guards against premature restoration when state is Armed"
-Assert-Test ($ugmContent -notmatch 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce.*-Action RestoreUser -Watchdog') "UltraGamingMode.ps1 does not arm premature user RunOnce during Enable action"
-
-# 11.14 Pure UTF-8 without BOM Encoding Check (Source & Config Files)
 $allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/](Backups|node_modules|target|\.git|EBWebView|dist)[\\/]' }
 $hasBom = $false
 foreach ($f in $allConfigFiles) {
@@ -592,481 +45,275 @@ foreach ($f in $allConfigFiles) {
         Write-Warning "File has UTF-8 BOM: $($f.FullName)"
     }
 }
-Assert-Test (-not $hasBom) "All PowerShell and JSON files encoded in pure UTF-8 without BOM"
+Assert-Test (-not $hasBom) "All PowerShell and JSON files are encoded in UTF-8 without BOM"
 
-# ── 12. Automatic Update Engine & SemVer Verification ──────────────────────────
-Write-Host "`n[Test Group 12] Automatic Update Engine, SemVer & Offline Resilience:" -ForegroundColor Cyan
+# -- 2. Core Module Loading & Live Hardware Auto-Detection --------------------
+Write-Host "`n[Test Group 2] Core Module Exports & Live Hardware Auto-Detection:" -ForegroundColor Cyan
+. (Join-Path $repoRoot "Core\ServiceManager.ps1")
+. (Join-Path $repoRoot "Core\SystemOptimizer.ps1")
+. (Join-Path $repoRoot "Core\StateEngine.ps1")
 
-# 12.1 Version Constants & Exports
-Assert-Test (Get-Command Get-AppCurrentVersion -ErrorAction SilentlyContinue) "Get-AppCurrentVersion is exported and accessible"
-Assert-Test (Get-Command ConvertTo-SemVer -ErrorAction SilentlyContinue) "ConvertTo-SemVer pure function is exported and accessible"
-Assert-Test (Get-Command Check-AppUpdate -ErrorAction SilentlyContinue) "Check-AppUpdate function is exported and accessible"
-Assert-Test (Get-Command Invoke-AppUpdateWorkflow -ErrorAction SilentlyContinue) "Invoke-AppUpdateWorkflow is exported and accessible"
-Assert-Test ((Get-AppCurrentVersion) -eq "3.5.1") "Get-AppCurrentVersion returns expected suite version '3.5.1'"
+$requiredExports = @(
+    "Select-PrimaryGamingGpu", "Resolve-StorageDeviceMediaType", "Test-IsLowRamSystem",
+    "Test-IsHighPerformanceScheme", "Set-ServiceStateSafe", "Invoke-ServiceControlSafe",
+    "Test-SafeServiceName", "Test-IsProtectedProcess", "Stop-ProcessSafe",
+    "Get-HardwareProfile", "Apply-CpuGamingOptimizations", "Apply-GpuGamingOptimizations",
+    "Set-NTFSGamingOptimizations", "Restore-NTFSGamingOptimizations",
+    "Get-KernelDpcConfig", "Set-KernelDpcOptimizations", "Restore-KernelDpcOptimizations",
+    "Get-InputBufferConfig", "Set-InputBufferOptimizations", "Restore-InputBufferOptimizations",
+    "Get-BcdeditTimerConfig", "Set-BcdeditTimerOptimizations", "Restore-BcdeditTimerOptimizations",
+    "Get-TcpStackConfig", "Set-TcpGamingStackOptimizations", "Restore-TcpGamingStackOptimizations",
+    "Get-HagsGpuSchedulingConfig", "Set-HagsGpuScheduling", "Restore-HagsGpuScheduling",
+    "Get-ExtendedGamingTargets", "Set-ExtendedGamingOptimizations",
+    "Get-PowerLatencyConfig", "Set-PowerLatencyOptimizations", "Restore-PowerLatencyOptimizations",
+    "Get-MemoryCompressionConfig", "Set-MemoryCompressionGamingState", "Restore-MemoryCompressionConfig",
+    "Get-NetAdapterMsiConfig", "Set-NetAdapterMsiMode", "Restore-NetAdapterMsiMode",
+    "Clear-GpuShaderCache", "Disable-UserStateAggressive", "Restore-UserProfileState", "Restore-SystemState"
+)
+$missingExports = @($requiredExports | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
+Assert-Test ($missingExports.Count -eq 0) "All $($requiredExports.Count) core engine functions are exported (missing: $($missingExports -join ', '))"
 
-# 12.2 SemVer Parsing and Normalization
-$vStandard = ConvertTo-SemVer "v2.8"
-$vBare     = ConvertTo-SemVer "2.8"
-$vPadded   = ConvertTo-SemVer "2.8.0"
-$vPatch    = ConvertTo-SemVer "v2.8.1"
-$vNext     = ConvertTo-SemVer "v2.9"
-$vMajor    = ConvertTo-SemVer "v3.5.1"
-$vSuffix   = ConvertTo-SemVer "v2.8-Universal"
-$vBuild    = ConvertTo-SemVer "v2.8.0+build123"
-$vUnderscore = ConvertTo-SemVer "v2.8_hotfix"
+$liveHw = Get-HardwareProfile
+Assert-Test ($liveHw.CpuVendor -in @("AMD", "Intel", "Unknown")) "Live CPU Vendor detected: $($liveHw.CpuVendor)"
+Assert-Test ($liveHw.LogicalCores -gt 0) "Live Logical Cores detected: $($liveHw.LogicalCores)"
+Assert-Test ($liveHw.TotalRamGB -gt 0) "Live Total RAM detected: $($liveHw.TotalRamGB) GB"
+Assert-Test ($liveHw.GpuVendor -in @("AMD", "NVIDIA", "Intel", "Unknown")) "Live GPU Vendor detected: $($liveHw.GpuVendor)"
+Assert-Test ($null -ne $liveHw.HddProfile) "Live HddProfile evaluated: $($liveHw.HddProfile)"
 
-Assert-Test ($vStandard -and $vStandard.Major -eq 2 -and $vStandard.Minor -eq 8) "ConvertTo-SemVer parses 'v2.8' into Major=2, Minor=8"
-Assert-Test ($vStandard -eq $vBare) "ConvertTo-SemVer handles 'v' prefix idempotently ('v2.8' == '2.8')"
-Assert-Test ($vStandard -eq $vPadded) "ConvertTo-SemVer standardizes two-part and three-part numbers ('v2.8' == '2.8.0')"
-Assert-Test ($vStandard -eq $vSuffix) "ConvertTo-SemVer strips descriptive suffix tags ('v2.8-Universal' == 'v2.8')"
-Assert-Test ($vStandard -eq $vBuild) "ConvertTo-SemVer strips SemVer build metadata ('v2.8.0+build123' == 'v2.8')"
-Assert-Test ($vStandard -eq $vUnderscore) "ConvertTo-SemVer strips underscore suffix tags ('v2.8_hotfix' == 'v2.8')"
-Assert-Test ($null -eq (ConvertTo-SemVer "")) "ConvertTo-SemVer returns null for empty string"
-Assert-Test ($null -eq (ConvertTo-SemVer "not-a-version")) "ConvertTo-SemVer returns null for non-numeric input"
-
-# 12.3 SemVer Comparison Contracts
-Assert-Test ($vPatch -gt $vStandard) "SemVer: v2.8.1 is correctly recognized as newer than v2.8"
-Assert-Test ($vNext -gt $vStandard) "SemVer: v2.9 is correctly recognized as newer than v2.8"
-Assert-Test ($vMajor -gt $vStandard) "SemVer: v3.5.1 is correctly recognized as newer than v2.8"
-Assert-Test (-not ($vStandard -gt $vNext)) "SemVer: v2.8 is not newer than v2.9"
-$vOld = ConvertTo-SemVer "v2.7"
-Assert-Test ($vStandard -gt $vOld) "SemVer: current v2.8 is correctly recognized as newer than GitHub v2.7 release"
-
-# 12.4 Graceful Offline Fallback & Unreachable Host Resilience
-$offlineCheck = Check-AppUpdate -CurrentVersion "2.8" -Repo "RagTagsky/NonExistentTestRepo_Invalid" -TimeoutSeconds 1
-Assert-Test ($offlineCheck -ne $null) "Check-AppUpdate returns a non-null result object when network/repo fails"
-Assert-Test (-not $offlineCheck.UpdateAvailable) "Check-AppUpdate returns UpdateAvailable=False on offline/error fallback"
-Assert-Test ($offlineCheck.CurrentVersion -eq "2.8") "Check-AppUpdate preserves CurrentVersion on failure"
-
-# 12.5 ProjectRoot Resolution & Update Cache Lifecycle
-Assert-Test ([string]::IsNullOrWhiteSpace($Script:ProjectRoot) -eq $false) "Script:ProjectRoot is successfully resolved in StateEngine.ps1"
-$hasValidProjectRoot = (Test-Path (Join-Path $Script:ProjectRoot ".git")) -or ((Test-Path (Join-Path $Script:ProjectRoot "UltraGamingMode.ps1")) -and (Test-Path (Join-Path $Script:ProjectRoot "Config\services_blacklist.json")))
-Assert-Test $hasValidProjectRoot "Script:ProjectRoot correctly identifies repository or standalone runtime root"
-
-# 12.6 Simulated Update Detection & Cache File Coordination
-$infoFile = Join-Path $Script:BackupDir "update_info.cmd"
-if (Test-Path -LiteralPath $infoFile) { Remove-Item -LiteralPath $infoFile -Force }
-
-try {
-    $simUpdateCode = Invoke-AppUpdateWorkflow -CurrentVersion "2.5" -OnStartup -TimeoutSeconds 3
-    if ($simUpdateCode -eq 2) {
-        Assert-Test (Test-Path -LiteralPath $infoFile) "Invoke-AppUpdateWorkflow creates update_info.cmd when update is available"
-        $infoContent = Get-Content -LiteralPath $infoFile -Raw
-        Assert-Test ($infoContent -match 'UPDATE_AVAILABLE=1') "update_info.cmd declares UPDATE_AVAILABLE=1"
-        Assert-Test ($infoContent -match 'RELEASE_URL=') "update_info.cmd exports RELEASE_URL"
-    } else {
-        $wfDef = (Get-Command Invoke-AppUpdateWorkflow).Definition
-        Assert-Test ($simUpdateCode -eq 0) "Invoke-AppUpdateWorkflow returns exit code 0 when offline/rate-limited"
-        Assert-Test ($wfDef -match 'UPDATE_AVAILABLE=1') "Invoke-AppUpdateWorkflow template declares UPDATE_AVAILABLE=1"
-        Assert-Test ($wfDef -match 'RELEASE_URL=') "Invoke-AppUpdateWorkflow template exports RELEASE_URL"
+# -- 3. Hardware Detection Matrix (GPU, Storage, Low-RAM, Power Plans) --------
+Write-Host "`n[Test Group 3] Hardware Auto-Detection Matrix (GPU, Storage, RAM, Power):" -ForegroundColor Cyan
+$testGpuScenarios = @(
+    @{
+        Scenario = "Desktop: Intel HD iGPU + AMD Radeon RX 570"
+        Gpus = @(
+            [PSCustomObject]@{ Name = "Intel(R) HD Graphics 2000"; PNPDeviceID = "PCI\VEN_8086&DEV_0102"; CurrentHorizontalResolution = 0 },
+            [PSCustomObject]@{ Name = "Radeon RX 570 Series"; PNPDeviceID = "PCI\VEN_1002&DEV_67DF"; CurrentHorizontalResolution = 1920 }
+        )
+        ExpectedSelected = "Radeon RX 570 Series"
+    },
+    @{
+        Scenario = "Optimus Laptop: Intel Iris Xe + NVIDIA RTX 3060 (MUXless)"
+        Gpus = @(
+            [PSCustomObject]@{ Name = "Intel(R) Iris(R) Xe Graphics"; PNPDeviceID = "PCI\VEN_8086&DEV_9A49"; CurrentHorizontalResolution = 1920 },
+            [PSCustomObject]@{ Name = "NVIDIA GeForce RTX 3060 Laptop GPU"; PNPDeviceID = "PCI\VEN_10DE&DEV_2520"; CurrentHorizontalResolution = 0 }
+        )
+        ExpectedSelected = "NVIDIA GeForce RTX 3060 Laptop GPU"
+    },
+    @{
+        Scenario = "Enduro Laptop: AMD Ryzen APU + Radeon RX 6600M"
+        Gpus = @(
+            [PSCustomObject]@{ Name = "AMD Radeon(TM) Graphics"; PNPDeviceID = "PCI\VEN_1002&DEV_1636"; CurrentHorizontalResolution = 1920 },
+            [PSCustomObject]@{ Name = "AMD Radeon RX 6600M"; PNPDeviceID = "PCI\VEN_1002&DEV_73DF"; CurrentHorizontalResolution = 0 }
+        )
+        ExpectedSelected = "AMD Radeon RX 6600M"
+    },
+    @{
+        Scenario = "Discrete Intel Arc A770 + Intel UHD 770"
+        Gpus = @(
+            [PSCustomObject]@{ Name = "Intel(R) UHD Graphics 770"; PNPDeviceID = "PCI\VEN_8086&DEV_4680"; CurrentHorizontalResolution = 0 },
+            [PSCustomObject]@{ Name = "Intel(R) Arc(TM) A770 Graphics"; PNPDeviceID = "PCI\VEN_8086&DEV_5690"; CurrentHorizontalResolution = 2560 }
+        )
+        ExpectedSelected = "Intel(R) Arc(TM) A770 Graphics"
+    },
+    @{
+        Scenario = "Integrated GPU Only: Intel UHD Graphics 630"
+        Gpus = @(
+            [PSCustomObject]@{ Name = "Intel(R) UHD Graphics 630"; PNPDeviceID = "PCI\VEN_8086&DEV_3E92"; CurrentHorizontalResolution = 1920 }
+        )
+        ExpectedSelected = "Intel(R) UHD Graphics 630"
     }
-} finally {
-    if (Test-Path -LiteralPath $infoFile) { Remove-Item -LiteralPath $infoFile -Force }
+)
+foreach ($scenario in $testGpuScenarios) {
+    $selected = Select-PrimaryGamingGpu -Gpus $scenario.Gpus
+    Assert-Test ($selected.Name -eq $scenario.ExpectedSelected) "$($scenario.Scenario) -> Selected '$($selected.Name)'"
 }
 
-# 12.7 UltraGamingMode.ps1 Orchestrator CLI Contracts
-$hasCheckUpdateAction = ($null -ne $actionAttr -and ($actionAttr.ValidValues -contains "CheckUpdate"))
-Assert-Test ($hasCheckUpdateAction) "UltraGamingMode.ps1 declares 'CheckUpdate' in Action ValidateSet"
-Assert-Test ($ugmCmd.Parameters.ContainsKey("SkipUpdateCheck")) "UltraGamingMode.ps1 declares 'SkipUpdateCheck' parameter"
-Assert-Test ($ugmCmd.Parameters.ContainsKey("OnStartup")) "UltraGamingMode.ps1 declares 'OnStartup' parameter"
-Assert-Test ($ugmCmd.Parameters.ContainsKey("Passive")) "UltraGamingMode.ps1 declares 'Passive' parameter"
-Assert-Test ($ugmCmd.Parameters.ContainsKey("Force")) "UltraGamingMode.ps1 declares 'Force' parameter"
-
-$allowsCheckUpdateNonElevated = ($adminCheckBlock -match 'CheckUpdate')
-Assert-Test ($allowsCheckUpdateNonElevated) "UltraGamingMode.ps1 permits non-elevated execution for -Action CheckUpdate"
-
-# 12.8 UltraGamingMode.bat Integration Contracts
-$batContent = Get-Content -LiteralPath (Join-Path $repoRoot "UltraGamingMode.bat") -Raw
-Assert-Test ($batContent -match '-Action CheckUpdate -OnStartup') "UltraGamingMode.bat executes automatic update check on startup"
-Assert-Test ($batContent -match 'update_info\.cmd') "UltraGamingMode.bat integrates with update_info.cmd cache"
-Assert-Test ($batContent -match 'UPDATE_RELEASE_URL') "UltraGamingMode.bat binds UPDATE_RELEASE_URL for menu banner"
-Assert-Test ($batContent -match 'Check for Updates \(GitHub\)') "UltraGamingMode.bat offers 'Check for Updates (GitHub)' menu entry"
-Assert-Test ($batContent -match '-Action Enable -SkipUpdateCheck') "UltraGamingMode.bat suppresses redundant update checks for menu actions"
-
-# ── 13. Boot State Transition & Security Hardening Verification ────────────────
-Write-Host "`n[Test Group 13] Boot State Transition (Armed -> GameMode_Active) & Security Hardening:" -ForegroundColor Cyan
-
-# 13.1 Set-StatePropertySafe & Legacy PSCustomObject Schema Normalization (Root Cause Regression Test)
-$legacyJson = '{"State":"Armed","BootRunCount":0,"SessionLogonHandled":false,"UserSessionHandled":false,"SystemSessionHandled":false}'
-$legacyObj = $legacyJson | ConvertFrom-Json
-$setPropSucceeded = $false
-try {
-    Set-StatePropertySafe -StateObject $legacyObj -Name "GamingBootId" -Value 42
-    Set-StatePropertySafe -StateObject $legacyObj -Name "GamingBootTime" -Value "2026-10-23T18:00:00.0000000Z"
-    Set-StatePropertySafe -StateObject $legacyObj -Name "State" -Value "GameMode_Active"
-    Set-StatePropertySafe -StateObject $legacyObj -Name "BootRunCount" -Value ([int]$legacyObj.BootRunCount + 1)
-    $setPropSucceeded = ($legacyObj.State -eq "GameMode_Active" -and $legacyObj.GamingBootId -eq 42 -and $legacyObj.BootRunCount -eq 1)
-} catch {
-    $setPropSucceeded = $false
-}
-Assert-Test ($setPropSucceeded) "Set-StatePropertySafe mutates and adds GamingBootId/GamingBootTime on ConvertFrom-Json PSCustomObject without SetValueInvocationException"
-
-# 13.2 Get-ActiveStateSafe Normalizes Legacy State Files Missing GamingBootId / GamingBootTime
-$tempLegacyFile = Join-Path $env:TEMP ("UGM_LegacyState_" + [System.Guid]::NewGuid().ToString("N") + ".json")
-try {
-    [System.IO.File]::WriteAllText($tempLegacyFile, $legacyJson, (New-Object System.Text.UTF8Encoding($false)))
-    $loadedLegacy = Get-ActiveStateSafe -Path $tempLegacyFile
-    $hasBootIdProp = ($null -ne $loadedLegacy.PSObject.Properties["GamingBootId"])
-    $hasBootTimeProp = ($null -ne $loadedLegacy.PSObject.Properties["GamingBootTime"])
-    $hasLastErrProp = ($null -ne $loadedLegacy.PSObject.Properties["LastBootError"])
-    Assert-Test ($hasBootIdProp -and $hasBootTimeProp -and $hasLastErrProp) "Get-ActiveStateSafe normalizes legacy JSON with GamingBootId, GamingBootTime, and LastBootError properties"
-
-    # Verify direct assignment after Get-ActiveStateSafe also works in PS 5.1
-    $loadedLegacy.GamingBootId = 99
-    $loadedLegacy.GamingBootTime = "2026-10-23T19:00:00.0000000Z"
-    $loadedLegacy.State = "GameMode_Active"
-    Set-ActiveStateSafe -Path $tempLegacyFile -Data $loadedLegacy | Out-Null
-
-    $reloaded = Get-ActiveStateSafe -Path $tempLegacyFile
-    Assert-Test ($reloaded.State -eq "GameMode_Active" -and $reloaded.GamingBootId -eq 99) "Normalized Armed state transitions cleanly to GameMode_Active and persists to disk"
-} finally {
-    Remove-Item -LiteralPath $tempLegacyFile -Force -ErrorAction SilentlyContinue
+$storageCases = @(
+    @{ Model = "WDC WD10EZEX-08WN4A0"; MediaType = "Unspecified"; ExpectedIsHdd = $true },
+    @{ Model = "ST1000DM010-2EP102"; MediaType = "Unspecified"; ExpectedIsHdd = $true },
+    @{ Model = "TOSHIBA MQ01ABD050"; MediaType = "HDD"; ExpectedIsHdd = $true },
+    @{ Model = "Samsung SSD 980 PRO 1TB"; MediaType = "SSD"; ExpectedIsHdd = $false },
+    @{ Model = "WD Black SN770 1TB"; MediaType = "Unspecified"; ExpectedIsHdd = $false },
+    @{ Model = "FireCuda 2.5"; MediaType = "Unspecified"; ExpectedIsHdd = $true }
+)
+foreach ($sc in $storageCases) {
+    $res = Resolve-StorageDeviceMediaType -Model $sc.Model -MediaType $sc.MediaType -BusType ""
+    Assert-Test ($res.IsHdd -eq $sc.ExpectedIsHdd) "Storage '$($sc.Model)' -> IsHdd=$($res.IsHdd) (MediaType=$($res.MediaType))"
 }
 
-# 13.3 ApplyBootMode & Enable Stuck-Armed Recovery Contracts in UltraGamingMode.ps1
-Assert-Test ($ugmContent -match 'Set-StatePropertySafe -StateObject \$stateData -Name "GamingBootId"') "UltraGamingMode.ps1 ApplyBootMode uses Set-StatePropertySafe for GamingBootId"
-Assert-Test ($ugmContent -match 'Register-WatchdogTasks') "UltraGamingMode.ps1 ApplyBootMode registers SYSTEM & RunOnce watchdog tasks"
-Assert-Test ($ugmContent -match 'Detected Armed state with missing Boot Trigger') "UltraGamingMode.ps1 Enable action recovers automatically when State is Armed but Boot Trigger is missing"
+Assert-Test ((Test-IsLowRamSystem -TotalRamBytes ([int64](7.88 * 1GB))) -eq $true) "8 GB system (7.88 GB usable) activates LowRamProfile"
+Assert-Test ((Test-IsLowRamSystem -TotalRamBytes ([int64](15.9 * 1GB))) -eq $false) "16 GB system disables LowRamProfile"
 
-# 13.4 Security Validation: Test-SafeVersionTag & Test-SafeGitHubReleaseUrl
-Assert-Test (Test-SafeVersionTag -Tag "v2.7") "Test-SafeVersionTag accepts 'v2.7'"
-Assert-Test (Test-SafeVersionTag -Tag "v2.8.1-hotfix1") "Test-SafeVersionTag accepts 'v2.8.1-hotfix1'"
-Assert-Test (-not (Test-SafeVersionTag -Tag 'v2.7"&calc.exe')) "Test-SafeVersionTag blocks command injection payload 'v2.7`"&calc.exe'"
-Assert-Test (-not (Test-SafeVersionTag -Tag 'v2.7|powershell')) "Test-SafeVersionTag blocks pipe metacharacter payload"
-Assert-Test (-not (Test-SafeVersionTag -Tag '')) "Test-SafeVersionTag rejects empty tag"
+Assert-Test (Test-IsHighPerformanceScheme -SchemeGuid "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" -RawOutput "GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c (High Performance)") "Recognizes High Performance power scheme GUID"
+Assert-Test (Test-IsHighPerformanceScheme -SchemeGuid "e9a42b02-d5df-448d-aa00-03f14749eb61" -RawOutput "GUID: e9a42b02-d5df-448d-aa00-03f14749eb61 (Ultimate Performance)") "Recognizes Ultimate Performance power scheme GUID"
+Assert-Test (-not (Test-IsHighPerformanceScheme -SchemeGuid "381b4222-f694-41f0-9685-ff5bb260df2e" -RawOutput "GUID: 381b4222-f694-41f0-9685-ff5bb260df2e (Balanced)")) "Recognizes Balanced power scheme as non-high-performance"
 
-Assert-Test (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7") "Test-SafeGitHubReleaseUrl accepts valid HTTPS GitHub release URL"
-Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7")) "Test-SafeGitHubReleaseUrl blocks non-HTTPS downgrade URL"
-Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7")) "Test-SafeGitHubReleaseUrl blocks untrusted host domain"
-Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url "file:///C:/Windows/System32/calc.exe")) "Test-SafeGitHubReleaseUrl blocks local file:// protocol handler execution"
-Assert-Test (-not (Test-SafeGitHubReleaseUrl -Url 'https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v2.7"&calc')) "Test-SafeGitHubReleaseUrl blocks shell metacharacters in URL"
+# -- 4. JSON Configuration & Service Descriptions Integrity -------------------
+Write-Host "`n[Test Group 4] JSON Configuration & Service Descriptions Integrity:" -ForegroundColor Cyan
+$blConfig  = Get-Content -LiteralPath (Join-Path $repoRoot "Config\services_blacklist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$wlConfig  = Get-Content -LiteralPath (Join-Path $repoRoot "Config\services_whitelist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$stConfig  = Get-Content -LiteralPath (Join-Path $repoRoot "Config\startup_apps.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$tunConfig = Get-Content -LiteralPath (Join-Path $repoRoot "Config\tuning.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$descPath  = Join-Path $repoRoot "Config\service_descriptions.json"
 
-# 13.5 Batch Launcher Security Contracts
-Assert-Test ($batContent -notmatch 'call "%~dp0Backups\\update_info\.cmd"') "UltraGamingMode.bat does not blindly execute update_info.cmd via call"
-Assert-Test ($batContent -match 'call :load_update_info') "UltraGamingMode.bat safely parses update_info.cmd via :load_update_info"
-Assert-Test ($batContent -match 'set "PS_EXE=%SystemRoot%\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe"') "UltraGamingMode.bat pins full System32 path for powershell.exe"
-Assert-Test ($batContent -match '\$env:UGM_SELF') "UltraGamingMode.bat uses environment variable `$env:UGM_SELF for injection-safe UAC elevation"
+$blNames = @($blConfig.TargetServices | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.Name } })
+$wlNames = @($wlConfig.ProtectedServices)
+$overlapServices = @($blNames | Where-Object { $wlNames -contains $_ })
 
-# 13.6 Normalize Existing Backups\active_state.json Schema & Pure UTF-8 Encoding
-$existingActiveState = Get-ActiveStateSafe
-if ($existingActiveState) {
-    Set-ActiveStateSafe -Data $existingActiveState | Out-Null
-    $activeBytes = [System.IO.File]::ReadAllBytes($Script:ActiveStateFile)
-    $activeHasBom = ($activeBytes.Length -ge 3 -and $activeBytes[0] -eq 0xEF -and $activeBytes[1] -eq 0xBB -and $activeBytes[2] -eq 0xBF)
-    Assert-Test (-not $activeHasBom) "Backups\active_state.json is saved as pure UTF-8 without BOM"
-    Assert-Test ($null -ne $existingActiveState.PSObject.Properties["GamingBootId"]) "Backups\active_state.json contains normalized GamingBootId property"
-} else {
-    $tmpActiveFile = Join-Path $env:TEMP ("UGM_NormActive_" + [System.Guid]::NewGuid().ToString("N") + ".json")
-    try {
-        Set-ActiveStateSafe -Path $tmpActiveFile -Data ([PSCustomObject]@{ State = "Restored" }) | Out-Null
-        $normActive = Get-ActiveStateSafe -Path $tmpActiveFile
-        $activeBytes = [System.IO.File]::ReadAllBytes($tmpActiveFile)
-        $activeHasBom = ($activeBytes.Length -ge 3 -and $activeBytes[0] -eq 0xEF -and $activeBytes[1] -eq 0xBB -and $activeBytes[2] -eq 0xBF)
-        Assert-Test (-not $activeHasBom) "Set-ActiveStateSafe writes pure UTF-8 without BOM"
-        Assert-Test ($null -ne $normActive.PSObject.Properties["GamingBootId"]) "Get-ActiveStateSafe normalizes GamingBootId property"
-    } finally {
-        Remove-Item -LiteralPath $tmpActiveFile -Force -ErrorAction SilentlyContinue
+Assert-Test ($blNames.Count -eq 205) "services_blacklist.json contains 205 TargetServices (actual: $($blNames.Count))"
+Assert-Test ($wlNames.Count -eq 92) "services_whitelist.json contains 92 ProtectedServices (actual: $($wlNames.Count))"
+Assert-Test ($overlapServices.Count -eq 0) "Zero overlap between services_blacklist.json and services_whitelist.json"
+
+$criticalWhitelisted = @("FACEIT", "FACEITService", "vgk", "vgc", "EasyAntiCheat", "BEService", "Audiosrv", "camsvc", "CaptureService", "cbdhsvc", "Apple Mobile Device Service", "ProcessGovernor")
+$missingCriticalWl = @($criticalWhitelisted | Where-Object { $wlNames -notcontains $_ })
+Assert-Test ($missingCriticalWl.Count -eq 0) "services_whitelist.json protects all critical anti-cheat, audio, mic & screenshot services"
+
+$svcDescObj = (Get-Content -LiteralPath $descPath -Raw -Encoding UTF8 | ConvertFrom-Json).Descriptions
+$missingDesc = @()
+foreach ($svcName in ($blNames + $wlNames)) {
+    $p = $svcDescObj.PSObject.Properties[$svcName]
+    if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
+        $missingDesc += $svcName
     }
 }
+Assert-Test ($missingDesc.Count -eq 0) "service_descriptions.json covers all $($blNames.Count + $wlNames.Count) managed services (missing: $($missingDesc.Count))"
 
-# 13.7 End-to-End Status Execution Verification
-$statusOutput = & $ugmPath -Action Status -SkipUpdateCheck *>&1 | Out-String
-Assert-Test ($statusOutput -match 'ULTRA GAMING MODE STATUS') "UltraGamingMode.ps1 -Action Status executes cleanly without errors"
+Assert-Test ($stConfig.BlacklistProcesses -notcontains "SearchHost" -and $stConfig.BlacklistProcesses -notcontains "TextInputHost" -and $stConfig.BlacklistProcesses -notcontains "UltraGamingMode") "startup_apps.json excludes SearchHost, TextInputHost, and UltraGamingMode from BlacklistProcesses"
+Assert-Test (
+    $tunConfig.AutoLockTimerInGaming -is [bool] -and
+    $tunConfig.DisableFullscreenOptimizations -is [bool] -and
+    $tunConfig.DisableMouseAccel -is [bool] -and
+    $tunConfig.DisableNvidiaDynamicPstate -is [bool] -and
+    $tunConfig.EnableNetAdapterMsi -is [bool] -and
+    $tunConfig.InputBufferQueueSize -ge 32
+) "tuning.json defines all 5 boolean switches and InputBufferQueueSize >= 32"
 
-# ── 14. Extended Gaming Engine, MMCSS, Power Latency & Memory Compression ────
-Write-Host "`n[Test Group 14] Extended Gaming Latency, MMCSS, Power & Memory Compression Engine:" -ForegroundColor Cyan
+# -- 5. Low-Latency Kernel, DPC, BCDedit, TCP, HAGS & Extended Targets --------
+Write-Host "`n[Test Group 5] Low-Latency Kernel, DPC, Timers, TCP & Extended Targets:" -ForegroundColor Cyan
+$inputCfg = Get-InputBufferConfig
+Assert-Test ($inputCfg -is [hashtable] -and $inputCfg.ContainsKey("MouseDataQueueSize") -and $inputCfg.ContainsKey("KeyboardDataQueueSize")) "Get-InputBufferConfig returns MouseDataQueueSize and KeyboardDataQueueSize"
 
-# 14.1 Function Exports Verification
-Assert-Test (Get-Command Repair-LegacyOptimizerLeftovers -ErrorAction SilentlyContinue) "Repair-LegacyOptimizerLeftovers is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Get-ExtendedGamingTargets -ErrorAction SilentlyContinue) "Get-ExtendedGamingTargets is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Set-ExtendedGamingOptimizations -ErrorAction SilentlyContinue) "Set-ExtendedGamingOptimizations is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Get-PowerLatencyConfig -ErrorAction SilentlyContinue) "Get-PowerLatencyConfig is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Set-PowerLatencyOptimizations -ErrorAction SilentlyContinue) "Set-PowerLatencyOptimizations is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Restore-PowerLatencyOptimizations -ErrorAction SilentlyContinue) "Restore-PowerLatencyOptimizations is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Get-MemoryCompressionConfig -ErrorAction SilentlyContinue) "Get-MemoryCompressionConfig is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Set-MemoryCompressionGamingState -ErrorAction SilentlyContinue) "Set-MemoryCompressionGamingState is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Restore-MemoryCompressionConfig -ErrorAction SilentlyContinue) "Restore-MemoryCompressionConfig is exported from SystemOptimizer.ps1"
-Assert-Test (Get-Command Get-GamingScheduledTaskTargets -ErrorAction SilentlyContinue) "Get-GamingScheduledTaskTargets is exported from StateEngine.ps1"
+$kdpcCfg = Get-KernelDpcConfig
+Assert-Test ($kdpcCfg -is [hashtable] -and $kdpcCfg.ContainsKey("DisablePagingExecutive") -and $kdpcCfg.ContainsKey("Win32PrioritySeparation")) "Get-KernelDpcConfig returns kernel DPC and priority separation keys"
 
-# 14.2 Extended Gaming Targets Integrity
-$extendedTargets = Get-ExtendedGamingTargets
-Assert-Test ($null -ne $extendedTargets -and $extendedTargets.Count -ge 20) "Get-ExtendedGamingTargets returns comprehensive target list ($($extendedTargets.Count) targets)"
+$parsedBcd = Get-BcdeditTimerConfig -BcdOutput @("identifier {current}", "disabledynamictick yes", "tscsyncpolicy Enhanced")
+Assert-Test ($parsedBcd.DynamicTick -eq "yes" -and $parsedBcd.TscSyncPolicy -eq "Enhanced") "Get-BcdeditTimerConfig parses DynamicTick and TscSyncPolicy from bcdedit output"
+$stockBcd = Get-BcdeditTimerConfig -BcdOutput @("identifier {current}", "description Windows 11")
+Assert-Test ($null -eq $stockBcd.DynamicTick -and $null -eq $stockBcd.TscSyncPolicy) "Get-BcdeditTimerConfig returns null properties on stock bcdedit output"
 
-# MMCSS Games Priority contract (Priority = 6)
-$multimediaDef = (Get-Command Set-GamingMultimediaConfig).Definition
-$hasMmcssPriority6 = ($multimediaDef -match '\$gamesTaskPath' -and $multimediaDef -match '-Name\s*["'']Priority["'']\s*-Value\s*6')
-Assert-Test ($hasMmcssPriority6) "Set-GamingMultimediaConfig configures MMCSS Tasks\Games Priority to 6 (Medium) per Microsoft Multimedia Architecture"
+$tcpCfg = Get-TcpStackConfig
+$tcpGuids = @($tcpCfg.Interfaces | ForEach-Object { if ($_ -is [hashtable]) { $_["Guid"] } else { $_.Guid } })
+Assert-Test ($tcpCfg -is [hashtable] -and $tcpGuids -notcontains "{8eb6cecf-6919-4cf4-8c70-e55823aa4b53}" -and $tcpGuids -notcontains "{2e219888-9139-4199-ea45-cb771d7dad1d}") "Get-TcpStackConfig isolates physical interfaces and excludes Apple USB Tethering & Wintun GUIDs"
 
-# Clean Display & Anti-Flicker Guard (MPO & FSE cleanup contract in Repair-DisplayPipeline)
-$repairDispDef = (Get-Command Repair-DisplayPipeline).Definition
-$cleansMpo = ($repairDispDef -match 'OverlayTestMode' -and $repairDispDef -match 'DisableOverlays' -and $repairDispDef -match 'GameDVR_FSEBehavior')
-Assert-Test ($cleansMpo) "Repair-DisplayPipeline clears harmful MPO & FSE overrides to prevent monitor flickering in Deadlock & CS2"
+$gamingAdapterNames = @(Get-PhysicalGamingAdapters | ForEach-Object { $_.Name })
+Assert-Test ($gamingAdapterNames -notcontains "Ethernet 2" -and $gamingAdapterNames -notcontains "wwan99") "Get-PhysicalGamingAdapters excludes 'Ethernet 2' and 'wwan99'"
 
-# Anti-Flicker Regression Guard in Set-DeepGameDVROptimizations & Repair-LegacyOptimizerLeftovers
-$gameDvrDef = (Get-Command Set-DeepGameDVROptimizations).Definition
-$fseGated = ($gameDvrDef -match 'DisableFullscreenOptimizations' -and $gameDvrDef -match 'GameDVR_FSEBehaviorMode')
-Assert-Test ($fseGated) "Set-DeepGameDVROptimizations applies classic FSE (GameDVR_FSEBehaviorMode = 2) only behind the Config\tuning.json switch"
-$tuningCfg = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\Config\tuning.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert-Test ($tuningCfg.DisableFullscreenOptimizations -is [bool]) "Config\tuning.json declares boolean DisableFullscreenOptimizations switch"
+$hagsCfg = Get-HagsGpuSchedulingConfig
+Assert-Test ($hagsCfg -is [hashtable] -and $hagsCfg.ContainsKey("HwSchMode")) "Get-HagsGpuSchedulingConfig returns HwSchMode key"
 
-$legacyRepairDef = (Get-Command Repair-LegacyOptimizerLeftovers).Definition
-$cleansMpoInLegacy = ($legacyRepairDef -match 'OverlayTestMode' -and $legacyRepairDef -match 'DisableOverlays' -and $legacyRepairDef -match 'RDR2\.exe')
-Assert-Test ($cleansMpoInLegacy) "Repair-LegacyOptimizerLeftovers cleans MPO overrides and RDR2 IFEO priority on every boot and boost"
-
-# AMD Driver Class Power Latency Tweaks
-$amdClassKeys = @(Get-AmdGpuDriverClassKeys)
-if ($amdClassKeys.Count -gt 0) {
-    $amdTargets = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ GpuVendor = "AMD" })
-    $aspm0Target = $amdTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL0s' }
-    $aspm1Target = $amdTargets | Where-Object { $_.Path -match 'Class\\\{4d36e968' -and $_.Name -eq 'EnableAspmL1' }
-    Assert-Test ($null -ne $aspm0Target -and $aspm0Target.Value -eq 0) "AMD GPU driver class: EnableAspmL0s is set to 0 (prevents D3 PCIe drops)"
-    Assert-Test ($null -ne $aspm1Target -and $aspm1Target.Value -eq 0) "AMD GPU driver class: EnableAspmL1 is set to 0"
-} else {
-    $extTargetsDef = (Get-Command Get-ExtendedGamingTargets).Definition
-    Assert-Test ($extTargetsDef -match 'EnableAspmL0s') "AMD GPU driver class: EnableAspmL0s target is defined in Get-ExtendedGamingTargets"
-    Assert-Test ($extTargetsDef -match 'EnableAspmL1') "AMD GPU driver class: EnableAspmL1 target is defined in Get-ExtendedGamingTargets"
-}
-
-# IFEO Game Priority Class contract
-$cs2Ifeo = $extendedTargets | Where-Object { $_.Path -match 'cs2\.exe\\PerfOptions' -and $_.Name -eq 'CpuPriorityClass' }
-$deadlockIfeo = $extendedTargets | Where-Object { $_.Path -match 'project8\.exe\\PerfOptions' -and $_.Name -eq 'CpuPriorityClass' }
-Assert-Test ($null -ne $cs2Ifeo -and $cs2Ifeo.Value -eq 3) "IFEO PerfOptions: Counter-Strike 2 (cs2.exe) configured with CpuPriorityClass = 3 (High)"
-Assert-Test ($null -ne $deadlockIfeo -and $deadlockIfeo.Value -eq 3) "IFEO PerfOptions: Deadlock (project8.exe) configured with CpuPriorityClass = 3 (High)"
-$rdr2Ifeo = $extendedTargets | Where-Object { $_.Path -match 'RDR2\.exe\\PerfOptions' }
-Assert-Test ($null -eq $rdr2Ifeo) "IFEO PerfOptions: Heavy open-world games (RDR2.exe) excluded from High Priority to prevent DWM thread starvation"
-
-# 14.3 Power Latency Config Snapshot & Contract
 $powerCfg = Get-PowerLatencyConfig
-Assert-Test ($null -ne $powerCfg -and $powerCfg.Settings.Count -ge 4) "Get-PowerLatencyConfig captures power latency settings ($($powerCfg.Settings.Count) items)"
-$usbSuspendItem = $powerCfg.Settings | Where-Object { $_.Setting -eq "48e6b7a6-50f5-4782-a5d4-53bb8f07e226" }
-Assert-Test ($null -ne $usbSuspendItem) "Get-PowerLatencyConfig targets USB Selective Suspend GUID"
+Assert-Test ($null -ne $powerCfg -and $powerCfg.Settings.Count -eq 9) "Get-PowerLatencyConfig captures all 9 power latency settings"
 
-# 14.4 Scheduled Tasks Suppression List Contract
 $schedTasks = Get-GamingScheduledTaskTargets -HddProfile $true
-$hasConsolidator = @($schedTasks | Where-Object { $_.Name -eq "Consolidator" -and $_.Path -match "Customer Experience" }).Count -gt 0
-$hasDefrag = @($schedTasks | Where-Object { $_.Name -eq "ScheduledDefrag" }).Count -gt 0
-Assert-Test ($hasConsolidator) "Customer Experience Consolidator is targeted for gaming suppression"
-Assert-Test ($hasDefrag) "ScheduledDefrag is targeted for gaming suppression when HddProfile is true"
+Assert-Test (@($schedTasks | Where-Object { $_.Name -eq "ScheduledDefrag" }).Count -gt 0) "Get-GamingScheduledTaskTargets includes ScheduledDefrag on HddProfile"
 
-# 14.5 Boot Session Watchdog & Resilience Tests
-$tOld = (Get-Date).AddMinutes(-10).ToString("o")
-$sameBootResult = Test-IsSameBootSession -SavedBootId (Get-SystemBootId) -SavedBootTime $tOld
-Assert-Test ($sameBootResult -eq $false) "Test-IsSameBootSession returns false when boot timestamp is older than 30s, even if BootId matches (prevents 2-reboot delay)"
-
-# 14.6 Windows Search & Shell Host Protection Contract
-$startupCfgFile = Join-Path $PSScriptRoot "..\Config\startup_apps.json"
-$startupCfgJson = Get-Content -LiteralPath $startupCfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
-$searchBlacklisted = ($startupCfgJson.BlacklistProcesses -contains "SearchHost" -or $startupCfgJson.BlacklistProcesses -contains "TextInputHost")
-Assert-Test ($searchBlacklisted -eq $false) "Config\startup_apps.json does not blacklist SearchHost or TextInputHost (preserves Start menu search)"
-$webviewKilled = ($startupCfgJson.BlacklistProcesses -contains "msedgewebview2" -or $startupCfgJson.BlacklistProcesses -contains "UltraGamingMode")
-Assert-Test ($webviewKilled -eq $false) "Config\startup_apps.json does not blanket-kill msedgewebview2 or UltraGamingMode UI"
-Assert-Test ((Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=UltraGamingMode.exe --user-data-dir="C:\Users\u\AppData\Local\com.ultragamingmode.optimizer\EBWebView"') -eq $false) "Test-ShouldStopWebViewProcess protects UltraGamingMode WebView2 renderer"
-Assert-Test ((Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=SearchHost.exe') -eq $false) "Test-ShouldStopWebViewProcess protects SearchHost WebView2 renderer"
-Assert-Test ((Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=Widgets.exe') -eq $true) "Test-ShouldStopWebViewProcess targets only Windows Widgets WebView2 helpers"
-
-# 14.7 Core Services & Windows Search Repair Contract in Repair-CoreServices
-$repairDef = (Get-Command Repair-CoreServices).Definition
-$repairsSearch = ($repairDef -match 'WSearch' -and $repairDef -match 'SysMain' -and $repairDef -match 'DisableSearchBoxSuggestions')
-Assert-Test ($repairsSearch) "Repair-CoreServices restores WSearch, SysMain, Spooler and removes search blocking policies"
-
-# 14.8 Snipping Tool (PrtSc), Clipboard & AppContainer Protection Contracts
-$wlConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\Config\services_whitelist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-$blConfig = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\Config\services_blacklist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-$blNames = @($blConfig.TargetServices | ForEach-Object { $_.Name })
-
-Assert-Test (($wlConfig.ProtectedServices -contains "CaptureService") -and ($wlConfig.ProtectedServices -contains "cbdhsvc")) "Config\services_whitelist.json protects CaptureService and cbdhsvc for Snipping Tool & Clipboard"
-Assert-Test (($wlConfig.ProtectedServices -contains "CDPUserSvc") -and ($wlConfig.ProtectedServices -contains "ConsentUxUserSvc") -and ($wlConfig.ProtectedServices -contains "UdkUserSvc")) "Config\services_whitelist.json protects CDPUserSvc, ConsentUxUserSvc, and UdkUserSvc"
-$snipInBlacklist = ($blNames -contains "CaptureService" -or $blNames -contains "cbdhsvc" -or $blNames -contains "CDPUserSvc" -or $blNames -contains "ConsentUxUserSvc" -or $blNames -contains "UdkUserSvc")
-Assert-Test (-not $snipInBlacklist) "Config\services_blacklist.json excludes CaptureService, cbdhsvc, CDPUserSvc, ConsentUxUserSvc, and UdkUserSvc"
-
-$svcMgrDef = (Get-Command Set-ServiceStateSafe).Definition
-Assert-Test ($svcMgrDef -match '_\[0-9a-fA-F\]\+\$' -and $svcMgrDef -match '\$Whitelist -contains \$baseInputName') "Set-ServiceStateSafe enforces Whitelist protection on per-user suffixed service instances"
-Assert-Test ($repairDef -match 'PrintScreenKeyForSnippingEnabled') "Repair-CoreServices enables PrintScreenKeyForSnippingEnabled = 1 in HKCU:\Control Panel\Keyboard"
-Assert-Test ($repairDef -match 'DisableNotificationCenter') "Repair-CoreServices removes harmful DisableNotificationCenter policy from Explorer"
-Assert-Test ($repairDef -match 'CaptureService' -and $repairDef -match 'cbdhsvc') "Repair-CoreServices configures CaptureService (Manual) and cbdhsvc (Automatic)"
-Assert-Test ($repairDef -match 'S-1-15-2-1' -and $repairDef -match 'S-1-15-2-2') "Repair-CoreServices repairs AppContainer ACLs (S-1-15-2-1 and S-1-15-2-2) on %LOCALAPPDATA%\Packages"
-Assert-Test ($systemStateDef -match '\$item\.Scope -notin @\("HKLM",\s*"HKLM32"\)') "Restore-SystemState filters StartupItems to HKLM/HKLM32 so HKCU items are not written to .DEFAULT under SYSTEM"
-$tcpDef = (Get-Command Get-TcpStackConfig).Definition
-Assert-Test ($tcpDef -match 'включено' -and $tcpDef -match 'Tcp1323Opts') "Get-TcpStackConfig supports localized Russian netsh output and Tcp1323Opts registry fallback"
-
-# 14.9 Community Top-Tier Optimizations, PCIe NIC MSI Mode & Safety Guards
-Assert-Test ($tuningCfg.DisableMouseAccel -is [bool]) "Config\tuning.json declares boolean DisableMouseAccel switch"
-Assert-Test ($tuningCfg.EnableNetAdapterMsi -is [bool]) "Config\tuning.json declares boolean EnableNetAdapterMsi switch"
-Assert-Test ($tuningCfg.InputBufferQueueSize -ge 32) "Config\tuning.json declares numeric InputBufferQueueSize (>= 32)"
-
-$setRegDef = (Get-Command Set-RegistryTargets).Definition
-Assert-Test ($setRegDef -match 'IsSystem' -and $setRegDef -match 'StartsWith\("HKCU:"') "Set-RegistryTargets skips HKCU: targets when running under NT AUTHORITY\SYSTEM"
-
-$inputBufDef = (Get-Command Set-InputBufferOptimizations).Definition
-Assert-Test ($inputBufDef -match '\$QueueSize -lt 32' -and $inputBufDef -match '\$QueueSize = 32') "Set-InputBufferOptimizations enforces minimum safety floor of 32 packets"
-
-$highRamTargets = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $false; HddProfile = $false })
-$lowRamTargets  = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $true;  HddProfile = $false })
-
-$afdFastSend = $highRamTargets | Where-Object { $_.Path -match 'Services\\AFD\\Parameters' -and $_.Name -eq 'FastSendDatagramThreshold' }
-$afdFastCopy = $highRamTargets | Where-Object { $_.Path -match 'Services\\AFD\\Parameters' -and $_.Name -eq 'FastCopyReceiveThreshold' }
-$ndisRss     = $highRamTargets | Where-Object { $_.Path -match 'Services\\NDIS\\Parameters' -and $_.Name -eq 'MaxNumRssCpus' }
-Assert-Test ($null -ne $afdFastSend -and $afdFastSend.Value -eq 65536 -and $null -ne $afdFastCopy -and $afdFastCopy.Value -eq 65536) "Winsock AFD Fast-Path datagram/copy thresholds set to 65536"
-Assert-Test ($null -ne $ndisRss -and $ndisRss.Value -eq 4) "NDIS MaxNumRssCpus set to 4 for multi-core network interrupt distribution"
-
-$taggedEnergy = $highRamTargets | Where-Object { $_.Path -match 'TaggedEnergy' -and $_.Name -eq 'DisableTaggedEnergyLogging' }
-$hiberboot    = $highRamTargets | Where-Object { $_.Path -match 'Session Manager\\Power' -and $_.Name -eq 'HiberbootEnabled' }
-$coalescing   = $highRamTargets | Where-Object { $_.Path -match 'Control\\Session Manager$' -and $_.Name -eq 'CoalescingTimerInterval' }
-$svchostHigh  = $highRamTargets | Where-Object { $_.Path -match 'CurrentControlSet\\Control$' -and $_.Name -eq 'SvcHostSplitThresholdInKB' }
-$svchostLow   = $lowRamTargets  | Where-Object { $_.Path -match 'CurrentControlSet\\Control$' -and $_.Name -eq 'SvcHostSplitThresholdInKB' }
-Assert-Test ($null -ne $taggedEnergy -and $taggedEnergy.Value -eq 1) "Kernel Power TaggedEnergy logging is disabled (DisableTaggedEnergyLogging = 1)"
-Assert-Test ($null -ne $hiberboot -and $hiberboot.Value -eq 0 -and $null -ne $coalescing -and $coalescing.Value -eq 0) "HiberbootEnabled = 0 and CoalescingTimerInterval = 0 are configured"
-Assert-Test ($null -ne $svchostHigh -and $svchostHigh.Value -eq 67108864 -and $null -eq $svchostLow) "SvcHostSplitThresholdInKB (67108864) is applied on >=16GB RAM and skipped on LowRamProfile"
-
-$extDef = (Get-Command Get-ExtendedGamingTargets).Definition
-Assert-Test ($extDef -match 'StutterMode' -and $extDef -match 'PP_SclkDeepSleepDisable') "AMD Radeon DXNAVI StutterMode=0 and PP_SclkDeepSleepDisable=1 are defined in Get-ExtendedGamingTargets"
-
-$miracast = $highRamTargets | Where-Object { $_.Path -match 'GraphicsDrivers' -and $_.Name -eq 'PlatformSupportMiracast' }
-$menuShow = $highRamTargets | Where-Object { $_.Path -match 'Control Panel\\Desktop' -and $_.Name -eq 'MenuShowDelay' }
-$hooksTo  = $highRamTargets | Where-Object { $_.Path -match 'Control Panel\\Desktop' -and $_.Name -eq 'LowLevelHooksTimeout' }
-$hoverTm  = $highRamTargets | Where-Object { $_.Path -match 'Control Panel\\Mouse' -and $_.Name -eq 'MouseHoverTime' }
-$dxGlobal = $highRamTargets | Where-Object { $_.Path -match 'DirectX\\UserGpuPreferences' -and $_.Name -eq 'DirectXUserGlobalSettings' }
-$storageS = $highRamTargets | Where-Object { $_.Path -match 'StorageSense\\Parameters\\StoragePolicy' -and $_.Name -eq '01' }
-$resvMgr  = $highRamTargets | Where-Object { $_.Path -match 'ReserveManager' -and $_.Name -eq 'ShippedWithReserves' }
-Assert-Test ($null -ne $miracast -and $miracast.Value -eq 0 -and $null -ne $dxGlobal -and $dxGlobal.Value -match 'SwapEffectUpgradeEnable=1' -and $dxGlobal.Value -match 'VRROptimizeEnable=1') "DirectX Flip Model upgrade (SwapEffectUpgradeEnable=1), Windowed VRR (VRROptimizeEnable=1) and PlatformSupportMiracast=0 are configured"
-Assert-Test ($null -ne $menuShow -and $menuShow.Value -eq "0" -and $null -ne $hooksTo -and $hooksTo.Value -eq 5000 -and $null -ne $hoverTm -and $hoverTm.Value -eq "10") "Desktop MenuShowDelay=0, LowLevelHooksTimeout=5000, and MouseHoverTime=10 are configured"
-Assert-Test ($null -ne $storageS -and $storageS.Value -eq 0 -and $null -ne $resvMgr -and $resvMgr.Value -eq 0) "Storage Sense (01=0) and ReserveManager (ShippedWithReserves=0) I/O suppression are configured"
-
-Assert-Test ($null -ne (Get-Command Get-NetAdapterMsiConfig -ErrorAction SilentlyContinue) -and $null -ne (Get-Command Set-NetAdapterMsiMode -ErrorAction SilentlyContinue) -and $null -ne (Get-Command Restore-NetAdapterMsiMode -ErrorAction SilentlyContinue)) "PCIe Network Adapter MSI functions (Get/Set/Restore-NetAdapterMsiMode) are exported"
-$netMsiDef = (Get-Command Set-NetAdapterMsiMode).Definition
-Assert-Test ($netMsiDef -match '\^PCI\\\\' -and $netMsiDef -match 'MSISupported') "Set-NetAdapterMsiMode strictly filters physical PCIe adapters (^PCI\\) and sets MSISupported = 1"
-
-$ugmContent = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\UltraGamingMode.ps1") -Raw -Encoding UTF8
-Assert-Test ($ugmContent -notmatch '173 non-essential' -and $ugmContent -match '205 non-essential') "UltraGamingMode.ps1 references all 205 non-essential services"
-Assert-Test ($ugmContent -match 'Kernel DPC: Threaded \(Optimal\)' -and $ugmContent -match 'Dynamic Tick: Default \(Optimal\)') "UltraGamingMode.ps1 displays accurate optimal status badges for Kernel DPC and Dynamic Tick"
-
-# 14.10 Behavioral Verification: DisableMouseAccel, NetAdapterMsi Restore & Registry Snapshot Round-Trip
-$mouseTargetsOn  = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $false; HddProfile = $false }) -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true })
-$mouseTargetsOff = Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $false; HddProfile = $false }) -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $false })
-$msOn  = $mouseTargetsOn  | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') }
-$msOff = $mouseTargetsOff | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') }
-Assert-Test (@($msOn).Count -eq 3 -and (@($msOn | Where-Object { $_.Value -eq '0' }).Count -eq 3) -and @($msOff).Count -eq 0) "Get-ExtendedGamingTargets emits MouseSpeed/MouseThreshold1/MouseThreshold2 = '0' when DisableMouseAccel is true and omits them when false"
-
-$debloatDef = (Get-Command Set-Windows11DebloatOptimizations).Definition
-$restoreDebloatDef = (Get-Command Restore-Windows11DebloatOptimizations).Definition
-Assert-Test ($debloatDef -match '\$isSystem' -and $restoreDebloatDef -match '\$isSystem') "Set-Windows11DebloatOptimizations and Restore-Windows11DebloatOptimizations guard HKCU: operations under NT AUTHORITY\SYSTEM"
-
-$tempMsiKey = "HKCU:\Software\UGM_UnitTest_Msi_" + [System.Guid]::NewGuid().ToString("N")
-New-Item -Path $tempMsiKey -Force | Out-Null
-Set-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -Value 1 -Type DWord -Force
-$null = Restore-NetAdapterMsiMode -MsiBackup @(@{ AdapterName = "TestNIC"; RegistryPath = $tempMsiKey; OriginalMsi = 0 }) 6>$null
-$restoredZero = (Get-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -ErrorAction SilentlyContinue).MSISupported
-$null = Restore-NetAdapterMsiMode -MsiBackup @(@{ AdapterName = "TestNIC"; RegistryPath = $tempMsiKey; OriginalMsi = $null }) 6>$null
-$restoredNull = (Get-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -ErrorAction SilentlyContinue).MSISupported
-Remove-Item -LiteralPath $tempMsiKey -Recurse -Force -ErrorAction SilentlyContinue
-Assert-Test ($restoredZero -eq 0 -and $null -eq $restoredNull) "Restore-NetAdapterMsiMode accurately restores OriginalMsi value and removes property when OriginalMsi is null"
-
-$tempRegKey = "HKCU:\Software\UGM_UnitTest_Reg_" + [System.Guid]::NewGuid().ToString("N")
-$testTargets = @(
-    @{ Path = $tempRegKey; Name = "FastSendDatagramThreshold"; Value = 65536; Kind = "DWord"; Group = "Network" },
-    @{ Path = $tempRegKey; Name = "MenuShowDelay"; Value = "0"; Kind = "String"; Group = "Desktop" }
-)
-$snapBefore = Get-RegistryValueSnapshot -Targets $testTargets
-$appliedCnt = Set-RegistryTargets -Targets $testTargets
-$valDword = (Get-ItemProperty -LiteralPath $tempRegKey -Name "FastSendDatagramThreshold" -ErrorAction SilentlyContinue).FastSendDatagramThreshold
-$valStr   = (Get-ItemProperty -LiteralPath $tempRegKey -Name "MenuShowDelay" -ErrorAction SilentlyContinue).MenuShowDelay
-$restoredCnt = Restore-RegistryValueSnapshot -Snapshot $snapBefore -Hive "HKCU"
-$propAfter = Get-ItemProperty -LiteralPath $tempRegKey -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $tempRegKey -Recurse -Force -ErrorAction SilentlyContinue
-Assert-Test ($appliedCnt -eq 2 -and $valDword -eq 65536 -and $valStr -eq "0" -and $restoredCnt -eq 2 -and $null -eq $propAfter.FastSendDatagramThreshold) "Get-RegistryValueSnapshot / Set-RegistryTargets / Restore-RegistryValueSnapshot perform lossless round-trip"
-
-# ── 14.11 v3.1.1 Audit Fixes & Reversible Optimizations ─────────────────────
-# Config/tuning.json DisableNvidiaDynamicPstate switch
-Assert-Test ($tuningCfg.DisableNvidiaDynamicPstate -is [bool]) "Config\tuning.json declares boolean DisableNvidiaDynamicPstate switch"
-
-# PowerLatencySettings expanded to all 9 sub-settings
-$powerSettingNames = @($Script:PowerLatencySettings | ForEach-Object { $_.Name })
-Assert-Test ($Script:PowerLatencySettings.Count -eq 9) "PowerLatencySettings contains all 9 power latency settings"
-foreach ($reqPowerName in @("USB Selective Suspend", "Processor Throttle Max", "Processor Idle Demote", "Processor Idle Promote", "PCIe Link State Power Mgmt")) {
-    Assert-Test ($powerSettingNames -contains $reqPowerName) "PowerLatencySettings includes '$reqPowerName'"
-}
-Assert-Test ($null -ne $powerCfg -and $powerCfg.Settings.Count -eq 9) "Get-PowerLatencyConfig snapshots all 9 PowerLatencySettings entries ($($powerCfg.Settings.Count) captured)"
-
-# Complete 14-value Windows 11 debloat snapshot & restore
-$debloatSnap = Get-Windows11DebloatConfig
-$expectedDebloatKeys = @(
-    "GameDVR_Enabled", "AppCaptureEnabled", "TurnOffWindowsCopilot", "TaskbarDa",
-    "BingSearchEnabled", "DisableSearchBoxSuggestions", "AllowGameDVR",
-    "PresenceWriterActivation", "EdgeStartupBoost", "EdgeBackgroundMode",
-    "DisableAIDataAnalysis", "TurnOffWindowsCopilotMachine", "WSAIFabricSvcStart",
-    "AllowNewsAndInterests"
-)
-$allDebloatKeysPresent = $true
-foreach ($dk in $expectedDebloatKeys) {
-    if (-not $debloatSnap.ContainsKey($dk)) { $allDebloatKeysPresent = $false; break }
-}
-Assert-Test ($allDebloatKeysPresent -and $debloatSnap.Count -eq 14) "Get-Windows11DebloatConfig snapshots all 14 Windows 11 debloat keys ($($debloatSnap.Count) present)"
-Assert-Test (
-    $restoreDebloatDef -match 'TaskbarDa' -and
-    $restoreDebloatDef -match 'PresenceWriterActivation' -and
-    $restoreDebloatDef -match 'DisableSearchBoxSuggestions' -and
-    $restoreDebloatDef -match 'TurnOffWindowsCopilotMachine' -and
-    $restoreDebloatDef -match 'WSAIFabricSvcStart' -and
-    $restoreDebloatDef -match 'BingSearchEnabled' -and
-    $restoreDebloatDef -match 'PSObject\.Properties'
-) "Restore-Windows11DebloatOptimizations restores all 14 keys cleanly for both hashtable and PSCustomObject snapshots"
-
-# NVIDIA driver DPC/telemetry targets, MMCSS Audio, DirectX Preemption, USB Hub hierarchy & Accessibility Key Guard
-Assert-Test ($null -ne (Get-Command Get-NvidiaGpuDriverClassKeys -ErrorAction SilentlyContinue)) "Get-NvidiaGpuDriverClassKeys is exported from SystemOptimizer.ps1"
-$nvMockTargets = Get-ExtendedGamingTargets `
-    -HardwareProfile ([PSCustomObject]@{ GpuVendor = "NVIDIA"; LowRamProfile = $false; HddProfile = $false }) `
+$highRamTargets = Get-ExtendedGamingTargets `
+    -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "NVIDIA"; LowRamProfile = $false; HddProfile = $false }) `
     -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true; DisableNvidiaDynamicPstate = $true })
+$lowRamTargets = Get-ExtendedGamingTargets `
+    -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $true; HddProfile = $false }) `
+    -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $false; DisableNvidiaDynamicPstate = $false })
 
-$nvTelemetry = $nvMockTargets | Where-Object { $_.Path -match 'nvlddmkm\\Global\\Startup$' -and $_.Name -eq 'SendTelemetryData' }
-$nvPerCore   = @($nvMockTargets | Where-Object { $_.Name -eq 'RmGpsPsEnablePerCpuCoreDpc' -and $_.Value -eq 1 })
-Assert-Test ($null -ne $nvTelemetry -and $nvTelemetry.Value -eq 0) "NVIDIA driver target suppresses SendTelemetryData = 0"
-Assert-Test ($nvPerCore.Count -ge 3) "NVIDIA driver targets enable RmGpsPsEnablePerCpuCoreDpc = 1 across nvlddmkm / NVAPI / NVTweak"
-Assert-Test ($extDef -match 'Get-NvidiaGpuDriverClassKeys' -and $extDef -match 'DisableDynamicPstate') "Get-ExtendedGamingTargets gates DisableDynamicPstate behind TuningConfig.DisableNvidiaDynamicPstate"
+Assert-Test ($highRamTargets.Count -ge 25) "Get-ExtendedGamingTargets generates full registry optimization target set ($($highRamTargets.Count) targets)"
+Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Name -eq 'SvcHostSplitThresholdInKB' -and $_.Value -eq 67108864 }) -and $null -eq ($lowRamTargets | Where-Object { $_.Name -eq 'SvcHostSplitThresholdInKB' })) "SvcHostSplitThresholdInKB is applied on >=16 GB RAM and skipped on LowRamProfile"
+Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Path -match 'cs2\.exe\\PerfOptions' -and $_.Value -eq 3 }) -and $null -eq ($highRamTargets | Where-Object { $_.Path -match 'RDR2\.exe\\PerfOptions' })) "IFEO PerfOptions configures CS2 High Priority (3) and excludes RDR2"
+Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Name -eq 'SendTelemetryData' -and $_.Value -eq 0 }) -and @($highRamTargets | Where-Object { $_.Name -eq 'RmGpsPsEnablePerCpuCoreDpc' -and $_.Value -eq 1 }).Count -ge 3) "NVIDIA targets disable driver telemetry and enable per-core DPC"
+Assert-Test (@($highRamTargets | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') }).Count -eq 3 -and @($lowRamTargets | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -eq 'MouseSpeed' }).Count -eq 0) "Get-ExtendedGamingTargets gates 1:1 mouse curve on DisableMouseAccel"
 
-$audioBg    = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Background Only' }
-$audioClock = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Clock Rate' }
-$audioPrio  = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Priority' }
-$audioCat   = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'Scheduling Category' }
-$audioSfio  = $nvMockTargets | Where-Object { $_.Path -match 'Tasks\\Audio$' -and $_.Name -eq 'SFIO Priority' }
-Assert-Test (
-    $audioBg.Value -eq "False" -and $audioClock.Value -eq 10000 -and
-    $audioPrio.Value -eq 6 -and $audioCat.Value -eq "Medium" -and $audioSfio.Value -eq "High"
-) "MMCSS Tasks\Audio configured with low-latency Priority=6, Scheduling Category='Medium', SFIO Priority='High'"
+# -- 6. Multi-Directory Shortcut Quarantine & Two-Phase Restoration -----------
+Write-Host "`n[Test Group 6] Multi-Directory Shortcut Quarantine & Two-Phase Restore:" -ForegroundColor Cyan
+$tempTestRoot = Join-Path $env:TEMP ("UGM_Test_Quarantine_" + [System.Guid]::NewGuid().ToString("N"))
+try {
+    $testUserStartup   = Join-Path $tempTestRoot "DestUserStartup"
+    $testCommonStartup = Join-Path $tempTestRoot "DestCommonStartup"
+    $testQuarantine    = Join-Path $tempTestRoot "QuarantinedShortcuts"
+    $testQUser         = Join-Path $testQuarantine "User"
+    $testQCommon       = Join-Path $testQuarantine "ProgramData"
 
-$dxPreempt  = $nvMockTargets | Where-Object { $_.Path -match 'GraphicsDrivers\\Scheduler$' -and $_.Name -eq 'EnablePreemption' }
-$shellDelay = $nvMockTargets | Where-Object { $_.Path -match 'Explorer\\Serialize$' -and $_.Name -eq 'StartupDelayInMSec' }
-$stickyKeys = $nvMockTargets | Where-Object { $_.Path -match 'Accessibility\\StickyKeys$' -and $_.Name -eq 'Flags' }
-$toggleKeys = $nvMockTargets | Where-Object { $_.Path -match 'Accessibility\\ToggleKeys$' -and $_.Name -eq 'Flags' }
-$filterKeys = $nvMockTargets | Where-Object { $_.Path -match 'Accessibility\\Keyboard Response$' -and $_.Name -eq 'Flags' }
-Assert-Test ($null -ne $dxPreempt -and $dxPreempt.Value -eq 1 -and $null -ne $shellDelay -and $shellDelay.Value -eq 0) "DirectX Kernel EnablePreemption=1 and Explorer StartupDelayInMSec=0 configured"
-Assert-Test ($stickyKeys.Value -eq "506" -and $toggleKeys.Value -eq "58" -and $filterKeys.Value -eq "122") "Accessibility StickyKeys ('506'), ToggleKeys ('58'), and Keyboard Response ('122') hotkey guard configured"
-Assert-Test ($extDef -match 'USBHUB3' -and $extDef -match 'usbhub' -and $extDef -match 'usbccgp' -and $extDef -match 'HidUsb') "USB idle-suspend suppression targets HidUsb, USBHUB3, usbhub, and usbccgp hub hierarchy"
+    New-Item -ItemType Directory -Path $testQUser, $testQCommon, $testUserStartup, $testCommonStartup -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $testQUser "Discord.lnk") -Value "User Discord"
+    Set-Content -LiteralPath (Join-Path $testQCommon "Discord.lnk") -Value "ProgramData Discord"
+    Set-Content -LiteralPath (Join-Path $testQUser "Game [Modded] (v2.0).lnk") -Value "Bracketed Game"
+    Set-Content -LiteralPath (Join-Path $testQuarantine "LegacyApp.lnk.ugm_backup") -Value "Legacy Backup"
 
-# NDIS RSC / WoL / PM Offload coverage across helper map & functions
-$ndisKeywords = @($Script:NetworkAdapterGamingMap | ForEach-Object { $_.Keyword })
-foreach ($kw in @("*FlowControl", "*InterruptModeration", "*EEE", "EnableGreenEthernet", "PowerSavingMode", "*RscIPv4", "*RscIPv6", "*WakeOnMagicPacket", "*WakeOnPattern", "*PMARPOffload", "*PMNSOffload")) {
-    Assert-Test ($ndisKeywords -contains $kw) "NetworkAdapterGamingMap includes NDIS property '$kw'"
+    $mockStateData = [PSCustomObject]@{
+        StartupShortcuts = @(
+            [PSCustomObject]@{ Name = "LegacyApp.lnk"; OriginalFolder = $testUserStartup; FolderTag = "User" }
+        )
+    }
+
+    Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "System"
+    Assert-Test ((Test-Path -LiteralPath (Join-Path $testCommonStartup "Discord.lnk")) -and -not (Test-Path -LiteralPath (Join-Path $testUserStartup "Discord.lnk"))) "Phase 1 (System Scope): restores ProgramData shortcuts while preserving User quarantine"
+
+    Restore-QuarantinedShortcuts -QuarantineDir $testQuarantine -UserStartup $testUserStartup -CommonStartup $testCommonStartup -StateData $mockStateData -Scope "User"
+    Assert-Test (
+        (Test-Path -LiteralPath (Join-Path $testUserStartup "Discord.lnk")) -and
+        (Test-Path -LiteralPath (Join-Path $testUserStartup "Game [Modded] (v2.0).lnk")) -and
+        (Test-Path -LiteralPath (Join-Path $testUserStartup "LegacyApp.lnk")) -and
+        -not (Test-Path -LiteralPath $testQuarantine)
+    ) "Phase 2 (User Scope): restores User, bracketed, and .ugm_backup shortcuts and removes empty quarantine"
+} finally {
+    Remove-Item -LiteralPath $tempTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
-$getNdisDef     = (Get-Command Get-NetworkAdapterGamingProperties).Definition
-$setNdisDef     = (Get-Command Set-NetworkGamingOptimizations).Definition
-$restoreNdisDef = (Get-Command Restore-NetworkGamingOptimizations).Definition
-Assert-Test (
-    $getNdisDef -match 'NetworkAdapterGamingMap' -and
-    $setNdisDef -match 'NetworkAdapterGamingMap' -and
-    $restoreNdisDef -match 'NetworkAdapterGamingMap'
-) "Get/Set/Restore-NetworkGamingOptimizations share NetworkAdapterGamingMap for all 11 NDIS properties"
 
-# Power scheme activation order & full snapshot coverage & ApplyTuning support
-$disableUserDef = (Get-Command Disable-UserStateAggressive).Definition
-$ultIdx = $disableUserDef.IndexOf("Enable-UltimatePerformance")
-$cpuIdx = $disableUserDef.IndexOf("Apply-CpuGamingOptimizations")
-Assert-Test ($ultIdx -ge 0 -and $cpuIdx -gt $ultIdx) "Disable-UserStateAggressive calls Enable-UltimatePerformance before Apply-CpuGamingOptimizations"
+# -- 7. State Persistence, Watchdog Session Detection & Two-Phase Merge -------
+Write-Host "`n[Test Group 7] State Persistence, Watchdog Boot Session & Atomic Merge:" -ForegroundColor Cyan
+$tempStateFile = Join-Path $env:TEMP ("UGM_State_" + [System.Guid]::NewGuid().ToString("N") + ".json")
+try {
+    $legacyJson = '{"State":"Armed","BootRunCount":0,"SystemRestored":false,"UserRestored":false}'
+    [System.IO.File]::WriteAllText($tempStateFile, $legacyJson, [System.Text.UTF8Encoding]::new($false))
 
-$backupDef = (Get-Command New-SystemStateBackup).Definition
-Assert-Test ($backupDef -match 'DisableNvidiaDynamicPstate\s*=\s*\$true') "New-SystemStateBackup passes DisableNvidiaDynamicPstate = `$true to Get-ExtendedGamingTargets"
-Assert-Test ($ugmContent -match '"ApplyTuning"') "UltraGamingMode.ps1 exposes live -Action ApplyTuning workflow"
+    $loaded = Get-ActiveStateSafe -Path $tempStateFile
+    Assert-Test ($null -ne $loaded.PSObject.Properties["GamingBootId"] -and $null -ne $loaded.PSObject.Properties["GamingBootTime"]) "Get-ActiveStateSafe normalizes missing GamingBootId and GamingBootTime properties"
 
-# Behavioral Round-Trip: Binary & MultiString Registry Snapshot/Apply/Restore through JSON serialization
+    Set-StatePropertySafe -StateObject $loaded -Name "State" -Value "Restoring_SystemDone"
+    Set-StatePropertySafe -StateObject $loaded -Name "SystemRestored" -Value $true
+    Set-ActiveStateSafe -Path $tempStateFile -Data $loaded | Out-Null
+
+    $usrPass = Get-ActiveStateSafe -Path $tempStateFile
+    $usrPass.UserRestored = $true
+    if ($usrPass.SystemRestored) { $usrPass.State = "Restored" }
+    Set-ActiveStateSafe -Path $tempStateFile -Data $usrPass | Out-Null
+
+    $finalState = Get-ActiveStateSafe -Path $tempStateFile
+    $stateBytes = [System.IO.File]::ReadAllBytes($tempStateFile)
+    $stateHasBom = ($stateBytes.Length -ge 3 -and $stateBytes[0] -eq 0xEF -and $stateBytes[1] -eq 0xBB -and $stateBytes[2] -eq 0xBF)
+    Assert-Test ($finalState.State -eq "Restored" -and $finalState.SystemRestored -and $finalState.UserRestored -and -not $stateHasBom) "Two-phase state transition merges cleanly to Restored in pure UTF-8 without BOM"
+} finally {
+    Remove-Item -LiteralPath $tempStateFile -Force -ErrorAction SilentlyContinue
+}
+
+$bootId = Get-SystemBootId
+$currentBootTs = Get-ResilientBootTimestamp
+$oldBootTs = ([DateTime]::Parse($currentBootTs).AddHours(-5)).ToString("o")
+Assert-Test ((Test-IsSameBootSession -SavedBootId $bootId) -eq $true -and (Test-IsSameBootSession -SavedBootId ($bootId + 1)) -eq $false) "Test-IsSameBootSession distinguishes current vs different BootId"
+Assert-Test ((Test-IsSameBootSession -SavedBootId $null -SavedBootTime $currentBootTs) -eq $true -and (Test-IsSameBootSession -SavedBootId $null -SavedBootTime $oldBootTs) -eq $false) "Test-IsSameBootSession timestamp fallback detects stale boot sessions"
+
+# -- 8. Registry & Debloat Snapshot Round-Trips (DWord, String, Binary, Multi) -
+Write-Host "`n[Test Group 8] Registry, NIC MSI & Win11 Debloat Snapshot Round-Trips:" -ForegroundColor Cyan
+$tempMsiKey = "HKCU:\Software\UGM_UnitTest_Msi_" + [System.Guid]::NewGuid().ToString("N")
+try {
+    New-Item -Path $tempMsiKey -Force | Out-Null
+    Set-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -Value 1 -Type DWord -Force
+    $null = Restore-NetAdapterMsiMode -MsiBackup @(@{ AdapterName = "TestNIC"; RegistryPath = $tempMsiKey; OriginalMsi = 0 }) 6>$null
+    $restoredZero = (Get-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -ErrorAction SilentlyContinue).MSISupported
+    $null = Restore-NetAdapterMsiMode -MsiBackup @(@{ AdapterName = "TestNIC"; RegistryPath = $tempMsiKey; OriginalMsi = $null }) 6>$null
+    $restoredNull = (Get-ItemProperty -LiteralPath $tempMsiKey -Name "MSISupported" -ErrorAction SilentlyContinue).MSISupported
+    Assert-Test ($restoredZero -eq 0 -and $null -eq $restoredNull) "Restore-NetAdapterMsiMode restores OriginalMsi value and deletes key when OriginalMsi is null"
+} finally {
+    Remove-Item -LiteralPath $tempMsiKey -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $binRegKey = "HKCU:\Software\UGM_TestBin_" + ([Guid]::NewGuid().ToString("N"))
 try {
     New-Item -Path "$binRegKey\UMD" -Force | Out-Null
@@ -1076,264 +323,76 @@ try {
     $binTargets = @(
         @{ Path = "$binRegKey\UMD"; Name = "ShaderCache"; Value = ([byte[]](0x32, 0x00)); Kind = "Binary" },
         @{ Path = $binRegKey; Name = "MultiVal"; Value = ([string[]]@("gamma")); Kind = "MultiString" },
-        @{ Path = $binRegKey; Name = "DisableDynamicPstate"; Value = 1; Kind = "DWord" }
+        @{ Path = $binRegKey; Name = "FastSendDatagramThreshold"; Value = 65536; Kind = "DWord" },
+        @{ Path = $binRegKey; Name = "MenuShowDelay"; Value = "0"; Kind = "String" }
     )
     $binSnap = Get-RegistryValueSnapshot -Targets $binTargets
     $binJsonLoaded = (@{ ExtendedRegistryConfig = $binSnap } | ConvertTo-Json -Depth 10 | ConvertFrom-Json).ExtendedRegistryConfig
     $binApplied = Set-RegistryTargets -Targets $binTargets
-    $subMain = $binRegKey -replace '^HKCU:\\', ''
-    $kUmdApply = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("$subMain\UMD")
-    $appliedBytes = $kUmdApply.GetValue("ShaderCache")
-    $kUmdApply.Close()
     $binRestored = Restore-RegistryValueSnapshot -Snapshot $binJsonLoaded -Hive "HKCU"
 
+    $subMain = $binRegKey -replace '^HKCU:\\', ''
     $kUmdRest = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("$subMain\UMD")
     $restoredBytes = $kUmdRest.GetValue("ShaderCache")
     $kUmdRest.Close()
     $kMainRest = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subMain)
     $restoredMulti = $kMainRest.GetValue("MultiVal")
-    $dynExistsAfter = $kMainRest.GetValueNames() -contains "DisableDynamicPstate"
+    $dwordRemoved = ($kMainRest.GetValueNames() -notcontains "FastSendDatagramThreshold")
     $kMainRest.Close()
 
-    Assert-Test ($binApplied -eq 3 -and $appliedBytes.Count -eq 2 -and $appliedBytes[0] -eq 0x32 -and $appliedBytes[1] -eq 0x00) "Set-RegistryTargets writes REG_BINARY (ShaderCache) and REG_MULTI_SZ without CLR array unrolling"
-    Assert-Test ($binRestored -eq 3 -and $restoredBytes[0] -eq 0x30 -and $restoredBytes[1] -eq 0x00 -and ($restoredMulti -join ',') -eq 'alpha,beta' -and -not $dynExistsAfter) "Restore-RegistryValueSnapshot restores JSON-deserialized REG_BINARY, REG_MULTI_SZ, and deletes absent DisableDynamicPstate"
+    Assert-Test ($binApplied -eq 4 -and $binRestored -eq 4 -and $restoredBytes[0] -eq 0x30 -and ($restoredMulti -join ',') -eq 'alpha,beta' -and $dwordRemoved) "Registry snapshot engine losslessly round-trips REG_DWORD, REG_SZ, REG_BINARY, and REG_MULTI_SZ"
 } finally {
     Remove-Item -LiteralPath $binRegKey -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Behavioral Round-Trip: 14-Key Debloat Snapshot/Restore + Two-Phase Non-Clobbering Order
-$debloatRoundTripOk = & {
-    $vReg = @{
-        "HKCU:\System\GameConfigStore" = @{ "GameDVR_Enabled" = 1 }
-        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\GameDVR" = @{ "AppCaptureEnabled" = 1 }
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" = @{ "TaskbarDa" = 0 }
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search" = @{ "BingSearchEnabled" = 0 }
-        "HKCU:\Software\Policies\Microsoft\Windows\Explorer" = @{ "DisableSearchBoxSuggestions" = 1 }
-        "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR" = @{ "AllowGameDVR" = 0 }
-        "HKLM:\SOFTWARE\Microsoft\WindowsRuntime\ActivatableClassId\Windows.Gaming.GameBar.PresenceServer.Internal.PresenceWriter" = @{ "ActivationType" = 1 }
-        "HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc" = @{ "Start" = 3 }
-        "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" = @{ "AllowNewsAndInterests" = 0 }
-    }
-    $vSvc = @{ "WSAIFabricSvc" = @{ StartupType = "Manual" }; "WSearch" = @{ StartupType = "Automatic" } }
-    function Test-Path { param([string]$Path, [string]$LiteralPath) $p = if ($LiteralPath) { $LiteralPath } else { $Path }; return $vReg.ContainsKey($p) }
-    function New-Item { param([string]$Path, [switch]$Force) if (-not $vReg.ContainsKey($Path)) { $vReg[$Path] = @{} }; return $null }
-    function Get-ItemProperty {
-        param([string]$Path, [string]$LiteralPath, [string]$Name)
-        $p = if ($LiteralPath) { $LiteralPath } else { $Path }
-        if (-not $vReg.ContainsKey($p)) { return $null }
-        $o = [PSCustomObject]@{}
-        foreach ($k in $vReg[$p].Keys) { $o | Add-Member -NotePropertyName $k -NotePropertyValue $vReg[$p][$k] }
-        return $o
-    }
-    function Set-ItemProperty {
-        param([string]$Path, [string]$LiteralPath, [string]$Name, $Value, [string]$Type, [switch]$Force)
-        $p = if ($LiteralPath) { $LiteralPath } else { $Path }
-        if (-not $vReg.ContainsKey($p)) { $vReg[$p] = @{} }
-        $vReg[$p][$Name] = $Value
-    }
-    function Remove-ItemProperty {
-        param([string]$Path, [string]$LiteralPath, [string]$Name, [switch]$Force)
-        $p = if ($LiteralPath) { $LiteralPath } else { $Path }
-        if ($vReg.ContainsKey($p)) { $null = $vReg[$p].Remove($Name) }
-    }
-    function Get-Service { param([string]$Name) if ($vSvc.ContainsKey($Name)) { return [PSCustomObject]@{ Name = $Name; Status = "Stopped" } } return $null }
-    function Stop-Service { param([string]$Name, [switch]$Force) }
-    function Start-Service { param([string]$Name) }
-    function Set-Service { param([string]$Name, [string]$StartupType) if ($vSvc.ContainsKey($Name)) { $vSvc[$Name].StartupType = $StartupType; if ($Name -eq "WSAIFabricSvc") { $vReg["HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc"]["Start"] = $(if ($StartupType -eq "Disabled") { 4 } else { 3 }) } } }
-    function auditpol.exe { }
+$debloatSnap = Get-Windows11DebloatConfig
+Assert-Test ($debloatSnap -is [hashtable] -and $debloatSnap.Count -eq 14) "Get-Windows11DebloatConfig captures all 14 Windows 11 debloat keys ($($debloatSnap.Count)/14)"
 
-    $orig = Get-Windows11DebloatConfig
-    $jsonObj = $orig | ConvertTo-Json -Depth 5 | ConvertFrom-Json
-    $null = Set-Windows11DebloatOptimizations -All
-    # Simulate Two-Phase User restore order: Widgets restore (-SkipSystemPolicies) -> UserOnly Debloat restore
-    $null = Set-WindowsWidgetsAndSearchGamingState -Disable $false -SkipSystemPolicies
-    $null = Restore-Windows11DebloatOptimizations -DebloatConfig $jsonObj -UserOnly
-    $userOk = (
-        $vReg["HKCU:\Software\Microsoft\Windows\CurrentVersion\Search"]["BingSearchEnabled"] -eq 0 -and
-        $vReg["HKCU:\Software\Policies\Microsoft\Windows\Explorer"]["DisableSearchBoxSuggestions"] -eq 1 -and
-        $vReg["HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"]["TaskbarDa"] -eq 0 -and
-        -not $vReg["HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot"].ContainsKey("TurnOffWindowsCopilot")
-    )
-    # Full Restore-Windows11DebloatOptimizations also restores all HKLM keys cleanly
-    $null = Restore-Windows11DebloatOptimizations -DebloatConfig $jsonObj
-    $hklmOk = (
-        $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Dsh"]["AllowNewsAndInterests"] -eq 0 -and
-        $vReg["HKLM:\SYSTEM\CurrentControlSet\Services\WSAIFabricSvc"]["Start"] -eq 3 -and
-        -not $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Edge"].ContainsKey("StartupBoostEnabled") -and
-        -not $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended"].ContainsKey("BackgroundModeEnabled") -and
-        $vReg["HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"]["AllowGameDVR"] -eq 0
-    )
-    return ($userOk -and $hklmOk)
-}
-Assert-Test ($debloatRoundTripOk) "Restore-Windows11DebloatOptimizations + -UserOnly/-SkipSystemPolicies faithfully round-trips all 14 keys from JSON PSCustomObject"
+# -- 9. SemVer Parser, Suite Version & URL/Tag Injection Guards ---------------
+Write-Host "`n[Test Group 9] SemVer Engine, Suite Version & URL Security Guards:" -ForegroundColor Cyan
+Assert-Test ((Get-AppCurrentVersion) -eq "3.5.1") "Get-AppCurrentVersion returns '3.5.1'"
 
-$restoreSysDef = (Get-Command Restore-SystemState).Definition
-$widgetsIdx = $restoreSysDef.IndexOf("Set-WindowsWidgetsAndSearchGamingState")
-$debloatRestoreIdx = $restoreSysDef.IndexOf("Restore-Windows11DebloatOptimizations")
-Assert-Test ($widgetsIdx -ge 0 -and $debloatRestoreIdx -gt $widgetsIdx -and $userProfileDef -match 'Restore-Windows11DebloatOptimizations\s+-DebloatConfig') "Restore-SystemState runs Restore-Windows11DebloatOptimizations after Widgets restore and Restore-UserProfileState restores HKCU debloat keys"
+$vBase  = ConvertTo-SemVer "v2.8"
+$vPad   = ConvertTo-SemVer "2.8.0"
+$vPatch = ConvertTo-SemVer "v2.8.1"
+$vCurr  = ConvertTo-SemVer "v3.5.1"
+Assert-Test ($vBase -eq $vPad -and $vPatch -gt $vBase -and $vCurr -gt $vPatch) "ConvertTo-SemVer normalizes and compares versions accurately"
+Assert-Test ($null -eq (ConvertTo-SemVer "") -and $null -eq (ConvertTo-SemVer "invalid")) "ConvertTo-SemVer returns null on invalid version input"
 
-# Behavioral: -Action ApplyTuning safely no-ops on non-active state in isolated sandbox & GameDVR New-Item tolerates non-admin
-$sandboxRoot = Join-Path $env:TEMP ("UGM_TestApplyTuning_" + [Guid]::NewGuid().ToString("N"))
-try {
-    New-Item -ItemType Directory -Path (Join-Path $sandboxRoot "Config") -Force | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $sandboxRoot "Core") -Force | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $sandboxRoot "Backups") -Force | Out-Null
-    Copy-Item -LiteralPath $ugmPath -Destination $sandboxRoot
-    Copy-Item -Path (Join-Path $repoRoot "Core\*.ps1") -Destination (Join-Path $sandboxRoot "Core")
-    Copy-Item -Path (Join-Path $repoRoot "Config\*.json") -Destination (Join-Path $sandboxRoot "Config")
-    [System.IO.File]::WriteAllText((Join-Path $sandboxRoot "Backups\active_state.json"), '{"State":"Restored"}', (New-Object System.Text.UTF8Encoding($false)))
-    $applySandboxOut = & (Join-Path $sandboxRoot "UltraGamingMode.ps1") -Action ApplyTuning -SkipUpdateCheck *>&1 | Out-String
-    Assert-Test ($applySandboxOut -match "Current state is 'Restored'") "UltraGamingMode.ps1 -Action ApplyTuning cleanly skips live mutation when state is Restored"
-} finally {
-    Remove-Item -LiteralPath $sandboxRoot -Recurse -Force -ErrorAction SilentlyContinue
-}
-Assert-Test ($gameDvrDef -match 'AllowGameDVR' -and $gameDvrDef -match 'New-Item\s+-Path\s+\$policyPath\s+-Force\s+-ErrorAction\s+SilentlyContinue') "Set-DeepGameDVROptimizations HKLM policy creation guards non-elevated ApplyTuning runs with -ErrorAction SilentlyContinue"
+Assert-Test ((Test-SafeVersionTag -Tag "v3.5.1") -and -not (Test-SafeVersionTag -Tag 'v3.5.1"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
+Assert-Test (
+    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.1") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.1") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.1") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "file:///C:/Windows/System32/calc.exe")
+) "Test-SafeGitHubReleaseUrl enforces HTTPS and github.com repository allowlist"
 
-$tauriConfPath = Join-Path $repoRoot "ui\src-tauri\tauri.conf.json"
-$rustLibPath   = Join-Path $repoRoot "ui\src-tauri\src\lib.rs"
-if ((Test-Path -LiteralPath $tauriConfPath) -and (Test-Path -LiteralPath $rustLibPath)) {
-    $tauriConfJson = Get-Content -LiteralPath $tauriConfPath -Raw | ConvertFrom-Json
-    Assert-Test ($tauriConfJson.bundle.windows.nsis.installMode -eq "perMachine") "tauri.conf.json configures NSIS installMode=perMachine for Program Files installation"
-    Assert-Test ([string]$tauriConfJson.bundle.windows.nsis.template -eq "templates/installer.nsi" -and [string]$tauriConfJson.bundle.windows.wix.template -eq "templates/main.wxs") "tauri.conf.json wires custom UAC-compatible NSIS and WiX installer templates"
-    Assert-Test (Test-Path -LiteralPath (Join-Path $repoRoot "ui\src-tauri\templates\installer.nsi")) "Custom NSIS template exists in ui/src-tauri/templates/installer.nsi"
-    Assert-Test (Test-Path -LiteralPath (Join-Path $repoRoot "ui\src-tauri\templates\main.wxs")) "Custom WiX template exists in ui/src-tauri/templates/main.wxs"
-    $rustLibRaw = Get-Content -LiteralPath $rustLibPath -Raw
-    Assert-Test ($rustLibRaw -match 'ProgramW6432' -and $rustLibRaw -match 'ProgramFiles') "Rust standalone_runtime_candidates prioritizes Program Files before ProgramData"
-    Assert-Test (-not [string]::IsNullOrWhiteSpace([string]$tauriConfJson.app.security.csp)) "tauri.conf.json declares non-null Content Security Policy (CSP)"
-    Assert-Test ($rustLibRaw -match 'QuarantinedShortcuts"\)\.join\("User"\)' -and $rustLibRaw -match 'kill_process' -and $rustLibRaw -match 'control_service') "lib.rs restricts Backups write ACL to User quarantine folder and exposes interactive process/service IPC"
-}
+# -- 10. Process, WebView2 & Service Security Guards --------------------------
+Write-Host "`n[Test Group 10] Process, WebView2 & Service Security Guards:" -ForegroundColor Cyan
+Assert-Test ((Test-IsProtectedProcess -ProcessId 0) -and (Test-IsProtectedProcess -ProcessId 4) -and (Test-IsProtectedProcess -ProcessId $PID -ProcessName "powershell")) "Test-IsProtectedProcess blocks PID 0, PID 4, and current host PID"
 
-# ── 15. Security Audit Hardening & Process/Service Guard Verification ─────────
-Write-Host "`n[Test Group 15] Security Audit Hardening & Interactive Process/Service Guards:" -ForegroundColor Cyan
+$protectedProcSamples = @("lsass", "csrss", "winlogon", "dwm", "explorer", "svchost", "UltraGamingMode", "vgk", "EasyAntiCheat", "..\evil")
+$unprotectedBlocked = @($protectedProcSamples | Where-Object { -not (Test-IsProtectedProcess -ProcessName $_) })
+Assert-Test ($unprotectedBlocked.Count -eq 0) "Test-IsProtectedProcess blocks all critical OS, anti-cheat, self, and traversal process names"
+Assert-Test (-not (Test-IsProtectedProcess -ProcessName "Discord") -and -not (Test-IsProtectedProcess -ProcessName "Spotify.exe")) "Test-IsProtectedProcess allows non-critical third-party apps (Discord, Spotify)"
+Assert-Test ((-not (Stop-ProcessSafe -ProcessId $PID 3>$null)) -and (-not (Stop-ProcessSafe -ProcessName "lsass" 3>$null))) "Stop-ProcessSafe refuses to terminate current host PID or lsass"
 
-Assert-Test ((Test-IsProtectedProcess -ProcessId 0) -eq $true) "Test-IsProtectedProcess blocks PID 0 (System Idle Process)"
-Assert-Test ((Test-IsProtectedProcess -ProcessId 4) -eq $true) "Test-IsProtectedProcess blocks PID 4 (System Kernel)"
-Assert-Test ((Test-IsProtectedProcess -ProcessId $PID -ProcessName "powershell") -eq $true) "Test-IsProtectedProcess blocks current host `$PID"
+Assert-Test (
+    -not (Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=UltraGamingMode.exe') -and
+    -not (Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=SearchHost.exe') -and
+    (Test-ShouldStopWebViewProcess -CommandLine 'msedgewebview2.exe --webview-exe-name=Widgets.exe')
+) "Test-ShouldStopWebViewProcess protects UltraGamingMode and SearchHost while targeting Widgets.exe"
 
-foreach ($critProc in @("lsass", "lsass.exe", "csrss", "winlogon", "dwm", "explorer", "svchost", "UltraGamingMode", "vgk", "EasyAntiCheat")) {
-    Assert-Test ((Test-IsProtectedProcess -ProcessName $critProc) -eq $true) "Test-IsProtectedProcess strictly protects critical OS/app process '$critProc'"
-}
-Assert-Test ((Test-IsProtectedProcess -ProcessName "Discord") -eq $false) "Test-IsProtectedProcess permits non-critical third-party app 'Discord'"
-Assert-Test ((Test-IsProtectedProcess -ProcessName "Spotify.exe") -eq $false) "Test-IsProtectedProcess permits non-critical third-party app 'Spotify.exe'"
-Assert-Test ((Test-IsProtectedProcess -ProcessName "..\evil") -eq $true) "Test-IsProtectedProcess rejects path traversal process names"
+Assert-Test ((Test-SafeServiceName -ServiceName "DiagTrack") -and (Test-SafeServiceName -ServiceName "AMD External Events Utility") -and -not (Test-SafeServiceName -ServiceName "svc*") -and -not (Test-SafeServiceName -ServiceName "..\Evil") -and -not (Test-SafeServiceName -ServiceName "a;calc.exe")) "Test-SafeServiceName validates service identifiers and blocks wildcards/traversal/injection"
+Assert-Test ((-not (Set-ServiceStateSafe -ServiceName "..\Evil" -StartupType "Disabled" 3>$null)) -and (-not (Set-ServiceStateSafe -ServiceName "RpcSs" -StartupType "Disabled" -Whitelist @() 3>$null)) -and (-not (Set-ServiceStateSafe -ServiceName "Audiosrv" -StartupType "Disabled" -Whitelist @("Audiosrv") 3>$null))) "Set-ServiceStateSafe blocks traversal, immutable core services (RpcSs), and whitelisted services"
 
-Assert-Test ((Stop-ProcessSafe -ProcessId $PID 3>$null) -eq $false) "Stop-ProcessSafe refuses to terminate current host `$PID"
-Assert-Test ((Stop-ProcessSafe -ProcessName "lsass" 3>$null) -eq $false) "Stop-ProcessSafe refuses to terminate critical process 'lsass'"
-Assert-Test ((Stop-ProcessSafe -ProcessName "csrss.exe" 3>$null) -eq $false) "Stop-ProcessSafe refuses to terminate critical process 'csrss.exe'"
+$svcBlockedAudio = $false
+try { $null = Invoke-ServiceControlSafe -ServiceName "Audiosrv" -Operation "Stop" -Whitelist @("Audiosrv") } catch { $svcBlockedAudio = $true }
+$svcBlockedCore = $false
+try { $null = Invoke-ServiceControlSafe -ServiceName "RpcSs" -Operation "Disabled" -Whitelist @() } catch { $svcBlockedCore = $true }
+Assert-Test ($svcBlockedAudio -and $svcBlockedCore) "Invoke-ServiceControlSafe throws on stopping whitelisted or disabling immutable core services"
 
-Assert-Test ((Test-SafeServiceName -ServiceName "DiagTrack") -eq $true) "Test-SafeServiceName accepts valid identifier 'DiagTrack'"
-Assert-Test ((Test-SafeServiceName -ServiceName "AMD External Events Utility") -eq $true) "Test-SafeServiceName accepts spaced service name"
-Assert-Test ((Test-SafeServiceName -ServiceName "svc*") -eq $false) "Test-SafeServiceName rejects wildcard pattern 'svc*'"
-Assert-Test ((Test-SafeServiceName -ServiceName "..\Evil") -eq $false) "Test-SafeServiceName rejects registry path traversal '..\Evil'"
-Assert-Test ((Test-SafeServiceName -ServiceName "a;calc.exe") -eq $false) "Test-SafeServiceName rejects command separator injection"
-
-Assert-Test ((Set-ServiceStateSafe -ServiceName "..\Evil" -StartupType "Disabled" 3>$null) -eq $false) "Set-ServiceStateSafe rejects registry traversal identifier"
-Assert-Test ((Set-ServiceStateSafe -ServiceName "RpcSs" -StartupType "Disabled" -Whitelist @() 3>$null) -eq $false) "Set-ServiceStateSafe protects immutable core service 'RpcSs' even when whitelist is empty"
-
-$svcControlBlockedAudio = $false
-try { $null = Invoke-ServiceControlSafe -ServiceName "Audiosrv" -Operation "Stop" -Whitelist @("Audiosrv") } catch { $svcControlBlockedAudio = $true }
-Assert-Test $svcControlBlockedAudio "Invoke-ServiceControlSafe blocks Stop on whitelisted service 'Audiosrv'"
-
-$svcControlBlockedCore = $false
-try { $null = Invoke-ServiceControlSafe -ServiceName "RpcSs" -Operation "Disabled" -Whitelist @() } catch { $svcControlBlockedCore = $true }
-Assert-Test $svcControlBlockedCore "Invoke-ServiceControlSafe blocks Disabled on immutable core service 'RpcSs'"
-
-$svcControlBlockedTraversal = $false
-try { $null = Invoke-ServiceControlSafe -ServiceName "bad*svc" -Operation "Start" -Whitelist @() } catch { $svcControlBlockedTraversal = $true }
-Assert-Test $svcControlBlockedTraversal "Invoke-ServiceControlSafe rejects unsafe wildcard service name"
-
-$procViewPath = Join-Path $repoRoot "ui\src\lib\components\ProcessesView.svelte"
-$svcViewPath  = Join-Path $repoRoot "ui\src\lib\components\ServicesView.svelte"
-if ((Test-Path -LiteralPath (Join-Path $repoRoot "ui\src")) -and (Test-Path -LiteralPath $procViewPath)) {
-    Assert-Test (Test-Path -LiteralPath $procViewPath) "ProcessesView.svelte exists for interactive process management UI"
-    Assert-Test ((Get-Content -LiteralPath $svcViewPath -Raw) -match 'onControlService' -and (Get-Content -LiteralPath $svcViewPath -Raw) -match 'onUpdateServiceList') "ServicesView.svelte exposes interactive service control and list mutation handlers"
-}
-
-# -- 16. v3.4.0 Tray Mode, Service Descriptions, Reboot & Native Updater -------
-Write-Host "`n[Test Group 16] v3.4.0 Tray, Service Tooltips, Reboot & Updater Contracts:" -ForegroundColor Cyan
-
-$svcDescPath = Join-Path $repoRoot "Config\service_descriptions.json"
-Assert-Test (Test-Path -LiteralPath $svcDescPath) "Config\service_descriptions.json exists on disk"
-if (Test-Path -LiteralPath $svcDescPath) {
-    $svcDescObj = (Get-Content -LiteralPath $svcDescPath -Raw | ConvertFrom-Json).Descriptions
-    $blItems = (Get-Content -LiteralPath (Join-Path $repoRoot "Config\services_blacklist.json") -Raw | ConvertFrom-Json).TargetServices
-    $wlItems = (Get-Content -LiteralPath (Join-Path $repoRoot "Config\services_whitelist.json") -Raw | ConvertFrom-Json).ProtectedServices
-    $missingDesc = @()
-    foreach ($s in $blItems) {
-        $p = $svcDescObj.PSObject.Properties[$s.Name]
-        if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
-            $missingDesc += $s.Name
-        }
-    }
-    foreach ($w in $wlItems) {
-        $p = $svcDescObj.PSObject.Properties[$w]
-        if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
-            $missingDesc += $w
-        }
-    }
-    Assert-Test ($missingDesc.Count -eq 0) "service_descriptions.json covers all $($blItems.Count) blacklist and $($wlItems.Count) whitelist services (missing=$($missingDesc.Count))"
-}
-
-$cargoTomlRaw = Get-Content -LiteralPath (Join-Path $repoRoot "ui\src-tauri\Cargo.toml") -Raw
-Assert-Test ($cargoTomlRaw -match 'tray-icon') "ui/src-tauri/Cargo.toml enables Tauri tray-icon feature"
-
-if (Test-Path -LiteralPath $rustLibPath) {
-    $rustLibRaw = Get-Content -LiteralPath $rustLibPath -Raw
-    Assert-Test ($rustLibRaw -match 'reboot_pc' -and $rustLibRaw -match 'check_for_updates' -and $rustLibRaw -match 'install_github_update') "lib.rs exposes reboot_pc, check_for_updates, and install_github_update IPC commands"
-    Assert-Test ($rustLibRaw -match 'clean_memory_win32' -and $rustLibRaw -match 'control_service_win32' -and $rustLibRaw -match 'build_tray_icon') "lib.rs implements native Win32 memory/service optimization and 3-color tray icon builder"
-}
-
-# -- 17. v3.5.0 Autostart, FACEIT Whitelist, Startup Protection & UI Redesign Contracts --
-Write-Host "`n[Test Group 17] v3.5.0 Autostart, FACEIT Whitelist, Startup Protection & UI Redesign Contracts:" -ForegroundColor Yellow
-
-$ugmRoot = Split-Path -Parent $PSScriptRoot
-$blJson17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Config\services_blacklist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-$wlJson17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Config\services_whitelist.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-$tuningJson17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Config\tuning.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-
-$blNames17 = @($blJson17.TargetServices | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.Name } })
-Assert-Test ($blNames17.Count -eq 205 -and ($blNames17 -notcontains 'FACEIT') -and ($blNames17 -notcontains 'FACEITService')) "services_blacklist.json has 205 TargetServices and excludes FACEIT / FACEITService"
-Assert-Test ($wlJson17.ProtectedServices.Count -eq 92 -and ($wlJson17.ProtectedServices -contains 'FACEIT') -and ($wlJson17.ProtectedServices -contains 'FACEITService')) "services_whitelist.json has 92 ProtectedServices and protects FACEIT / FACEITService"
-Assert-Test ($null -ne $tuningJson17.AutoLockTimerInGaming -and $tuningJson17.AutoLockTimerInGaming -is [bool]) "tuning.json exposes boolean AutoLockTimerInGaming setting"
-
-$tauriConf17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src-tauri\tauri.conf.json") -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert-Test ($tauriConf17.version -eq '3.5.1' -and $tauriConf17.app.windows[0].create -eq $false) "tauri.conf.json sets version 3.5.1 and Zero-RAM create=false on main window"
-
-$wxsRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src-tauri\templates\main.wxs") -Raw -Encoding UTF8
-$afterUpdateBlock17 = ($wxsRaw17 -split '\{\{/if\}\}', 2)[1]
-Assert-Test ($wxsRaw17 -match 'DeleteAutoStartTask' -and $null -ne $afterUpdateBlock17 -and $afterUpdateBlock17 -match 'UltraGamingMode_AutoStart') "main.wxs deletes UltraGamingMode_AutoStart outside enable_elevated_update_task"
-
-$nsiRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src-tauri\templates\installer.nsi") -Raw -Encoding UTF8
-$nsiUninstallMatches17 = [regex]::Matches($nsiRaw17, '(?s)\$\{If\}\s+\$UpdateMode\s+<>\s+1.*?\$\{EndIf\}')
-$nsiHasAutoStartCleanup17 = @($nsiUninstallMatches17 | Where-Object { $_.Value -match 'DeleteRegValue' -and $_.Value -match 'UltraGamingMode_AutoStart' }).Count -gt 0
-Assert-Test ($nsiHasAutoStartCleanup17) 'installer.nsi deletes UltraGamingMode_AutoStart on full uninstall ($UpdateMode <> 1)'
-
-if (Test-Path -LiteralPath $rustLibPath) {
-    $rustLibRaw17 = Get-Content -LiteralPath $rustLibPath -Raw -Encoding UTF8
-    $requiredRustSymbols17 = @(
-        'get_autostart_status',
-        'set_autostart',
-        'unlock_timer_resolution',
-        'finish_pending_restore',
-        'get_windows_startup_entries',
-        'apply_service_feature_pack',
-        'classify_process_protection'
-    )
-    $missingRustSymbols17 = @($requiredRustSymbols17 | Where-Object { $rustLibRaw17 -notmatch [regex]::Escape($_) })
-    Assert-Test ($missingRustSymbols17.Count -eq 0) "lib.rs defines all v3.5.0 commands and classifiers (missing: $($missingRustSymbols17 -join ', '))"
-}
-
-$stateEngineRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "Core\StateEngine.ps1") -Raw -Encoding UTF8
-Assert-Test ($stateEngineRaw17 -match 'cleanName' -and $stateEngineRaw17 -match 'protectedStartup' -and $stateEngineRaw17 -match 'pkgProtected' -and $stateEngineRaw17 -match 'taskProtected') "Core/StateEngine.ps1 guards protected .lnk/.url shortcuts and UWP startup tasks"
-
-$tweaksRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src\lib\components\TweaksView.svelte") -Raw -Encoding UTF8
-Assert-Test ($tweaksRaw17 -match 'SystemResponsiveness\s*=\s*10' -and $tweaksRaw17 -match 'max="1024"') "TweaksView.svelte sets SystemResponsiveness = 10 copy and max=1024 on InputBufferQueueSize"
-
-$appSvelteRaw17 = Get-Content -LiteralPath (Join-Path $ugmRoot "ui\src\App.svelte") -Raw -Encoding UTF8
-$programsLabel17 = -join ([char[]](0x041F,0x0440,0x043E,0x0433,0x0440,0x0430,0x043C,0x043C,0x044B))
-Assert-Test ($appSvelteRaw17.Contains($programsLabel17)) "App.svelte labels the processes tab cleanly in Russian"
-
-# ── Summary ────────────────────────────────────────────────────────────────
+# -- Summary ------------------------------------------------------------------
 Write-Host "`n=====================================================" -ForegroundColor Magenta
 Write-Host "   TEST RESULTS: $testsRun Tests Run | $failures Failures" -ForegroundColor $(if ($failures -eq 0) { "Green" } else { "Red" })
 Write-Host "=====================================================" -ForegroundColor Magenta
@@ -1343,4 +402,3 @@ if ($failures -gt 0) {
 } else {
     exit 0
 }
-

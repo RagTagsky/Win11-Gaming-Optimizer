@@ -11,7 +11,7 @@ Built with **Tauri v2 (Rust) + Svelte 5** and a native **Win32 / PowerShell Engi
 [![Desktop Stack](https://img.shields.io/badge/Tauri%20v2-Rust%20%2B%20Svelte%205-3B82F6?style=for-the-badge&logo=rust&logoColor=white&labelColor=0F172A)](#option-a-native-desktop-gui-app-v351---recommended)
 [![Watchdog](https://img.shields.io/badge/Failsafe-HKLM%20RunOnce-10B981?style=for-the-badge&labelColor=0F172A)](#the-zero-risk-watchdog-guarantee)
 [![Anti-Cheat Safe](https://img.shields.io/badge/Anti--Cheat-FACEIT%20%7C%20Vanguard%20%7C%20EAC%20%7C%20VAC-10B981?style=for-the-badge&labelColor=0F172A)](#2-ironclad-whitelist-92-protected-services)
-[![Test Suite](https://img.shields.io/badge/Verified-381%20PS%20%2B%2020%20Rust%20Tests-475569?style=for-the-badge&labelColor=0F172A)](#directory-structure)
+[![Test Suite](https://img.shields.io/badge/Verified-72%20PS%20%2B%2020%20Rust%20Tests-475569?style=for-the-badge&labelColor=0F172A)](#directory-structure)
 [![License: MIT](https://img.shields.io/badge/License-MIT-475569?style=for-the-badge&labelColor=0F172A)](LICENSE)
 
 <br />
@@ -33,7 +33,7 @@ Built with **Tauri v2 (Rust) + Svelte 5** and a native **Win32 / PowerShell Engi
 > [!TIP]
 > **What's New in v3.5.1:**
 > - **Clean Release Notes & Metadata in Updater Card:** Structured Markdown parser (`parseReleaseNotesLines`) with installer filename, size (`MB`), and release date badge, plus expandable changelog preview.
-> - **UI Polish (`/better-colors`, `/better-layout`, `/better-ui`):** Semantic surface/text tokens (`--text-on-solid`, `--backdrop-overlay`, `--close-hover-bg`), layered dark-mode card elevation, logical layout properties (`text-start`/`text-end`, `ps-`/`pe-`), optical icon button alignment, and zero-smear theme transitions.
+> - **Theme & Interface Refinements:** Semantic surface/text tokens (`--text-on-solid`, `--backdrop-overlay`, `--close-hover-bg`), layered dark-mode card elevation, logical layout properties (`text-start`/`text-end`, `ps-`/`pe-`), optical icon button alignment, and zero-smear theme transitions.
 > - **Elevated Autostart & Intuitive Programs/Services Redesign (v3.5.x):** Task Scheduler autostart (`UltraGamingMode_AutoStart`), 1-click service feature packs (`Wi-Fi`, `Bluetooth`, `FACEIT`, `Webcam`, `Xbox`, `VPN`, `Printer`), grouped apps with `version.dll` names, and live Windows Startup manager.
 
 ---
@@ -560,7 +560,7 @@ Win11-Gaming-Optimizer/
 │   └── SystemOptimizer.ps1          # Power, MMCSS, Network, Memory, and Defender tuning
 │
 └── Tests/
-    └── Verify-UniversalEngine.ps1   # 381 automated unit tests & hardware simulation suite
+    └── Verify-UniversalEngine.ps1   # 72 automated unit tests & hardware simulation suite
 ```
 
 ---
