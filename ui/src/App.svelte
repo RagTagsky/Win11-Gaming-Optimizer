@@ -283,6 +283,9 @@
         mode = status.mode;
         activeSince = status.activeSince;
       }
+      if (isTauri) {
+        timerLocked = (status.hardware.timerResolution ?? '').includes('зафиксировано');
+      }
       if (status.mode !== 'Normal' || !customProfileSelected) {
         profile = status.profile;
       }
@@ -575,7 +578,9 @@
     if (isTauri) {
       void listen('ugm://state-changed', () => {
         if (!isProcessing && runningRepair === null) {
+          customProfileSelected = false;
           void loadSystemStatus(true);
+          void loadTuning();
           if (servicesLoaded) {
             void loadServices();
           }
@@ -649,7 +654,7 @@
           activeSince =
             action === 'Enable' ? timeFormatter.format(new Date()) : undefined;
           if (action === 'Enable' && (targetProfile === 'competitive' || targetProfile === 'aaa')) {
-            tuningConfig = buildProfileTuningPreset(targetProfile);
+            tuningConfig = buildProfileTuningPreset(targetProfile, tuningConfig);
           }
           if (action === 'Restore' && hardware) {
             hardware = { ...hardware, timerResolution: '1.000 мс (штатный)' };
@@ -695,10 +700,7 @@
     profile = nextProfile;
 
     if (tuningConfig) {
-      const nextCfg = buildProfileTuningPreset(
-        nextProfile,
-        tuningConfig.AutoLockTimerInGaming ?? true
-      );
+      const nextCfg = buildProfileTuningPreset(nextProfile, tuningConfig);
       const savedOk = await handleUpdateTuning(nextCfg, false);
       if (!savedOk) {
         profile = prevProfile;

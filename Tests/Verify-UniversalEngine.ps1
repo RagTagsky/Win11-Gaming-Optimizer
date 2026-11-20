@@ -181,12 +181,14 @@ Assert-Test ($missingDesc.Count -eq 0) "service_descriptions.json covers all $($
 Assert-Test ($stConfig.BlacklistProcesses -notcontains "SearchHost" -and $stConfig.BlacklistProcesses -notcontains "TextInputHost" -and $stConfig.BlacklistProcesses -notcontains "UltraGamingMode") "startup_apps.json excludes SearchHost, TextInputHost, and UltraGamingMode from BlacklistProcesses"
 Assert-Test (
     $tunConfig.AutoLockTimerInGaming -is [bool] -and
+    $tunConfig.AutoPurgeRamInGaming -is [bool] -and
+    $tunConfig.AutoPurgeRamThresholdMB -ge 512 -and
     $tunConfig.DisableFullscreenOptimizations -is [bool] -and
     $tunConfig.DisableMouseAccel -is [bool] -and
     $tunConfig.DisableNvidiaDynamicPstate -is [bool] -and
     $tunConfig.EnableNetAdapterMsi -is [bool] -and
     $tunConfig.InputBufferQueueSize -ge 32
-) "tuning.json defines all 5 boolean switches and InputBufferQueueSize >= 32"
+) "tuning.json defines all 6 boolean switches, AutoPurgeRamThresholdMB >= 512, and InputBufferQueueSize >= 32"
 
 # -- 5. Low-Latency Kernel, DPC, BCDedit, TCP, HAGS & Extended Targets --------
 Write-Host "`n[Test Group 5] Low-Latency Kernel, DPC, Timers, TCP & Extended Targets:" -ForegroundColor Cyan
@@ -350,20 +352,20 @@ Assert-Test ($debloatSnap -is [hashtable] -and $debloatSnap.Count -eq 14) "Get-W
 
 # -- 9. SemVer Parser, Suite Version & URL/Tag Injection Guards ---------------
 Write-Host "`n[Test Group 9] SemVer Engine, Suite Version & URL Security Guards:" -ForegroundColor Cyan
-Assert-Test ((Get-AppCurrentVersion) -eq "3.5.1") "Get-AppCurrentVersion returns '3.5.1'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.5.2") "Get-AppCurrentVersion returns '3.5.2'"
 
 $vBase  = ConvertTo-SemVer "v2.8"
 $vPad   = ConvertTo-SemVer "2.8.0"
 $vPatch = ConvertTo-SemVer "v2.8.1"
-$vCurr  = ConvertTo-SemVer "v3.5.1"
+$vCurr  = ConvertTo-SemVer "v3.5.2"
 Assert-Test ($vBase -eq $vPad -and $vPatch -gt $vBase -and $vCurr -gt $vPatch) "ConvertTo-SemVer normalizes and compares versions accurately"
 Assert-Test ($null -eq (ConvertTo-SemVer "") -and $null -eq (ConvertTo-SemVer "invalid")) "ConvertTo-SemVer returns null on invalid version input"
 
-Assert-Test ((Test-SafeVersionTag -Tag "v3.5.1") -and -not (Test-SafeVersionTag -Tag 'v3.5.1"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
+Assert-Test ((Test-SafeVersionTag -Tag "v3.5.2") -and -not (Test-SafeVersionTag -Tag 'v3.5.2"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
 Assert-Test (
-    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.1") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.1") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.1") -and
+    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.2") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.2") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.2") -and
     -not (Test-SafeGitHubReleaseUrl -Url "file:///C:/Windows/System32/calc.exe")
 ) "Test-SafeGitHubReleaseUrl enforces HTTPS and github.com repository allowlist"
 

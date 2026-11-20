@@ -609,7 +609,7 @@
           <span
             class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums bg-[var(--accent-soft)] text-[var(--accent-text)] border border-[var(--accent-border)]"
           >
-            v{updateInfo?.currentVersion ?? '3.5.1'}
+            v{updateInfo?.currentVersion ?? '3.5.2'}
           </span>
         </div>
         <p class="text-[0.8125rem] text-[var(--text-secondary)]">

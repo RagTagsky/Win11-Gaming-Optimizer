@@ -61,7 +61,9 @@ const PREVIEW_CONFIG: TuningConfig = {
   DisableNvidiaDynamicPstate: false,
   EnableNetAdapterMsi: true,
   InputBufferQueueSize: 100,
-  AutoLockTimerInGaming: true
+  AutoLockTimerInGaming: true,
+  AutoPurgeRamInGaming: true,
+  AutoPurgeRamThresholdMB: 2048
 };
 
 let previewTuningState: TuningConfig = { ...PREVIEW_CONFIG };
@@ -89,15 +91,25 @@ export function resolveProfileFromTuning(cfg: TuningConfig): OptimizationProfile
 
 export function buildProfileTuningPreset(
   profile: 'competitive' | 'aaa',
-  autoLockTimer = true
+  existing?: Partial<TuningConfig> | null
 ): TuningConfig {
+  const thresholdMb =
+    typeof existing?.AutoPurgeRamThresholdMB === 'number' &&
+    Number.isFinite(existing.AutoPurgeRamThresholdMB)
+      ? Math.min(16384, Math.max(512, Math.round(existing.AutoPurgeRamThresholdMB)))
+      : 2048;
+
   return {
     DisableFullscreenOptimizations: profile === 'competitive',
     DisableMouseAccel: false,
     DisableNvidiaDynamicPstate: false,
     EnableNetAdapterMsi: true,
     InputBufferQueueSize: 100,
-    AutoLockTimerInGaming: autoLockTimer
+    AutoLockTimerInGaming:
+      existing?.AutoLockTimerInGaming !== undefined ? Boolean(existing.AutoLockTimerInGaming) : true,
+    AutoPurgeRamInGaming:
+      existing?.AutoPurgeRamInGaming !== undefined ? Boolean(existing.AutoPurgeRamInGaming) : true,
+    AutoPurgeRamThresholdMB: thresholdMb
   };
 }
 
@@ -372,6 +384,9 @@ export async function saveTuningConfig(config: TuningConfig): Promise<TuningConf
   const queueSize = Number.isFinite(config.InputBufferQueueSize)
     ? Math.min(1024, Math.max(32, Math.round(config.InputBufferQueueSize)))
     : 100;
+  const purgeThresholdMb = Number.isFinite(config.AutoPurgeRamThresholdMB)
+    ? Math.min(16384, Math.max(512, Math.round(config.AutoPurgeRamThresholdMB)))
+    : 2048;
 
   const safeConfig: TuningConfig = {
     DisableFullscreenOptimizations: Boolean(config.DisableFullscreenOptimizations),
@@ -380,7 +395,10 @@ export async function saveTuningConfig(config: TuningConfig): Promise<TuningConf
     EnableNetAdapterMsi: Boolean(config.EnableNetAdapterMsi),
     InputBufferQueueSize: queueSize,
     AutoLockTimerInGaming:
-      config.AutoLockTimerInGaming !== undefined ? Boolean(config.AutoLockTimerInGaming) : true
+      config.AutoLockTimerInGaming !== undefined ? Boolean(config.AutoLockTimerInGaming) : true,
+    AutoPurgeRamInGaming:
+      config.AutoPurgeRamInGaming !== undefined ? Boolean(config.AutoPurgeRamInGaming) : true,
+    AutoPurgeRamThresholdMB: purgeThresholdMb
   };
 
   if (isTauri) {
@@ -672,10 +690,7 @@ export async function executeModeAction(
   }
 
   if (action === 'Enable' && (profile === 'competitive' || profile === 'aaa')) {
-    previewTuningState = buildProfileTuningPreset(
-      profile,
-      previewTuningState.AutoLockTimerInGaming
-    );
+    previewTuningState = buildProfileTuningPreset(profile, previewTuningState);
   }
 
   await new Promise((r) => setTimeout(r, 300));
@@ -786,8 +801,8 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
   }
   await new Promise((r) => setTimeout(r, 250));
   return {
-    currentVersion: '3.5.1',
-    latestVersion: '3.5.1',
+    currentVersion: '3.5.2',
+    latestVersion: '3.5.2',
     hasUpdate: false,
     releaseUrl: 'https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest',
     releaseNotes: ''

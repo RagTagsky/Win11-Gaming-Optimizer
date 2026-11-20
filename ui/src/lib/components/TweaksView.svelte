@@ -5,6 +5,7 @@
     Check,
     Cpu,
     Gamepad2,
+    HardDrive,
     Keyboard,
     Loader2,
     Monitor,
@@ -54,7 +55,15 @@
     | 'EnableNetAdapterMsi'
     | 'DisableMouseAccel'
     | 'DisableNvidiaDynamicPstate'
-    | 'AutoLockTimerInGaming';
+    | 'AutoLockTimerInGaming'
+    | 'AutoPurgeRamInGaming';
+
+  const RAM_PURGE_THRESHOLDS: Array<{ value: number; label: string }> = [
+    { value: 1024, label: '1 ГБ (1024 МБ)' },
+    { value: 2048, label: '2 ГБ (2048 МБ)' },
+    { value: 3072, label: '3 ГБ (3072 МБ)' },
+    { value: 4096, label: '4 ГБ (4096 МБ)' }
+  ];
 
   const PRESETS: Array<{ value: number; hint: string }> = [
     { value: 64, hint: 'Минимум' },
@@ -136,6 +145,14 @@
       [key]: !config[key]
     };
     await onUpdateConfig(next);
+  }
+
+  async function selectRamPurgeThreshold(thresholdMb: number) {
+    if (!config || isSaving) return;
+    await onUpdateConfig({
+      ...config,
+      AutoPurgeRamThresholdMB: thresholdMb
+    });
   }
 
   async function selectQueuePreset(value: number) {
@@ -444,6 +461,72 @@
                 : 'translate-x-[3px]'}"
             ></span>
           </button>
+        </div>
+      </div>
+
+      <div class="p-5 space-y-3">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-start gap-3.5 min-w-0">
+            <div
+              class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 {config.AutoPurgeRamInGaming
+                ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                : 'bg-[var(--bg-elevated)] text-[var(--text-muted)]'}"
+            >
+              <HardDrive size={18} strokeWidth={1.75} aria-hidden="true" />
+            </div>
+
+            <div class="min-w-0 space-y-1">
+              <div id="tweak-title-AutoPurgeRamInGaming" class="text-sm font-semibold text-[var(--text-primary)]">
+                Умная фоновая автоочистка Standby-кэша ОЗУ в игровом режиме
+              </div>
+              <p id="tweak-desc-AutoPurgeRamInGaming" class="text-sm leading-relaxed text-[var(--text-secondary)]">
+                Раз в 60 секунд в активном игровом режиме проверяет свободную ОЗУ и автоматически очищает Standby List, если памяти осталось меньше порога (пауза между очистками — 3 мин).
+              </p>
+              <p translate="no" class="font-mono text-xs text-[var(--text-muted)] select-text pt-0.5">
+                AutoPurgeRamInGaming · AutoPurgeRamThresholdMB = {config.AutoPurgeRamThresholdMB} МБ · GlobalMemoryStatusEx
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2.5 shrink-0 pt-1">
+            <span class="hidden sm:inline text-xs font-medium text-[var(--text-muted)] min-w-10 text-end">
+              {config.AutoPurgeRamInGaming ? 'Вкл' : 'Выкл'}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={config.AutoPurgeRamInGaming}
+              aria-labelledby="tweak-title-AutoPurgeRamInGaming"
+              aria-describedby="tweak-desc-AutoPurgeRamInGaming"
+              disabled={isSaving}
+              onclick={() => toggleBooleanSetting('AutoPurgeRamInGaming')}
+              class="ui-switch relative inline-flex items-center w-11 h-6 rounded-full shrink-0 disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span
+                class="ui-switch-thumb pointer-events-none block w-4 h-4 rounded-full {config.AutoPurgeRamInGaming
+                  ? 'translate-x-[22px]'
+                  : 'translate-x-[3px]'}"
+              ></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Порог свободной ОЗУ для автоочистки">
+          <span class="text-xs font-medium text-[var(--text-muted)] me-1">Порог свободной ОЗУ:</span>
+          {#each RAM_PURGE_THRESHOLDS as item (item.value)}
+            {@const activeThreshold = config.AutoPurgeRamThresholdMB === item.value}
+            <button
+              type="button"
+              disabled={isSaving || !config.AutoPurgeRamInGaming}
+              aria-pressed={activeThreshold}
+              onclick={() => selectRamPurgeThreshold(item.value)}
+              class="{activeThreshold
+                ? 'bg-[var(--accent-soft)] text-[var(--accent-text)] border-[var(--accent-border)]'
+                : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-input)] hover:bg-[var(--bg-hover)]'} ui-pressable rounded-lg border px-3 py-1.5 min-h-8 text-[0.8125rem] font-medium tabular-nums disabled:opacity-50 cursor-pointer"
+            >
+              {item.label}
+            </button>
+          {/each}
         </div>
       </div>
     </section>

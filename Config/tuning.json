@@ -4,5 +4,7 @@
   "DisableNvidiaDynamicPstate": false,
   "EnableNetAdapterMsi": true,
   "InputBufferQueueSize": 100,
-  "AutoLockTimerInGaming": true
+  "AutoLockTimerInGaming": true,
+  "AutoPurgeRamInGaming": true,
+  "AutoPurgeRamThresholdMB": 2048
 }

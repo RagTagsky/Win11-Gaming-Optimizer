@@ -60,6 +60,8 @@ export interface TuningConfig {
   EnableNetAdapterMsi: boolean;
   InputBufferQueueSize: number;
   AutoLockTimerInGaming: boolean;
+  AutoPurgeRamInGaming: boolean;
+  AutoPurgeRamThresholdMB: number;
 }
 
 export interface AutostartStatus {

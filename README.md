@@ -1,17 +1,17 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode for Windows 11
-### *Native Desktop GUI · Competitive Low-Latency · Universal Hardware Edition (v3.5.1)*
+### *Native Desktop GUI · Competitive Low-Latency · Universal Hardware Edition (v3.5.2)*
 
 **A zero-risk, snapshot-driven kernel latency, frame pacing, and hardware optimizer for Windows 10 & 11.**  
-Built with **Tauri v2 (Rust) + Svelte 5** and a native **Win32 / PowerShell Engine** — featuring zero-RAM tray mode, elevated Task Scheduler autostart, 1-click service feature packs, automatic `0.500 ms` timer resolution, and a 100% crash-proof `HKLM\RunOnce` failsafe watchdog.
+Built with **Tauri v2 (Rust) + Svelte 5** and a native **Win32 / PowerShell Engine** — featuring zero-RAM tray mode, elevated Task Scheduler autostart, 1-click service feature packs, automatic `0.500 ms` timer resolution, smart background Standby RAM auto-purge, and a 100% crash-proof `HKLM\RunOnce` failsafe watchdog.
 
-[![Release](https://img.shields.io/badge/Release-v3.5.1-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v3.5.2-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
 [![Platform](https://img.shields.io/badge/Windows-11%20%7C%2010%20(x64)-2563EB?style=for-the-badge&logo=windows&logoColor=white&labelColor=0F172A)](https://www.microsoft.com/windows)
-[![Desktop Stack](https://img.shields.io/badge/Tauri%20v2-Rust%20%2B%20Svelte%205-3B82F6?style=for-the-badge&logo=rust&logoColor=white&labelColor=0F172A)](#option-a-native-desktop-gui-app-v351---recommended)
+[![Desktop Stack](https://img.shields.io/badge/Tauri%20v2-Rust%20%2B%20Svelte%205-3B82F6?style=for-the-badge&logo=rust&logoColor=white&labelColor=0F172A)](#option-a-native-desktop-gui-app-v352---recommended)
 [![Watchdog](https://img.shields.io/badge/Failsafe-HKLM%20RunOnce-10B981?style=for-the-badge&labelColor=0F172A)](#the-zero-risk-watchdog-guarantee)
 [![Anti-Cheat Safe](https://img.shields.io/badge/Anti--Cheat-FACEIT%20%7C%20Vanguard%20%7C%20EAC%20%7C%20VAC-10B981?style=for-the-badge&labelColor=0F172A)](#2-ironclad-whitelist-92-protected-services)
-[![Test Suite](https://img.shields.io/badge/Verified-72%20PS%20%2B%2020%20Rust%20Tests-475569?style=for-the-badge&labelColor=0F172A)](#directory-structure)
+[![Test Suite](https://img.shields.io/badge/Verified-72%20PS%20%2B%2021%20Rust%20Tests-475569?style=for-the-badge&labelColor=0F172A)](#directory-structure)
 [![License: MIT](https://img.shields.io/badge/License-MIT-475569?style=for-the-badge&labelColor=0F172A)](LICENSE)
 
 <br />
@@ -31,10 +31,10 @@ Built with **Tauri v2 (Rust) + Svelte 5** and a native **Win32 / PowerShell Engi
 | • **Tauri v2 + Rust + Svelte 5** Fluent UI<br>• **Zero-RAM Tray Mode**: closing `[×]` unloads WebView2 (`0 MB` UI RAM)<br>• **Elevated Autostart** (`--tray`) via Task Scheduler without UAC prompts<br>• **SHA-256 Verified Updater** directly from GitHub Releases | • **Auto `0.500 ms` Timer Lock** in Gaming Mode (`NtSetTimerResolution`)<br>• **GPU & PCIe NIC MSI Mode** (`DevicePriority = 3`)<br>• **Winsock AFD 64 KB Fast-Path** & Nagle off<br>• **High-Polling Input Buffer** (`32–1024` packets, 8000 Hz safe) | • **CPU Unparking** (`CPMINCORES 100`) & Low-Core Guard (`<= 4` threads)<br>• **Discrete GPU Discovery** (AMD ULPS/DXNAVI, NVIDIA Per-Core DPC, Intel Arc)<br>• **Low-RAM Guard (8 GB)** + native `NtSetSystemInformation` Standby Purge<br>• **Mechanical HDD 100% Thrash Guard** | • Full pre-flight JSON snapshot (`Backups\active_state.json`)<br>• Autonomous `HKLM\RunOnce` kernel watchdog (`*UltraGamingModeRestore`)<br>• **92 Protected Whitelist Services** (`FACEIT`, `vgk`, `EAC`, `camsvc`, `PrtSc`)<br>• 1-Click Emergency DisplayPort & Audio Repair |
 
 > [!TIP]
-> **What's New in v3.5.1:**
-> - **Clean Release Notes & Metadata in Updater Card:** Structured Markdown parser (`parseReleaseNotesLines`) with installer filename, size (`MB`), and release date badge, plus expandable changelog preview.
-> - **Theme & Interface Refinements:** Semantic surface/text tokens (`--text-on-solid`, `--backdrop-overlay`, `--close-hover-bg`), layered dark-mode card elevation, logical layout properties (`text-start`/`text-end`, `ps-`/`pe-`), optical icon button alignment, and zero-smear theme transitions.
-> - **Elevated Autostart & Intuitive Programs/Services Redesign (v3.5.x):** Task Scheduler autostart (`UltraGamingMode_AutoStart`), 1-click service feature packs (`Wi-Fi`, `Bluetooth`, `FACEIT`, `Webcam`, `Xbox`, `VPN`, `Printer`), grouped apps with `version.dll` names, and live Windows Startup manager.
+> **What's New in v3.5.2:**
+> - **Upgraded Zero-RAM System Tray Menu:** Right-click the tray icon to instantly purge Standby RAM (`Win32`), toggle the `0.500 ms` timer lock with live checkmark status, switch profiles (`Киберспорт`, `AAA и стриминг`, `Пользовательский`), toggle Gaming Mode, or reboot — all with `0 MB` WebView2 RAM overhead.
+> - **Smart Background Standby RAM Auto-Purge (`AutoPurgeRamInGaming`):** Lightweight native Rust monitor checks available RAM every 60s via `GlobalMemoryStatusEx` during Gaming Mode and automatically flushes Standby List when free memory drops below the configured threshold (`1–4 GB`, 3-minute cooldown).
+> - **Clean Updater, Elevated Autostart & Intuitive Programs/Services UI (v3.5.x):** Task Scheduler autostart (`UltraGamingMode_AutoStart`), 1-click service feature packs (`Wi-Fi`, `Bluetooth`, `FACEIT`, `Webcam`, `Xbox`, `VPN`, `Printer`), grouped apps with `version.dll` titles, and SHA-256 verified in-app updater.
 
 ---
 
@@ -71,9 +71,9 @@ Built with **Tauri v2 (Rust) + Svelte 5** and a native **Win32 / PowerShell Engi
   - [16. BCDedit System Timer Synchronization](#16-bcdedit-system-timer-synchronization)
   - [17. High-Performance TCP Gaming Stack](#17-high-performance-tcp-gaming-stack)
   - [18. Hardware-Accelerated GPU Scheduling (HAGS)](#18-hardware-accelerated-gpu-scheduling-hags)
-  - [19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.1)](#19-competitive-frame-pacing-ring-0-ifeo--top-tier-optimizations-v351)
+  - [19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.2)](#19-competitive-frame-pacing-ring-0-ifeo--top-tier-optimizations-v352)
 - [Quick Start Guide](#quick-start-guide)
-  - [Option A: Native Desktop GUI App (v3.5.1 - Recommended)](#option-a-native-desktop-gui-app-v351---recommended)
+  - [Option A: Native Desktop GUI App (v3.5.2 - Recommended)](#option-a-native-desktop-gui-app-v352---recommended)
   - [Option B: Interactive TUI Menu](#option-b-interactive-tui-menu)
   - [Option C: PowerShell CLI Usage](#option-c-powershell-cli-usage)
 - [Menu Overview & CLI Reference](#menu-overview-cli-reference)
@@ -92,7 +92,7 @@ Modern Windows 11 is packed with hundreds of background processes, telemetry col
 - **Micro-Freezes on Frame Boundaries:** Secondary threads stealing CPU cycles from game render loops.
 - **1% Low FPS Drops:** Jitter in frame pacing even when average FPS remains high.
 
-**Ultra Gaming Mode v3.5.1** solves this without permanently mangling your operating system. Unlike brittle "debloater" scripts that break Windows Update, brick microphone privacy permissions, or cause black screens on DisplayPort monitors, Ultra Gaming Mode utilizes a **non-destructive, snapshot-driven lifecycle**:
+**Ultra Gaming Mode v3.5.2** solves this without permanently mangling your operating system. Unlike brittle "debloater" scripts that break Windows Update, brick microphone privacy permissions, or cause black screens on DisplayPort monitors, Ultra Gaming Mode utilizes a **non-destructive, snapshot-driven lifecycle**:
 
 ```
 [Normal Windows] ──(Arm Mode)──> [System Snapshot] ──(Reboot)──> [Stripped Ultra Gaming Mode]
@@ -105,7 +105,7 @@ Modern Windows 11 is packed with hundreds of background processes, telemetry col
 
 ## 🛠️ Universal Hardware Auto-Detection Engine
 
-Ultra Gaming Mode v3.5.1 features an autonomous hardware discovery engine (`Get-HardwareProfile`) that inspects your machine's physical architecture during diagnostic checks, arming, and boot stages. Rather than applying blunt, one-size-fits-all tweaks, the optimizer detects exact CPU topologies, GPU bus interfaces, physical memory limits, and storage media types to dynamically tailor kernel and driver optimizations to your exact PC.
+Ultra Gaming Mode v3.5.2 features an autonomous hardware discovery engine (`Get-HardwareProfile`) that inspects your machine's physical architecture during diagnostic checks, arming, and boot stages. Rather than applying blunt, one-size-fits-all tweaks, the optimizer detects exact CPU topologies, GPU bus interfaces, physical memory limits, and storage media types to dynamically tailor kernel and driver optimizations to your exact PC.
 
 ```
        ┌────────────────────────────────────────────────────────┐
@@ -372,7 +372,7 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 - Automatically disabled on AMD RDNA2/Polaris cards (`HwSchMode = 1`) to eliminate known Source 2 engine (CS2) frame-pacing micro-stutter.
 - Fully snapshot-backed and restored cleanly in `active_state.json`.
 
-### 19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.1)
+### 19. Competitive Frame Pacing, Ring-0 IFEO & Top-Tier Optimizations (v3.5.2)
 - **Winsock AFD Fast-Path & NDIS Multi-Core RSS:** Sets `FastSendDatagramThreshold = 65536`, `FastCopyReceiveThreshold = 65536`, `DefaultSendWindow = 65536`, and `DefaultReceiveWindow = 65536` under `HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters` so UDP game packets up to 64 KB bypass Winsock kernel buffering, and sets `MaxNumRssCpus = 4` under `Services\NDIS\Parameters` for multi-core network interrupt scaling.
 - **Kernel Power Telemetry Suppression & Process Consolidation:** Disables Windows energy estimation telemetry (`DisableTaggedEnergyLogging = 1`, `TelemetryMaxApplication = 0`, `TelemetryMaxTagPerApplication = 0` under `Control\Power\EnergyEstimation\TaggedEnergy`), disables timer coalescing (`CoalescingTimerInterval = 0`) and Fast Startup (`HiberbootEnabled = 0`), and consolidates `svchost.exe` processes (`SvcHostSplitThresholdInKB = 67108864` on systems with >= 16 GB RAM; automatically skipped on `LowRamProfile`).
 - **AMD Radeon DXNAVI Anti-Stutter & Clock Lock:** Alongside disabling PCIe link power state drops (`EnableAspmL0s = 0`, `EnableAspmL1 = 0`) and locking AMD UMD ShaderCache to `Always On (0x32, 0x00)`, configures `StutterMode = 0` and `PP_SclkDeepSleepDisable = 1` across AMD display class keys (`{4d36e968-e325-11ce-bfc1-08002be10318}`) to eliminate DXNAVI core downclocking micro-stutters.
@@ -390,9 +390,9 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ## 🚀 Quick Start Guide
 
-### Option A: Native Desktop GUI App (v3.5.1 - Recommended)
+### Option A: Native Desktop GUI App (v3.5.2 - Recommended)
 
-Ultra Gaming Mode v3.5.1 ships as a self-contained Windows 11 Native Desktop application built on **Tauri v2 (Rust)** and **Svelte 5**. All PowerShell engines, JSON configs, and self-tests are embedded inside **`UltraGamingMode.exe`** and synchronized to **`C:\Program Files\UltraGamingMode`**.
+Ultra Gaming Mode v3.5.2 ships as a self-contained Windows 11 Native Desktop application built on **Tauri v2 (Rust)** and **Svelte 5**. All PowerShell engines, JSON configs, and self-tests are embedded inside **`UltraGamingMode.exe`** and synchronized to **`C:\Program Files\UltraGamingMode`**.
 
 #### 📦 Release Packages
 | Package | Format | Best For |
@@ -432,7 +432,7 @@ Ultra Gaming Mode v3.5.1 ships as a self-contained Windows 11 Native Desktop app
 
 ```
 ============================================================
-           ULTRA GAMING MODE CONTROLLER  v3.5.1
+           ULTRA GAMING MODE CONTROLLER  v3.5.2
             Universal Hardware Adaptive Suite
 ============================================================
 
@@ -550,7 +550,7 @@ Win11-Gaming-Optimizer/
 │
 ├── ui/                              # Native Desktop frontend & Tauri Rust backend
 │   ├── src/                         # Svelte 5 (Runes) + Tailwind CSS v4 + Lucide Icons + ConfirmDialog
-│   └── src-tauri/                   # Rust application core with native window chrome, theme sync & 20 unit tests
+│   └── src-tauri/                   # Rust application core with native window chrome, theme sync & 21 unit tests
 │
 ├── Config/
 │   ├── service_descriptions.json    # Localized Russian descriptions for all 297+ managed Windows services

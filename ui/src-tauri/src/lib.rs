@@ -85,11 +85,20 @@ static MODE_ACTION_BUSY: AtomicBool = AtomicBool::new(false);
 static TIMER_LOCKED: AtomicBool = AtomicBool::new(false);
 static START_IN_TRAY: AtomicBool = AtomicBool::new(false);
 static PENDING_RESTORE_TRIGGERED: AtomicBool = AtomicBool::new(false);
+static CUSTOM_PROFILE_OVERRIDE: AtomicBool = AtomicBool::new(false);
+
+pub const MIN_AUTO_PURGE_RAM_THRESHOLD_MB: u32 = 512;
+pub const MAX_AUTO_PURGE_RAM_THRESHOLD_MB: u32 = 16384;
+pub const DEFAULT_AUTO_PURGE_RAM_THRESHOLD_MB: u32 = 2048;
+pub const AUTO_PURGE_RAM_COOLDOWN_SECS: u64 = 180;
 
 #[cfg(not(test))]
 fn set_tray_toggle_enabled(enabled: bool) {
     if let Some(ctrl) = TRAY_CONTROLLER.get() {
         let _ = ctrl.toggle_item.set_enabled(enabled);
+        let _ = ctrl.profile_competitive_item.set_enabled(enabled);
+        let _ = ctrl.profile_aaa_item.set_enabled(enabled);
+        let _ = ctrl.profile_custom_item.set_enabled(enabled);
     }
 }
 
@@ -146,6 +155,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_auto_purge_ram_threshold_mb() -> u32 {
+    DEFAULT_AUTO_PURGE_RAM_THRESHOLD_MB
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct HardwareInfo {
     pub cpu: String,
@@ -160,7 +173,7 @@ pub struct HardwareInfo {
     pub timer_resolution: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct TuningConfig {
     #[serde(rename = "DisableFullscreenOptimizations")]
     pub disable_fullscreen_optimizations: bool,
@@ -174,6 +187,13 @@ pub struct TuningConfig {
     pub input_buffer_queue_size: u32,
     #[serde(rename = "AutoLockTimerInGaming", default = "default_true")]
     pub auto_lock_timer_in_gaming: bool,
+    #[serde(rename = "AutoPurgeRamInGaming", default = "default_true")]
+    pub auto_purge_ram_in_gaming: bool,
+    #[serde(
+        rename = "AutoPurgeRamThresholdMB",
+        default = "default_auto_purge_ram_threshold_mb"
+    )]
+    pub auto_purge_ram_threshold_mb: u32,
 }
 
 impl Default for TuningConfig {
@@ -185,6 +205,8 @@ impl Default for TuningConfig {
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
             auto_lock_timer_in_gaming: true,
+            auto_purge_ram_in_gaming: true,
+            auto_purge_ram_threshold_mb: DEFAULT_AUTO_PURGE_RAM_THRESHOLD_MB,
         }
     }
 }
@@ -1133,6 +1155,18 @@ mod win_hw {
                     total_gb.round(),
                     avail_gb
                 ))
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn query_available_ram_mb() -> Option<u64> {
+        unsafe {
+            let mut mem: MEMORYSTATUSEX = std::mem::zeroed();
+            mem.dw_length = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+            if GlobalMemoryStatusEx(&mut mem) != 0 && mem.ull_total_phys > 0 {
+                Some(mem.ull_avail_phys / (1024 * 1024))
             } else {
                 None
             }
@@ -2361,6 +2395,10 @@ mod timer {
         }
     }
 
+    pub fn lock_timer_resolution_05ms() -> Result<(f64, f64), String> {
+        set_timer_resolution(5000)
+    }
+
     pub fn unlock_timer_resolution() -> Result<f64, String> {
         unsafe {
             let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr());
@@ -2393,6 +2431,9 @@ mod timer {
     pub fn set_timer_resolution(_desired_100ns: u32) -> Result<(f64, f64), String> {
         super::TIMER_LOCKED.store(true, std::sync::atomic::Ordering::SeqCst);
         Ok((0.5, 0.5))
+    }
+    pub fn lock_timer_resolution_05ms() -> Result<(f64, f64), String> {
+        set_timer_resolution(5000)
     }
     pub fn unlock_timer_resolution() -> Result<f64, String> {
         super::TIMER_LOCKED.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -2685,12 +2726,20 @@ fn decode_powershell_output(bytes: &[u8]) -> String {
     lines_out.join("\n")
 }
 
+fn normalize_tuning_config(mut cfg: TuningConfig) -> TuningConfig {
+    cfg.input_buffer_queue_size = cfg.input_buffer_queue_size.clamp(32, 1024);
+    cfg.auto_purge_ram_threshold_mb = cfg
+        .auto_purge_ram_threshold_mb
+        .clamp(MIN_AUTO_PURGE_RAM_THRESHOLD_MB, MAX_AUTO_PURGE_RAM_THRESHOLD_MB);
+    cfg
+}
+
 fn load_tuning_from_disk(root: &PathBuf) -> TuningConfig {
     let tuning_path = root.join("Config").join("tuning.json");
     if let Ok(raw) = std::fs::read_to_string(&tuning_path) {
         let clean = raw.trim_start_matches('\u{feff}');
         if let Ok(cfg) = serde_json::from_str::<TuningConfig>(clean) {
-            return cfg;
+            return normalize_tuning_config(cfg);
         }
     }
     TuningConfig::default()
@@ -2701,8 +2750,7 @@ fn write_tuning_to_disk(root: &Path, cfg: &TuningConfig) -> Result<(), String> {
     std::fs::create_dir_all(&config_dir)
         .map_err(|e| format!("Не удалось создать папку Config: {}", e))?;
     let tuning_path = config_dir.join("tuning.json");
-    let mut safe_cfg = cfg.clone();
-    safe_cfg.input_buffer_queue_size = safe_cfg.input_buffer_queue_size.clamp(32, 1024);
+    let safe_cfg = normalize_tuning_config(cfg.clone());
     let serialized = serde_json::to_string_pretty(&safe_cfg)
         .map_err(|e| format!("Ошибка сериализации tuning.json: {}", e))?;
     std::fs::write(&tuning_path, serialized.as_bytes())
@@ -2726,6 +2774,63 @@ fn resolve_profile_name(cfg: &TuningConfig) -> String {
         "aaa".to_string()
     } else {
         "custom".to_string()
+    }
+}
+
+fn resolve_effective_profile_name(cfg: &TuningConfig) -> String {
+    if CUSTOM_PROFILE_OVERRIDE.load(Ordering::SeqCst) {
+        "custom".to_string()
+    } else {
+        resolve_profile_name(cfg)
+    }
+}
+
+fn build_profile_preset_config(profile: &str, existing: &TuningConfig) -> TuningConfig {
+    let base = normalize_tuning_config(existing.clone());
+    match profile {
+        "competitive" => TuningConfig {
+            disable_fullscreen_optimizations: true,
+            disable_mouse_accel: false,
+            disable_nvidia_dynamic_pstate: false,
+            enable_net_adapter_msi: true,
+            input_buffer_queue_size: 100,
+            auto_lock_timer_in_gaming: base.auto_lock_timer_in_gaming,
+            auto_purge_ram_in_gaming: base.auto_purge_ram_in_gaming,
+            auto_purge_ram_threshold_mb: base.auto_purge_ram_threshold_mb,
+        },
+        "aaa" => TuningConfig {
+            disable_fullscreen_optimizations: false,
+            disable_mouse_accel: false,
+            disable_nvidia_dynamic_pstate: false,
+            enable_net_adapter_msi: true,
+            input_buffer_queue_size: 100,
+            auto_lock_timer_in_gaming: base.auto_lock_timer_in_gaming,
+            auto_purge_ram_in_gaming: base.auto_purge_ram_in_gaming,
+            auto_purge_ram_threshold_mb: base.auto_purge_ram_threshold_mb,
+        },
+        _ => base,
+    }
+}
+
+fn should_auto_purge_ram(
+    mode: &str,
+    cfg: &TuningConfig,
+    available_ram_mb: u64,
+    elapsed_since_last_purge_secs: Option<u64>,
+) -> bool {
+    if mode != "Gaming" || !cfg.auto_purge_ram_in_gaming {
+        return false;
+    }
+    let threshold = cfg
+        .auto_purge_ram_threshold_mb
+        .clamp(MIN_AUTO_PURGE_RAM_THRESHOLD_MB, MAX_AUTO_PURGE_RAM_THRESHOLD_MB)
+        as u64;
+    if available_ram_mb >= threshold {
+        return false;
+    }
+    match elapsed_since_last_purge_secs {
+        Some(secs) => secs >= AUTO_PURGE_RAM_COOLDOWN_SECS,
+        None => true,
     }
 }
 
@@ -3062,7 +3167,7 @@ fn read_system_status_sync() -> Result<SystemStatus, String> {
     }
 
     let tuning = load_tuning_from_disk(&root);
-    let profile = resolve_profile_name(&tuning);
+    let profile = resolve_effective_profile_name(&tuning);
 
     #[cfg(target_os = "windows")]
     let display = win_hw::detect_display_summary();
@@ -3079,9 +3184,22 @@ fn read_system_status_sync() -> Result<SystemStatus, String> {
     #[cfg(not(target_os = "windows"))]
     let mpo_status = "Default".to_string();
 
+    let is_locked = TIMER_LOCKED.load(Ordering::SeqCst);
     let timer_resolution = timer::query_timer_resolution()
-        .map(|ms| format!("{:.3} мс", ms))
-        .or_else(|| Some("1.000 мс (штатный)".into()));
+        .map(|ms| {
+            if is_locked {
+                format!("{:.3} мс (зафиксировано)", ms)
+            } else {
+                format!("{:.3} мс", ms)
+            }
+        })
+        .or_else(|| {
+            Some(if is_locked {
+                "0.500 мс (зафиксировано)".into()
+            } else {
+                "1.000 мс (штатный)".into()
+            })
+        });
 
     Ok(SystemStatus {
         mode,
@@ -3130,8 +3248,7 @@ fn should_trigger_live_tuning(raw_state: &str) -> bool {
 
 fn write_tuning_config_sync(config: TuningConfig) -> Result<TuningConfig, String> {
     let root = get_workspace_root();
-    let mut normalized = config;
-    normalized.input_buffer_queue_size = normalized.input_buffer_queue_size.clamp(32, 1024);
+    let normalized = normalize_tuning_config(config);
     write_tuning_to_disk(&root, &normalized)?;
 
     let active_state_path = root.join("Backups").join("active_state.json");
@@ -3159,11 +3276,29 @@ fn write_tuning_config_sync(config: TuningConfig) -> Result<TuningConfig, String
     Ok(normalized)
 }
 
+fn apply_profile_from_tray_sync(profile: &str) -> Result<TuningConfig, String> {
+    let root = get_workspace_root();
+    let current = load_tuning_from_disk(&root);
+    if profile == "custom" {
+        CUSTOM_PROFILE_OVERRIDE.store(true, Ordering::SeqCst);
+        return Ok(current);
+    }
+    CUSTOM_PROFILE_OVERRIDE.store(false, Ordering::SeqCst);
+    let preset = build_profile_preset_config(profile, &current);
+    write_tuning_config_sync(preset)
+}
+
 #[tauri::command]
-async fn save_tuning_config(config: TuningConfig) -> Result<TuningConfig, String> {
-    tauri::async_runtime::spawn_blocking(move || write_tuning_config_sync(config))
+async fn save_tuning_config(
+    app: tauri::AppHandle,
+    config: TuningConfig,
+) -> Result<TuningConfig, String> {
+    CUSTOM_PROFILE_OVERRIDE.store(false, Ordering::SeqCst);
+    let saved = tauri::async_runtime::spawn_blocking(move || write_tuning_config_sync(config))
         .await
-        .map_err(|e| format!("Сбой сохранения конфигурации: {}", e))?
+        .map_err(|e| format!("Сбой сохранения конфигурации: {}", e))??;
+    sync_tray_and_emit(&app, false);
+    Ok(saved)
 }
 
 fn read_services_lists_from_root(
@@ -4717,8 +4852,8 @@ fn start_dragging(window: tauri::WebviewWindow) {
 }
 
 #[tauri::command]
-async fn lock_timer_resolution() -> Result<ActionResult, String> {
-    tauri::async_runtime::spawn_blocking(|| match timer::set_timer_resolution(5000) {
+async fn lock_timer_resolution(app: tauri::AppHandle) -> Result<ActionResult, String> {
+    let res = tauri::async_runtime::spawn_blocking(|| match timer::lock_timer_resolution_05ms() {
         Ok((cur_ms, _max_ms)) => Ok(ActionResult {
             success: true,
             message: format!("Разрешение системного таймера установлено: {:.3} мс", cur_ms),
@@ -4726,12 +4861,14 @@ async fn lock_timer_resolution() -> Result<ActionResult, String> {
         Err(e) => Err(format!("Ошибка синхронизации таймера: {}", e)),
     })
     .await
-    .map_err(|e| format!("Сбой установки системного таймера: {}", e))?
+    .map_err(|e| format!("Сбой установки системного таймера: {}", e))??;
+    sync_tray_and_emit(&app, false);
+    Ok(res)
 }
 
 #[tauri::command]
-async fn unlock_timer_resolution() -> Result<ActionResult, String> {
-    tauri::async_runtime::spawn_blocking(|| match timer::unlock_timer_resolution() {
+async fn unlock_timer_resolution(app: tauri::AppHandle) -> Result<ActionResult, String> {
+    let res = tauri::async_runtime::spawn_blocking(|| match timer::unlock_timer_resolution() {
         Ok(cur_ms) => Ok(ActionResult {
             success: true,
             message: format!(
@@ -4742,7 +4879,9 @@ async fn unlock_timer_resolution() -> Result<ActionResult, String> {
         Err(e) => Err(format!("Ошибка сброса системного таймера: {}", e)),
     })
     .await
-    .map_err(|e| format!("Сбой сброса системного таймера: {}", e))?
+    .map_err(|e| format!("Сбой сброса системного таймера: {}", e))??;
+    sync_tray_and_emit(&app, false);
+    Ok(res)
 }
 
 const AUTOSTART_TASK_NAME: &str = "UltraGamingMode_AutoStart";
@@ -5759,7 +5898,13 @@ struct TrayController {
     tray: tauri::tray::TrayIcon<tauri::Wry>,
     status_item: tauri::menu::MenuItem<tauri::Wry>,
     toggle_item: tauri::menu::MenuItem<tauri::Wry>,
+    timer_item: tauri::menu::CheckMenuItem<tauri::Wry>,
+    profile_competitive_item: tauri::menu::CheckMenuItem<tauri::Wry>,
+    profile_aaa_item: tauri::menu::CheckMenuItem<tauri::Wry>,
+    profile_custom_item: tauri::menu::CheckMenuItem<tauri::Wry>,
     last_mode: Mutex<String>,
+    last_profile: Mutex<String>,
+    last_timer_locked: AtomicBool,
 }
 
 pub fn build_tray_icon(mode: &str) -> tauri::image::Image<'static> {
@@ -5829,23 +5974,54 @@ fn mode_to_tray_meta(mode: &str) -> (&'static str, &'static str, &'static str) {
 }
 
 fn sync_tray_and_emit(app: &tauri::AppHandle, force_emit: bool) {
-    let mode = read_current_mode_fast(&get_workspace_root());
+    let root = get_workspace_root();
+    let mode = read_current_mode_fast(&root);
+    let profile = resolve_effective_profile_name(&load_tuning_from_disk(&root));
+    let timer_locked = TIMER_LOCKED.load(Ordering::SeqCst);
     let mut changed = force_emit;
 
     if let Some(ctrl) = TRAY_CONTROLLER.get() {
+        let mut mode_changed = false;
         if let Ok(mut prev) = ctrl.last_mode.lock() {
             if *prev != mode {
                 *prev = mode.clone();
+                mode_changed = true;
                 changed = true;
-            } else if !force_emit {
-                return;
             }
         }
-        let (status_text, tooltip, toggle_text) = mode_to_tray_meta(&mode);
-        let _ = ctrl.status_item.set_text(status_text);
-        let _ = ctrl.toggle_item.set_text(toggle_text);
-        let _ = ctrl.tray.set_icon(Some(build_tray_icon(&mode)));
-        let _ = ctrl.tray.set_tooltip(Some(tooltip));
+        let mut profile_changed = false;
+        if let Ok(mut prev_p) = ctrl.last_profile.lock() {
+            if *prev_p != profile {
+                *prev_p = profile.clone();
+                profile_changed = true;
+                changed = true;
+            }
+        }
+        let prev_timer = ctrl.last_timer_locked.swap(timer_locked, Ordering::SeqCst);
+        let timer_changed = prev_timer != timer_locked;
+        if timer_changed {
+            changed = true;
+        }
+
+        if !changed {
+            return;
+        }
+
+        if mode_changed || force_emit {
+            let (status_text, tooltip, toggle_text) = mode_to_tray_meta(&mode);
+            let _ = ctrl.status_item.set_text(status_text);
+            let _ = ctrl.toggle_item.set_text(toggle_text);
+            let _ = ctrl.tray.set_icon(Some(build_tray_icon(&mode)));
+            let _ = ctrl.tray.set_tooltip(Some(tooltip));
+        }
+        if timer_changed || force_emit {
+            let _ = ctrl.timer_item.set_checked(timer_locked);
+        }
+        if profile_changed || force_emit {
+            let _ = ctrl.profile_competitive_item.set_checked(profile == "competitive");
+            let _ = ctrl.profile_aaa_item.set_checked(profile == "aaa");
+            let _ = ctrl.profile_custom_item.set_checked(profile == "custom");
+        }
     }
 
     if changed && app.get_webview_window("main").is_some() {
@@ -5871,21 +6047,57 @@ fn show_or_recreate_main_window(app: &tauri::AppHandle) {
 }
 
 fn setup_tray_and_watcher(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let initial_mode = read_current_mode_fast(&get_workspace_root());
+    let root = get_workspace_root();
+    let initial_mode = read_current_mode_fast(&root);
+    let initial_profile = resolve_effective_profile_name(&load_tuning_from_disk(&root));
+    let initial_timer_locked = TIMER_LOCKED.load(Ordering::SeqCst);
     let (status_text, tooltip, toggle_text) = mode_to_tray_meta(&initial_mode);
 
     let status_item = tauri::menu::MenuItemBuilder::with_id("tray-status", status_text)
         .enabled(false)
         .build(app)?;
-    let open_item = tauri::menu::MenuItemBuilder::with_id("tray-open", "Открыть окно")
+    let open_item = tauri::menu::MenuItemBuilder::with_id("tray-open", "Открыть панель управления")
         .build(app)?;
     let toggle_item = tauri::menu::MenuItemBuilder::with_id("tray-toggle", toggle_text)
         .build(app)?;
-    let clean_ram_item = tauri::menu::MenuItemBuilder::with_id("tray-clean-ram", "Очистить кэш ОЗУ")
+    let clean_ram_item = tauri::menu::MenuItemBuilder::with_id(
+        "tray-clean-ram",
+        "Очистить кэш ОЗУ (Standby List)",
+    )
+    .build(app)?;
+    let timer_item = tauri::menu::CheckMenuItemBuilder::with_id("tray-timer", "Таймер 0.500 мс")
+        .checked(initial_timer_locked)
         .build(app)?;
+
+    let profile_competitive_item = tauri::menu::CheckMenuItemBuilder::with_id(
+        "tray-profile-competitive",
+        "Киберспорт (FSE + 100)",
+    )
+    .checked(initial_profile == "competitive")
+    .build(app)?;
+    let profile_aaa_item = tauri::menu::CheckMenuItemBuilder::with_id(
+        "tray-profile-aaa",
+        "AAA и стриминг (Flip + 100)",
+    )
+    .checked(initial_profile == "aaa")
+    .build(app)?;
+    let profile_custom_item = tauri::menu::CheckMenuItemBuilder::with_id(
+        "tray-profile-custom",
+        "Пользовательский (tuning.json)",
+    )
+    .checked(initial_profile == "custom")
+    .build(app)?;
+
+    let profile_submenu =
+        tauri::menu::SubmenuBuilder::with_id(app, "tray-profile-menu", "Профиль оптимизации")
+            .item(&profile_competitive_item)
+            .item(&profile_aaa_item)
+            .item(&profile_custom_item)
+            .build()?;
+
     let reboot_item = tauri::menu::MenuItemBuilder::with_id("tray-reboot", "Перезагрузить ПК...")
         .build(app)?;
-    let exit_item = tauri::menu::MenuItemBuilder::with_id("tray-exit", "Выход")
+    let exit_item = tauri::menu::MenuItemBuilder::with_id("tray-exit", "Выход (закрыть из трея)")
         .build(app)?;
 
     let menu = tauri::menu::MenuBuilder::new(app)
@@ -5895,6 +6107,8 @@ fn setup_tray_and_watcher(app: &mut tauri::App) -> Result<(), Box<dyn std::error
         .separator()
         .item(&toggle_item)
         .item(&clean_ram_item)
+        .item(&timer_item)
+        .item(&profile_submenu)
         .item(&reboot_item)
         .separator()
         .item(&exit_item)
@@ -5934,15 +6148,48 @@ fn setup_tray_and_watcher(app: &mut tauri::App) -> Result<(), Box<dyn std::error
                             } else {
                                 "Enable"
                             };
-                            let profile = resolve_profile_name(&load_tuning_from_disk(&root));
+                            let profile =
+                                resolve_effective_profile_name(&load_tuning_from_disk(&root));
                             let _ = run_execute_mode_action_sync(action, &profile);
                         }
                         sync_tray_and_emit(&app_clone, true);
                     });
                 }
                 "tray-clean-ram" => {
-                    std::thread::spawn(|| {
-                        let _ = clean_memory_native_sync();
+                    std::thread::spawn(move || {
+                        if let Ok(res) = clean_memory_native_sync() {
+                            if let Some(ctrl) = TRAY_CONTROLLER.get() {
+                                let _ = ctrl
+                                    .tray
+                                    .set_tooltip(Some(format!("Ultra Gaming Mode — {}", res.message)));
+                            }
+                            if app_clone.get_webview_window("main").is_some() {
+                                let _ = app_clone.emit("ugm://state-changed", "ram-cleaned");
+                            }
+                        }
+                    });
+                }
+                "tray-timer" => {
+                    std::thread::spawn(move || {
+                        if TIMER_LOCKED.load(Ordering::SeqCst) {
+                            let _ = timer::unlock_timer_resolution();
+                        } else {
+                            let _ = timer::lock_timer_resolution_05ms();
+                        }
+                        sync_tray_and_emit(&app_clone, true);
+                    });
+                }
+                "tray-profile-competitive" | "tray-profile-aaa" | "tray-profile-custom" => {
+                    let target_profile = match event.id().as_ref() {
+                        "tray-profile-competitive" => "competitive",
+                        "tray-profile-aaa" => "aaa",
+                        _ => "custom",
+                    };
+                    std::thread::spawn(move || {
+                        if !MODE_ACTION_BUSY.load(Ordering::SeqCst) {
+                            let _ = apply_profile_from_tray_sync(target_profile);
+                        }
+                        sync_tray_and_emit(&app_clone, true);
                     });
                 }
                 "tray-reboot" => {
@@ -5966,7 +6213,13 @@ fn setup_tray_and_watcher(app: &mut tauri::App) -> Result<(), Box<dyn std::error
         tray,
         status_item,
         toggle_item,
+        timer_item,
+        profile_competitive_item,
+        profile_aaa_item,
+        profile_custom_item,
         last_mode: Mutex::new(initial_mode),
+        last_profile: Mutex::new(initial_profile),
+        last_timer_locked: AtomicBool::new(initial_timer_locked),
     });
 
     #[cfg(target_os = "windows")]
@@ -5982,6 +6235,9 @@ fn setup_tray_and_watcher(app: &mut tauri::App) -> Result<(), Box<dyn std::error
             std::fs::metadata(&active_state_path)
                 .ok()
                 .map(|m| (m.modified().ok(), m.len()));
+        let mut last_ram_check = std::time::Instant::now();
+        let mut last_auto_ram_purge: Option<std::time::Instant> = None;
+
         loop {
             #[cfg(target_os = "windows")]
             let woken = win_hw::wait_wake_event_ms(wake_event, 3000);
@@ -6006,6 +6262,34 @@ fn setup_tray_and_watcher(app: &mut tauri::App) -> Result<(), Box<dyn std::error
                 last_sig = sig;
                 invalidate_active_state_cache();
                 sync_tray_and_emit(&watcher_app, false);
+            }
+
+            if last_ram_check.elapsed() >= std::time::Duration::from_secs(60) {
+                last_ram_check = std::time::Instant::now();
+                let mode_now = read_current_mode_fast(&root);
+                let tuning_now = load_tuning_from_disk(&root);
+                let elapsed_since_purge = last_auto_ram_purge.map(|t| t.elapsed().as_secs());
+                #[cfg(target_os = "windows")]
+                if let Some(avail_mb) = win_hw::query_available_ram_mb() {
+                    if should_auto_purge_ram(&mode_now, &tuning_now, avail_mb, elapsed_since_purge) {
+                        if let Ok(res) = clean_memory_native_sync() {
+                            last_auto_ram_purge = Some(std::time::Instant::now());
+                            if let Some(ctrl) = TRAY_CONTROLLER.get() {
+                                let _ = ctrl.tray.set_tooltip(Some(format!(
+                                    "Ultra Gaming Mode — Авто: {}",
+                                    res.message
+                                )));
+                            }
+                            if watcher_app.get_webview_window("main").is_some() {
+                                let _ = watcher_app.emit("ugm://state-changed", "auto-ram-purged");
+                            }
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = (mode_now, tuning_now, elapsed_since_purge, &mut last_auto_ram_purge);
+                }
             }
         }
     });
@@ -6038,7 +6322,8 @@ pub fn run() {
                 let root = get_workspace_root();
                 let mode = read_current_mode_fast(&root);
                 if mode == "Gaming" && load_tuning_from_disk(&root).auto_lock_timer_in_gaming {
-                    let _ = timer::set_timer_resolution(5000);
+                    let _ = timer::lock_timer_resolution_05ms();
+                    sync_tray_and_emit(&startup_app, true);
                 }
                 if START_IN_TRAY.load(Ordering::SeqCst)
                     && mode == "RestoringPending"
@@ -6160,6 +6445,8 @@ mod tests {
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
             auto_lock_timer_in_gaming: true,
+            auto_purge_ram_in_gaming: true,
+            auto_purge_ram_threshold_mb: 2048,
         };
         assert_eq!(resolve_profile_name(&comp), "competitive");
 
@@ -6170,6 +6457,8 @@ mod tests {
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
             auto_lock_timer_in_gaming: true,
+            auto_purge_ram_in_gaming: false,
+            auto_purge_ram_threshold_mb: 4096,
         };
         assert_eq!(resolve_profile_name(&aaa), "aaa");
 
@@ -6180,6 +6469,8 @@ mod tests {
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
             auto_lock_timer_in_gaming: true,
+            auto_purge_ram_in_gaming: true,
+            auto_purge_ram_threshold_mb: 2048,
         };
         assert_eq!(resolve_profile_name(&custom_mouse), "custom");
 
@@ -6190,6 +6481,8 @@ mod tests {
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 100,
             auto_lock_timer_in_gaming: true,
+            auto_purge_ram_in_gaming: true,
+            auto_purge_ram_threshold_mb: 2048,
         };
         assert_eq!(resolve_profile_name(&custom_nvidia), "custom");
 
@@ -6200,8 +6493,19 @@ mod tests {
             enable_net_adapter_msi: true,
             input_buffer_queue_size: 120,
             auto_lock_timer_in_gaming: true,
+            auto_purge_ram_in_gaming: true,
+            auto_purge_ram_threshold_mb: 2048,
         };
         assert_eq!(resolve_profile_name(&custom_queue), "custom");
+
+        // Tray profile preset switches FSE/queue while preserving background timer & RAM purge settings
+        let preserved = build_profile_preset_config("aaa", &custom_nvidia);
+        assert!(!preserved.disable_fullscreen_optimizations);
+        assert!(!preserved.disable_nvidia_dynamic_pstate);
+        assert_eq!(preserved.input_buffer_queue_size, 100);
+        assert!(preserved.auto_lock_timer_in_gaming);
+        assert!(preserved.auto_purge_ram_in_gaming);
+        assert_eq!(preserved.auto_purge_ram_threshold_mb, 2048);
     }
 
     #[test]
@@ -6212,6 +6516,10 @@ mod tests {
             "InputBufferQueueSize must respect >= 32 safety floor, got {}",
             cfg.input_buffer_queue_size
         );
+        assert!(
+            (MIN_AUTO_PURGE_RAM_THRESHOLD_MB..=MAX_AUTO_PURGE_RAM_THRESHOLD_MB)
+                .contains(&cfg.auto_purge_ram_threshold_mb)
+        );
         let serialized = serde_json::to_string(&cfg).expect("TuningConfig should serialize");
         assert!(serialized.contains("\"DisableFullscreenOptimizations\""));
         assert!(serialized.contains("\"DisableMouseAccel\""));
@@ -6219,6 +6527,37 @@ mod tests {
         assert!(serialized.contains("\"EnableNetAdapterMsi\""));
         assert!(serialized.contains("\"InputBufferQueueSize\""));
         assert!(serialized.contains("\"AutoLockTimerInGaming\""));
+        assert!(serialized.contains("\"AutoPurgeRamInGaming\""));
+        assert!(serialized.contains("\"AutoPurgeRamThresholdMB\""));
+    }
+
+    #[test]
+    fn test_auto_purge_ram_threshold_and_cooldown_logic() {
+        let cfg = TuningConfig {
+            auto_purge_ram_in_gaming: true,
+            auto_purge_ram_threshold_mb: 2048,
+            ..TuningConfig::default()
+        };
+        // Only triggers in Gaming mode when available RAM < threshold and cooldown elapsed
+        assert!(should_auto_purge_ram("Gaming", &cfg, 1800, None));
+        assert!(!should_auto_purge_ram("Normal", &cfg, 1800, None));
+        assert!(!should_auto_purge_ram("Armed", &cfg, 1800, None));
+        assert!(!should_auto_purge_ram("Gaming", &cfg, 2048, None));
+        assert!(!should_auto_purge_ram("Gaming", &cfg, 4096, None));
+        assert!(!should_auto_purge_ram("Gaming", &cfg, 1500, Some(60)));
+        assert!(should_auto_purge_ram(
+            "Gaming",
+            &cfg,
+            1500,
+            Some(AUTO_PURGE_RAM_COOLDOWN_SECS)
+        ));
+
+        let disabled_cfg = TuningConfig {
+            auto_purge_ram_in_gaming: false,
+            auto_purge_ram_threshold_mb: 4096,
+            ..TuningConfig::default()
+        };
+        assert!(!should_auto_purge_ram("Gaming", &disabled_cfg, 512, None));
     }
 
     #[test]
@@ -6240,6 +6579,8 @@ mod tests {
             enable_net_adapter_msi: false,
             input_buffer_queue_size: 16,
             auto_lock_timer_in_gaming: false,
+            auto_purge_ram_in_gaming: false,
+            auto_purge_ram_threshold_mb: 128,
         };
         write_tuning_to_disk(&temp_root, &cfg).expect("write_tuning_to_disk should succeed");
 
@@ -6255,6 +6596,11 @@ mod tests {
         assert_eq!(reloaded.enable_net_adapter_msi, false);
         assert_eq!(reloaded.input_buffer_queue_size, 32);
         assert_eq!(reloaded.auto_lock_timer_in_gaming, false);
+        assert_eq!(reloaded.auto_purge_ram_in_gaming, false);
+        assert_eq!(
+            reloaded.auto_purge_ram_threshold_mb,
+            MIN_AUTO_PURGE_RAM_THRESHOLD_MB
+        );
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
