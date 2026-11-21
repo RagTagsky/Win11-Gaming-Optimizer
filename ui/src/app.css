@@ -549,10 +549,56 @@ dialog.ui-dialog::backdrop {
   background-color: var(--backdrop-overlay);
 }
 
+.ui-row-hover {
+  transition-property: background-color;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+@media (hover: hover) {
+  .ui-row-hover:hover {
+    background-color: var(--bg-elevated);
+  }
+}
+
+.ui-tooltip-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  overflow: visible;
+  z-index: 60;
+  max-width: min(24rem, calc(100vw - 1.5rem));
+}
+
+.ui-tooltip-card {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-dialog);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ui-tooltip-popover:popover-open {
+    transition: opacity 130ms ease-out, transform 130ms ease-out;
+  }
+
+  @starting-style {
+    .ui-tooltip-popover:popover-open {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+  }
+}
+
 @media (forced-colors: active) {
   .ui-card,
   .ui-card-interactive,
-  .ui-card-selected {
+  .ui-card-selected,
+  .ui-tooltip-card {
     border: 1px solid CanvasText;
   }
 

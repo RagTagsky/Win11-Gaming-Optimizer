@@ -10,8 +10,10 @@ import type {
   RepairType,
   LiveProcessesSnapshot,
   ProcessConfigLists,
+  ProcessDescriptionEntry,
   ProcessListType,
   ProcessProtectionKind,
+  SafetyLevel,
   ServiceListType,
   ListMutationOperation,
   ServiceControlOperation,
@@ -113,46 +115,60 @@ export function buildProfileTuningPreset(
   };
 }
 
-let previewBlacklist = [
+let previewBlacklist: Array<{
+  Name: string;
+  DisplayName: string;
+  Category: ServiceCategory;
+  Reason: string;
+  Status: string;
+  StartType: string;
+  SummaryRu: string;
+  CanDisableHint: string;
+  safetyLevel: SafetyLevel;
+}> = [
   {
     Name: 'DiagTrack',
     DisplayName: 'Функциональные возможности для подключенных пользователей и телеметрия',
-    Category: 'Telemetry' as ServiceCategory,
+    Category: 'Telemetry',
     Reason: 'Диагностическая телеметрия (Microsoft)',
     Status: 'Running',
     StartType: 'Automatic',
     SummaryRu: 'Собирает и отправляет диагностические данные и телеметрию использования Windows.',
-    CanDisableHint: 'Можно отключить безопасно: не влияет на игры и работу системы.'
+    CanDisableHint: 'Можно отключить безопасно: не влияет на игры и работу системы.',
+    safetyLevel: 'safe'
   },
   {
     Name: 'SysMain',
     DisplayName: 'SysMain (Superfetch)',
-    Category: 'System' as ServiceCategory,
+    Category: 'System',
     Reason: 'Фоновая предзагрузка данных в ОЗУ',
     Status: 'Running',
     StartType: 'Automatic',
     SummaryRu: 'Кэширует часто запускаемые программы в оперативной памяти.',
-    CanDisableHint: 'Можно отключить безопасно на SSD/NVMe: снижает фоновую нагрузку на диск и ОЗУ.'
+    CanDisableHint: 'Можно отключить безопасно на SSD/NVMe: снижает фоновую нагрузку на диск и ОЗУ.',
+    safetyLevel: 'safe'
   },
   {
     Name: 'WlanSvc',
     DisplayName: 'Служба автонастройки WLAN',
-    Category: 'Network' as ServiceCategory,
+    Category: 'Network',
     Reason: 'Беспроводное подключение Wi-Fi',
     Status: 'Stopped',
     StartType: 'Manual',
     SummaryRu: 'Управляет беспроводным Wi-Fi соединением и поиском сетей.',
-    CanDisableHint: 'Отключайте, только если ПК подключён по кабелю Ethernet и Wi-Fi не используется.'
+    CanDisableHint: 'Отключайте, только если ПК подключён по кабелю Ethernet и Wi-Fi не используется.',
+    safetyLevel: 'optional'
   },
   {
     Name: 'Spooler',
     DisplayName: 'Диспетчер печати',
-    Category: 'Print' as ServiceCategory,
+    Category: 'Print',
     Reason: 'Фоновая очередь печати',
     Status: 'Stopped',
     StartType: 'Automatic',
     SummaryRu: 'Управляет очередью печати принтеров и виртуального PDF-принтера.',
-    CanDisableHint: 'Безопасно отключать во время игры, если не печатаете документы.'
+    CanDisableHint: 'Безопасно отключать во время игры, если не печатаете документы.',
+    safetyLevel: 'optional'
   }
 ];
 
@@ -229,19 +245,57 @@ const PREVIEW_FEATURE_PACK_DEFS: Array<Omit<ServiceFeaturePack, 'keepEnabledInGa
   }
 ];
 
+const PREVIEW_SERVICE_CATALOG: Record<
+  string,
+  {
+    DisplayName: string;
+    Category: ServiceCategory;
+    Reason: string;
+    Status: string;
+    StartType: string;
+    SummaryRu: string;
+    CanDisableHint: string;
+    safetyLevel: SafetyLevel;
+  }
+> = Object.fromEntries(
+  previewBlacklist.map((b) => [
+    b.Name.toLowerCase(),
+    {
+      DisplayName: b.DisplayName,
+      Category: b.Category,
+      Reason: b.Reason,
+      Status: b.Status,
+      StartType: b.StartType,
+      SummaryRu: b.SummaryRu,
+      CanDisableHint: b.CanDisableHint,
+      safetyLevel: b.safetyLevel
+    }
+  ])
+);
+
 function buildPreviewServicesResponse(): ServicesLists {
   const coreSet = new Set(['audiosrv', 'dhcp', 'dnscache', 'eventlog', 'plugplay', 'power', 'winmgmt']);
-  const whitelistItems = previewWhitelist.map((name) => ({
-    Name: name,
-    DisplayName: name === 'FACEIT' ? 'FACEIT Anti-Cheat Service' : name,
-    Status: 'Running',
-    isCoreLocked: coreSet.has(name.toLowerCase()),
-    SummaryRu:
-      name === 'FACEIT'
-        ? 'Драйверная служба античита FACEIT AC.'
-        : 'Защищённая служба Windows.',
-    CanDisableHint: 'Сохраняется включённой в игровом режиме.'
-  }));
+  const whitelistItems = previewWhitelist.map((name) => {
+    const isCoreLocked = coreSet.has(name.toLowerCase());
+    const meta = PREVIEW_SERVICE_CATALOG[name.toLowerCase()];
+    return {
+      Name: name,
+      DisplayName: meta?.DisplayName ?? (name === 'FACEIT' ? 'FACEIT Anti-Cheat Service' : name),
+      Status: meta?.Status ?? 'Running',
+      isCoreLocked,
+      SummaryRu:
+        meta?.SummaryRu ??
+        (name === 'FACEIT'
+          ? 'Драйверная служба античита FACEIT AC.'
+          : 'Защищённая системная служба Windows.'),
+      CanDisableHint:
+        meta?.CanDisableHint ??
+        (isCoreLocked
+          ? 'Критическая служба ядра Windows — отключать нельзя.'
+          : 'Сохраняется включённой в игровом режиме (режим «Без утилки»).'),
+      safetyLevel: (isCoreLocked ? 'protected' : meta?.safetyLevel ?? 'protected') as SafetyLevel
+    };
+  });
   const allInstalledServices = [
     ...previewBlacklist.map((b) => ({
       Name: b.Name,
@@ -251,21 +305,33 @@ function buildPreviewServicesResponse(): ServicesLists {
       Category: b.Category,
       membership: 'blacklist' as const,
       isCoreLocked: false,
+      disableInGaming: true,
       SummaryRu: b.SummaryRu,
-      CanDisableHint: b.CanDisableHint
+      CanDisableHint: b.CanDisableHint,
+      safetyLevel: b.safetyLevel
     })),
-    ...whitelistItems.map((w) => ({
-      Name: w.Name,
-      DisplayName: w.DisplayName,
-      Status: w.Status,
-      StartType: 'Automatic',
-      Category: 'System' as ServiceCategory,
-      membership: (w.isCoreLocked ? 'core' : 'whitelist') as 'core' | 'whitelist',
-      isCoreLocked: w.isCoreLocked,
-      SummaryRu: w.SummaryRu,
-      CanDisableHint: w.CanDisableHint
-    }))
-  ];
+    ...whitelistItems.map((w) => {
+      const meta = PREVIEW_SERVICE_CATALOG[w.Name.toLowerCase()];
+      return {
+        Name: w.Name,
+        DisplayName: w.DisplayName,
+        Status: w.Status,
+        StartType: meta?.StartType ?? 'Automatic',
+        Category: (meta?.Category ?? 'System') as ServiceCategory,
+        membership: (w.isCoreLocked ? 'core' : 'whitelist') as 'core' | 'whitelist',
+        isCoreLocked: w.isCoreLocked,
+        disableInGaming: false,
+        SummaryRu: w.SummaryRu,
+        CanDisableHint: w.CanDisableHint,
+        safetyLevel: w.safetyLevel
+      };
+    })
+  ].sort((a, b) => {
+    const aRun = a.Status === 'Running' ? 0 : 1;
+    const bRun = b.Status === 'Running' ? 0 : 1;
+    if (aRun !== bRun) return aRun - bRun;
+    return a.DisplayName.toLowerCase().localeCompare(b.DisplayName.toLowerCase());
+  });
   const featurePacks: ServiceFeaturePack[] = PREVIEW_FEATURE_PACK_DEFS.map((p) => ({
     ...p,
     keepEnabledInGame: p.services.every(
@@ -294,22 +360,32 @@ let previewProcesses: Array<{
   memoryMb: number;
   isProtected: boolean;
   protectionKind: ProcessProtectionKind | null;
+  inStartup?: boolean;
+  summaryRu: string;
+  canDisableHint: string;
+  safetyLevel: SafetyLevel;
 }> = [
   {
     pid: 4,
     name: 'System',
-    displayName: 'NT Kernel & System',
+    displayName: 'Ядро Windows (System)',
     memoryMb: 0.2,
     isProtected: true,
-    protectionKind: 'os_core'
+    protectionKind: 'os_core',
+    summaryRu: 'Базовый системный процесс ядра Windows и драйверов устройств.',
+    canDisableHint: 'Критический компонент ядра ОС — отключать нельзя.',
+    safetyLevel: 'protected'
   },
   {
     pid: 940,
     name: 'lsass',
-    displayName: 'Local Security Authority Process',
+    displayName: 'Служба локальной безопасности (LSASS)',
     memoryMb: 21.8,
     isProtected: true,
-    protectionKind: 'os_core'
+    protectionKind: 'os_core',
+    summaryRu: 'Проверка подлинности входа, политик безопасности и прав доступа.',
+    canDisableHint: 'Критический процесс безопасности — остановка перезагрузит ПК.',
+    safetyLevel: 'protected'
   },
   {
     pid: 4120,
@@ -317,7 +393,10 @@ let previewProcesses: Array<{
     displayName: 'Ultra Gaming Mode',
     memoryMb: 84.5,
     isProtected: true,
-    protectionKind: 'self_app'
+    protectionKind: 'self_app',
+    summaryRu: 'Текущее приложение оптимизации Ultra Gaming Mode.',
+    canDisableHint: 'Защищено от самоотключения.',
+    safetyLevel: 'protected'
   },
   {
     pid: 7112,
@@ -325,7 +404,11 @@ let previewProcesses: Array<{
     displayName: 'Steam Client',
     memoryMb: 188.4,
     isProtected: true,
-    protectionKind: 'game_client'
+    protectionKind: 'game_client',
+    inStartup: true,
+    summaryRu: 'Игровой клиент и оверлей Steam для запуска игр.',
+    canDisableHint: 'Защищён как игровой клиент — нужен для стабильного запуска игр.',
+    safetyLevel: 'protected'
   },
   {
     pid: 11240,
@@ -333,7 +416,10 @@ let previewProcesses: Array<{
     displayName: 'Google Chrome',
     memoryMb: 412.6,
     isProtected: false,
-    protectionKind: null
+    protectionKind: null,
+    summaryRu: 'Веб-браузер Google Chrome (часто занимает много ОЗУ и процессорного времени).',
+    canDisableHint: 'Можно смело выключить в Gaming Mode — освободит память и снизит микрофризы.',
+    safetyLevel: 'safe'
   },
   {
     pid: 13804,
@@ -341,7 +427,11 @@ let previewProcesses: Array<{
     displayName: 'Discord',
     memoryMb: 268.1,
     isProtected: false,
-    protectionKind: null
+    protectionKind: null,
+    inStartup: true,
+    summaryRu: 'Голосовой и текстовый мессенджер Discord.',
+    canDisableHint: 'По желанию: оставьте «Без утилки», если общаетесь в голосе во время игры.',
+    safetyLevel: 'optional'
   },
   {
     pid: 15220,
@@ -349,9 +439,40 @@ let previewProcesses: Array<{
     displayName: 'Spotify',
     memoryMb: 194.0,
     isProtected: false,
-    protectionKind: null
+    protectionKind: null,
+    summaryRu: 'Музыкальный плеер Spotify.',
+    canDisableHint: 'Можно выключить в Gaming Mode, если не слушаете музыку во время игры.',
+    safetyLevel: 'optional'
   }
 ];
+
+const PREVIEW_PROCESS_DESCRIPTIONS: Record<string, ProcessDescriptionEntry> = {
+  widgets: {
+    displayNameRu: 'Виджеты Windows 11',
+    summaryRu: 'Панель новостей, погоды и виджетов Windows 11 на базе WebView2.',
+    canDisableRu: 'Рекомендуется выключить в Gaming Mode — убирает фоновую нагрузку на ОЗУ и ЦП.',
+    safetyLevel: 'safe'
+  },
+  ctfmon: {
+    displayNameRu: 'Служба ввода текста (CTF Loader)',
+    summaryRu: 'Отвечает за переключение раскладки клавиатуры и ввод текста в Windows.',
+    canDisableRu: 'Системный процесс ввода — отключать нельзя.',
+    safetyLevel: 'protected',
+    protectionKind: 'os_core'
+  },
+  amdnoisesuppression: {
+    displayNameRu: 'AMD Noise Suppression',
+    summaryRu: 'Шумоподавление микрофона от драйвера AMD Adrenalin.',
+    canDisableRu: 'По желанию: оставьте «Без утилки», если используете шумоподавление микрофона AMD.',
+    safetyLevel: 'optional'
+  },
+  securityhealthsystray: {
+    displayNameRu: 'Значок Безопасности Windows',
+    summaryRu: 'Системный значок уведомлений Центра безопасности Windows в трее.',
+    canDisableRu: 'Рекомендуется оставить «Без утилки» для уведомлений о защите системы.',
+    safetyLevel: 'optional'
+  }
+};
 
 export async function fetchSystemStatus(): Promise<SystemStatus> {
   if (isTauri) {
@@ -473,13 +594,84 @@ export async function applyServiceFeaturePack(
             Status: 'Stopped',
             StartType: 'Manual',
             SummaryRu: pack.description,
-            CanDisableHint: 'Временное отключение в игровом режиме.'
+            CanDisableHint: 'Временное отключение в игровом режиме.',
+            safetyLevel: 'optional'
           });
         }
       }
     }
   }
   return buildPreviewServicesResponse();
+}
+
+export async function setServiceGamingMode(
+  serviceName: string,
+  disableInGaming: boolean
+): Promise<ServicesLists> {
+  if (isTauri) {
+    return await invoke<ServicesLists>('set_service_gaming_mode', {
+      serviceName,
+      disableInGaming
+    });
+  }
+  const clean = serviceName.trim();
+  if (disableInGaming) {
+    previewWhitelist = previewWhitelist.filter((w) => w.toLowerCase() !== clean.toLowerCase());
+    if (!previewBlacklist.some((b) => b.Name.toLowerCase() === clean.toLowerCase())) {
+      const meta = PREVIEW_SERVICE_CATALOG[clean.toLowerCase()];
+      previewBlacklist.push({
+        Name: clean,
+        DisplayName: meta?.DisplayName ?? clean,
+        Category: meta?.Category ?? 'System',
+        Reason: meta?.Reason ?? 'Настроено пользователем',
+        Status: meta?.Status ?? 'Running',
+        StartType: meta?.StartType ?? 'Automatic',
+        SummaryRu: meta?.SummaryRu ?? 'Настроено пользователем.',
+        CanDisableHint:
+          meta?.CanDisableHint ??
+          'Временно отключается в Gaming Mode и восстанавливается при выходе.',
+        safetyLevel: meta?.safetyLevel ?? 'optional'
+      });
+    }
+  } else {
+    previewBlacklist = previewBlacklist.filter((b) => b.Name.toLowerCase() !== clean.toLowerCase());
+    if (!previewWhitelist.some((w) => w.toLowerCase() === clean.toLowerCase())) {
+      previewWhitelist.push(clean);
+    }
+  }
+  return buildPreviewServicesResponse();
+}
+
+export async function setProcessGamingMode(
+  processName: string,
+  disableInGaming: boolean
+): Promise<ProcessConfigLists> {
+  if (isTauri) {
+    return await invoke<ProcessConfigLists>('set_process_gaming_mode', {
+      processName,
+      disableInGaming
+    });
+  }
+  const clean = processName.trim().replace(/\.exe$/i, '');
+  if (disableInGaming) {
+    previewProtectedStartupNames = previewProtectedStartupNames.filter(
+      (x) => x.toLowerCase() !== clean.toLowerCase()
+    );
+    if (!previewBlacklistProcesses.some((x) => x.toLowerCase() === clean.toLowerCase())) {
+      previewBlacklistProcesses = [...previewBlacklistProcesses, clean];
+    }
+  } else {
+    previewBlacklistProcesses = previewBlacklistProcesses.filter(
+      (x) => x.toLowerCase() !== clean.toLowerCase()
+    );
+    if (!previewProtectedStartupNames.some((x) => x.toLowerCase() === clean.toLowerCase())) {
+      previewProtectedStartupNames = [...previewProtectedStartupNames, clean];
+    }
+  }
+  return {
+    blacklistProcesses: [...previewBlacklistProcesses],
+    protectedStartupNames: [...previewProtectedStartupNames]
+  };
 }
 
 export async function fetchRunningProcesses(): Promise<LiveProcessesSnapshot> {
@@ -495,7 +687,9 @@ export async function fetchRunningProcesses(): Promise<LiveProcessesSnapshot> {
       )
     })),
     blacklistProcesses: [...previewBlacklistProcesses],
-    protectedStartupNames: [...previewProtectedStartupNames]
+    protectedStartupNames: [...previewProtectedStartupNames],
+    processDescriptions: { ...PREVIEW_PROCESS_DESCRIPTIONS },
+    startupProcessNames: ['discord', 'steam', 'securityhealthsystray']
   };
 }
 
@@ -650,7 +844,8 @@ export async function updateServiceList(params: {
         Status: 'Stopped',
         StartType: 'Manual',
         SummaryRu: params.reason?.trim() || 'Добавлено пользователем.',
-        CanDisableHint: 'Можно отключить в игровом режиме.'
+        CanDisableHint: 'Можно отключить в игровом режиме.',
+        safetyLevel: 'optional'
       });
     } else {
       previewBlacklist = previewBlacklist.filter((s) => s.Name.toLowerCase() !== clean.toLowerCase());
@@ -801,8 +996,8 @@ export async function checkForUpdates(): Promise<UpdateInfo> {
   }
   await new Promise((r) => setTimeout(r, 250));
   return {
-    currentVersion: '3.5.2',
-    latestVersion: '3.5.2',
+    currentVersion: '3.6.0',
+    latestVersion: '3.6.0',
     hasUpdate: false,
     releaseUrl: 'https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest',
     releaseNotes: ''

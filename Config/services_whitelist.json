@@ -92,6 +92,9 @@
                               "ConsentUxUserSvc",
                               "UdkUserSvc",
                               "FACEIT",
-                              "FACEITService"
+                              "FACEITService",
+                              "zapret",
+                              "WinDivert",
+                              "WinDivert14"
                           ]
 }

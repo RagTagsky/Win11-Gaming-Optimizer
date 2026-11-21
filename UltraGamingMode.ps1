@@ -269,7 +269,7 @@ switch ($Action) {
                 Set-StatePropertySafe -StateObject $stateData -Name "LastBootError" -Value $null
                 Set-ActiveStateSafe -Data $stateData | Out-Null
             }
-            Disable-UserStateAggressive -StartupConfig $startupCfg
+            Disable-UserStateAggressive -StartupConfig $startupCfg -Blacklist $blacklist -Whitelist $whitelist
             Register-BootTasks
             Remove-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "*UltraGamingModeRestore" -ErrorAction SilentlyContinue
@@ -281,7 +281,7 @@ switch ($Action) {
         New-SystemStateBackup -BlacklistConfig $blacklist -Whitelist $whitelist -StartupConfig $startupCfg
 
         # 2. Aggressively strip user startup apps (TranslucentTB, shortcuts, third-party apps, transparency)
-        Disable-UserStateAggressive -StartupConfig $startupCfg
+        Disable-UserStateAggressive -StartupConfig $startupCfg -Blacklist $blacklist -Whitelist $whitelist
 
         # 3. Register boot-time trigger under SYSTEM
         Register-BootTasks
@@ -356,14 +356,17 @@ switch ($Action) {
                         Set-PowerLatencyOptimizations -Config $stateData.PowerLatencyConfig | Out-Null
                         Set-MemoryCompressionGamingState -HardwareProfile $hw | Out-Null
                         Set-DefenderGamingState -Disable $true | Out-Null
-                        Set-Windows11DebloatOptimizations -All | Out-Null
+                        $disableWidgets = Test-ProcessShouldCloseInGaming -ProcessName "Widgets" -StartupConfig $startupCfg
+                        Set-Windows11DebloatOptimizations -All -Whitelist $whitelist -Blacklist $blacklist -SkipWidgets:(-not $disableWidgets) | Out-Null
 
-                        # If HDD detected, suspend ScheduledDefrag background task and ensure SysMain/WSearch are dead
+                        # If HDD detected, suspend ScheduledDefrag background task and stop SysMain/WSearch only if configured for Gaming Mode
                         if ($hw.HddProfile) {
                             Disable-ScheduledTask -TaskPath "\Microsoft\Windows\Defrag\" -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
                             Disable-ScheduledTask -TaskName "ScheduledDefrag" -ErrorAction SilentlyContinue | Out-Null
                             foreach ($sName in @("SysMain", "WSearch")) {
-                                Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                                if (Test-ServiceShouldDisableInGaming -ServiceName $sName -Blacklist $blacklist -Whitelist $whitelist) {
+                                    Stop-Service -Name $sName -Force -ErrorAction SilentlyContinue
+                                }
                             }
                         }
 
@@ -445,7 +448,13 @@ switch ($Action) {
 
                 # Ensure any stray bloat processes that managed to start are stopped in user session
                 if (-not $isSystem -and $startupCfg.BlacklistProcesses) {
-                    Stop-BlacklistedProcesses -ProcessNames $startupCfg.BlacklistProcesses
+                    $wdProtNames = if ($startupCfg.ProtectedStartupNames) { @($startupCfg.ProtectedStartupNames) } else { @() }
+                    $wdTargets = @($startupCfg.BlacklistProcesses | Where-Object {
+                        Test-ProcessShouldCloseInGaming -ProcessName $_ -StartupConfig $startupCfg
+                    })
+                    if ($wdTargets.Count -gt 0) {
+                        Stop-BlacklistedProcesses -ProcessNames $wdTargets -ProtectedNames $wdProtNames
+                    }
                 }
 
                 # Re-arm RunOnce for the NEXT reboot so fail-safe auto-revert fires when gaming ends
@@ -625,10 +634,11 @@ switch ($Action) {
 
         $activeBloatCount = 0
         foreach ($b in $blacklist) {
+            $bCanon = Get-CanonicalServiceName -ServiceName $b.Name
             $s = $svcMap[$b.Name]
             if (-not $s) {
                 foreach ($cs in $allServices) {
-                    if ($cs.Name -like "$($b.Name)_*" -or $cs.Name -like "$($b.Name)[0-9]*") {
+                    if ((Get-CanonicalServiceName -ServiceName $cs.Name) -ieq $bCanon) {
                         $s = $cs; break
                     }
                 }
@@ -711,7 +721,7 @@ switch ($Action) {
         Write-Host "=====================================================" -ForegroundColor Cyan
         Write-Host "         WINDOWS 11 DEEP DEBLOAT & AI SUPPRESSION    " -ForegroundColor Cyan
         Write-Host "=====================================================" -ForegroundColor Cyan
-        Set-Windows11DebloatOptimizations -All
+        Set-Windows11DebloatOptimizations -All -Whitelist $whitelist -Blacklist $blacklist
         Write-Host "`n[SUCCESS] Windows 11 bloatware, telemetry, and background AI suppressed." -ForegroundColor Green
     }
 
@@ -984,10 +994,11 @@ switch ($Action) {
         foreach ($s in $allServices) { $svcMap[$s.Name] = $s }
 
         foreach ($item in $blacklist) {
+            $iCanon = Get-CanonicalServiceName -ServiceName $item.Name
             $svc = $svcMap[$item.Name]
             if (-not $svc) {
                 foreach ($cs in $allServices) {
-                    if ($cs.Name -like "$($item.Name)_*" -or $cs.Name -like "$($item.Name)[0-9]*") {
+                    if ((Get-CanonicalServiceName -ServiceName $cs.Name) -ieq $iCanon) {
                         $svc = $cs; break
                     }
                 }

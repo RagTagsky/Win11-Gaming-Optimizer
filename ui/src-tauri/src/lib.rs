@@ -62,6 +62,11 @@ const EMBEDDED_RUNTIME_ASSETS: &[EmbeddedAsset] = &[
         preserve_if_exists: false,
     },
     EmbeddedAsset {
+        rel_path: "Config/process_descriptions.json",
+        bytes: include_bytes!("../../../Config/process_descriptions.json"),
+        preserve_if_exists: false,
+    },
+    EmbeddedAsset {
         rel_path: "Config/startup_apps.json",
         bytes: include_bytes!("../../../Config/startup_apps.json"),
         preserve_if_exists: true,
@@ -146,8 +151,18 @@ struct CachedActiveState {
     localized_service_names: std::collections::HashMap<String, String>,
 }
 
+#[derive(Clone, Default)]
+pub struct ExeMetadata {
+    pub display_name: Option<String>,
+    pub file_description: Option<String>,
+    pub product_name: Option<String>,
+    pub company_name: Option<String>,
+}
+
 static ACTIVE_STATE_CACHE: Mutex<Option<CachedActiveState>> = Mutex::new(None);
-static EXE_DISPLAY_NAME_CACHE: Mutex<Option<std::collections::HashMap<String, Option<String>>>> =
+static EXE_METADATA_CACHE: Mutex<Option<std::collections::HashMap<String, ExeMetadata>>> =
+    Mutex::new(None);
+static SERVICE_SCM_DESC_CACHE: Mutex<Option<std::collections::HashMap<String, Option<String>>>> =
     Mutex::new(None);
 static TRAY_CONTROLLER: OnceLock<TrayController> = OnceLock::new();
 
@@ -238,6 +253,22 @@ pub struct ServiceDescriptionEntry {
     pub summary_ru: String,
     #[serde(rename = "canDisableRu", default)]
     pub can_disable_ru: String,
+    #[serde(rename = "safetyLevel", default)]
+    pub safety_level: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ProcessDescriptionEntry {
+    #[serde(rename = "displayNameRu", default)]
+    pub display_name_ru: String,
+    #[serde(rename = "summaryRu", default)]
+    pub summary_ru: String,
+    #[serde(rename = "canDisableRu", default)]
+    pub can_disable_ru: String,
+    #[serde(rename = "safetyLevel", default)]
+    pub safety_level: String,
+    #[serde(rename = "protectionKind", default, skip_serializing_if = "Option::is_none")]
+    pub protection_kind: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -258,6 +289,8 @@ pub struct BlacklistServiceItem {
     pub summary_ru: String,
     #[serde(rename = "CanDisableHint", default)]
     pub can_disable_hint: String,
+    #[serde(rename = "safetyLevel", default)]
+    pub safety_level: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -274,6 +307,8 @@ pub struct WhitelistServiceItem {
     pub summary_ru: String,
     #[serde(rename = "CanDisableHint", default)]
     pub can_disable_hint: String,
+    #[serde(rename = "safetyLevel", default)]
+    pub safety_level: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -291,10 +326,14 @@ pub struct InstalledServiceItem {
     pub membership: String,
     #[serde(rename = "isCoreLocked")]
     pub is_core_locked: bool,
+    #[serde(rename = "disableInGaming", default)]
+    pub disable_in_gaming: bool,
     #[serde(rename = "SummaryRu", default)]
     pub summary_ru: String,
     #[serde(rename = "CanDisableHint", default)]
     pub can_disable_hint: String,
+    #[serde(rename = "safetyLevel", default)]
+    pub safety_level: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -365,6 +404,14 @@ pub struct ProcessItem {
     pub is_blacklisted: bool,
     #[serde(rename = "isStartupProtected")]
     pub is_startup_protected: bool,
+    #[serde(rename = "inStartup", default)]
+    pub in_startup: bool,
+    #[serde(rename = "summaryRu", default)]
+    pub summary_ru: String,
+    #[serde(rename = "canDisableHint", default)]
+    pub can_disable_hint: String,
+    #[serde(rename = "safetyLevel", default)]
+    pub safety_level: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -399,6 +446,10 @@ pub struct LiveProcessesSnapshot {
     pub blacklist_processes: Vec<String>,
     #[serde(rename = "protectedStartupNames")]
     pub protected_startup_names: Vec<String>,
+    #[serde(rename = "processDescriptions", default)]
+    pub process_descriptions: std::collections::HashMap<String, ProcessDescriptionEntry>,
+    #[serde(rename = "startupProcessNames", default)]
+    pub startup_process_names: Vec<String>,
 }
 
 const CRITICAL_PROTECTED_PROCESSES: &[&str] = &[
@@ -615,6 +666,12 @@ pub fn classify_process_protection(name: &str) -> Option<&'static str> {
     {
         return Some("game_client");
     }
+    if ["winws", "winws2", "zapret"]
+        .iter()
+        .any(|p| p.eq_ignore_ascii_case(clean))
+    {
+        return Some("network_bypass");
+    }
     if CRITICAL_PROTECTED_PROCESSES
         .iter()
         .any(|p| p.eq_ignore_ascii_case(clean))
@@ -628,22 +685,87 @@ pub fn is_protected_process_name(name: &str) -> bool {
     classify_process_protection(name).is_some()
 }
 
+const EXACT_FIXED_VERSION_SERVICES: &[&str] = &["FontCache3.0.0.0", "igfxCUIService2.0.0.0"];
+
 fn strip_per_user_service_suffix(name: &str) -> &str {
     if let Some(idx) = name.rfind('_') {
         let suffix = &name[idx + 1..];
-        if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
+        if (4..=16).contains(&suffix.len()) && suffix.chars().all(|c| c.is_ascii_hexdigit()) {
             return &name[..idx];
         }
     }
     name
 }
 
+pub fn strip_versioned_service_suffix(name: &str) -> &str {
+    let trimmed = name.trim();
+    if EXACT_FIXED_VERSION_SERVICES
+        .iter()
+        .any(|fixed| fixed.eq_ignore_ascii_case(trimmed))
+    {
+        return trimmed;
+    }
+    // Strip 4-part trailing version like "159.0.8140.0" from dynamic updater services (e.g. GoogleUpdaterService159.0.8140.0)
+    let bytes = trimmed.as_bytes();
+    let mut i = bytes.len();
+    let mut seg_count = 0usize;
+    while seg_count < 4 {
+        let seg_end = i;
+        while i > 0 && bytes[i - 1].is_ascii_digit() {
+            i -= 1;
+        }
+        if i == seg_end {
+            return trimmed;
+        }
+        seg_count += 1;
+        if seg_count < 4 {
+            if i == 0 || bytes[i - 1] != b'.' {
+                return trimmed;
+            }
+            i -= 1;
+        }
+    }
+    if i > 0 && bytes[0].is_ascii_alphabetic() {
+        &trimmed[..i]
+    } else {
+        trimmed
+    }
+}
+
+pub fn canonical_service_name(name: &str) -> &str {
+    let trimmed = name.trim();
+    let without_luid = strip_per_user_service_suffix(trimmed);
+    strip_versioned_service_suffix(without_luid)
+}
+
+pub fn service_names_match(a: &str, b: &str) -> bool {
+    let a_t = a.trim();
+    let b_t = b.trim();
+    if a_t.is_empty() || b_t.is_empty() {
+        return false;
+    }
+    a_t.eq_ignore_ascii_case(b_t)
+        || canonical_service_name(a_t).eq_ignore_ascii_case(canonical_service_name(b_t))
+}
+
+fn normalize_safety_level(raw: &str, is_protected: bool) -> String {
+    if is_protected {
+        return "protected".to_string();
+    }
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "safe" => "safe".to_string(),
+        "optional" => "optional".to_string(),
+        "protected" => "protected".to_string(),
+        _ => "optional".to_string(),
+    }
+}
+
 pub fn is_immutable_core_service(name: &str) -> bool {
     let trimmed = name.trim();
-    let base = strip_per_user_service_suffix(trimmed);
+    let canon = canonical_service_name(trimmed);
     IMMUTABLE_CORE_SERVICES
         .iter()
-        .any(|s| s.eq_ignore_ascii_case(trimmed) || s.eq_ignore_ascii_case(base))
+        .any(|s| s.eq_ignore_ascii_case(trimmed) || s.eq_ignore_ascii_case(canon))
 }
 
 fn write_json_no_bom(path: &Path, val: &impl Serialize) -> Result<(), String> {
@@ -786,6 +908,11 @@ mod win_hw {
     }
 
     #[repr(C)]
+    struct SERVICE_DESCRIPTIONW {
+        lp_description: *mut u16,
+    }
+
+    #[repr(C)]
     struct TOKEN_USER {
         sid: *mut std::ffi::c_void,
         attributes: u32,
@@ -884,6 +1011,13 @@ mod win_hw {
         fn QueryServiceConfigW(
             hService: usize,
             lpServiceConfig: *mut u8,
+            cbBufSize: u32,
+            pcbBytesNeeded: *mut u32,
+        ) -> i32;
+        fn QueryServiceConfig2W(
+            hService: usize,
+            dwInfoLevel: u32,
+            lpBuffer: *mut u8,
             cbBufSize: u32,
             pcbBytesNeeded: *mut u32,
         ) -> i32;
@@ -1312,6 +1446,95 @@ mod win_hw {
         }
     }
 
+    pub fn read_service_scm_descriptions(
+        names: &[String],
+    ) -> std::collections::HashMap<String, String> {
+        let mut out = std::collections::HashMap::new();
+        if names.is_empty() {
+            return out;
+        }
+        let mut missing: Vec<String> = Vec::new();
+        if let Ok(guard) = super::SERVICE_SCM_DESC_CACHE.lock() {
+            if let Some(cache) = guard.as_ref() {
+                for name in names {
+                    let key = name.to_lowercase();
+                    if let Some(cached) = cache.get(&key) {
+                        if let Some(text) = cached {
+                            out.insert(key, text.clone());
+                        }
+                    } else {
+                        missing.push(name.clone());
+                    }
+                }
+            } else {
+                missing.extend(names.iter().cloned());
+            }
+        } else {
+            missing.extend(names.iter().cloned());
+        }
+
+        if missing.is_empty() {
+            return out;
+        }
+
+        let mut newly_resolved: Vec<(String, Option<String>)> = Vec::with_capacity(missing.len());
+        unsafe {
+            // SC_MANAGER_CONNECT = 0x0001
+            let scm = OpenSCManagerW(std::ptr::null(), std::ptr::null(), 0x0001);
+            if scm != 0 {
+                for name in &missing {
+                    let key = name.to_lowercase();
+                    let name_w = to_wide(name);
+                    // SERVICE_QUERY_CONFIG = 0x0001
+                    let svc = OpenServiceW(scm, name_w.as_ptr(), 0x0001);
+                    let mut resolved: Option<String> = None;
+                    if svc != 0 {
+                        let mut needed: u32 = 0;
+                        // SERVICE_CONFIG_DESCRIPTION = 1
+                        let _ = QueryServiceConfig2W(svc, 1, std::ptr::null_mut(), 0, &mut needed);
+                        if needed > 0 && needed <= 65536 {
+                            let mut buf = vec![0u8; needed as usize];
+                            if QueryServiceConfig2W(
+                                svc,
+                                1,
+                                buf.as_mut_ptr(),
+                                needed,
+                                &mut needed,
+                            ) != 0
+                            {
+                                let sd = &*(buf.as_ptr() as *const SERVICE_DESCRIPTIONW);
+                                if !sd.lp_description.is_null() {
+                                    let text = wide_ptr_to_string(sd.lp_description);
+                                    if !text.is_empty() && !text.starts_with('@') {
+                                        resolved = Some(text);
+                                    }
+                                }
+                            }
+                        }
+                        let _ = CloseServiceHandle(svc);
+                    }
+                    if let Some(ref text) = resolved {
+                        out.insert(key.clone(), text.clone());
+                    }
+                    newly_resolved.push((key, resolved));
+                }
+                let _ = CloseServiceHandle(scm);
+            }
+        }
+
+        if let Ok(mut guard) = super::SERVICE_SCM_DESC_CACHE.lock() {
+            let cache = guard.get_or_insert_with(std::collections::HashMap::new);
+            if cache.len() > 2048 {
+                cache.clear();
+            }
+            for (k, v) in newly_resolved {
+                cache.insert(k, v);
+            }
+        }
+
+        out
+    }
+
     pub fn is_current_process_elevated() -> bool {
         unsafe {
             let mut token: isize = 0;
@@ -1385,13 +1608,13 @@ mod win_hw {
         }
     }
 
-    pub fn read_exe_display_name(exe_path: &str) -> Option<String> {
+    pub fn read_exe_metadata(exe_path: &str) -> super::ExeMetadata {
         let trimmed_path = exe_path.trim();
         if trimmed_path.is_empty() {
-            return None;
+            return super::ExeMetadata::default();
         }
         let cache_key = trimmed_path.to_ascii_lowercase();
-        if let Ok(guard) = super::EXE_DISPLAY_NAME_CACHE.lock() {
+        if let Ok(guard) = super::EXE_METADATA_CACHE.lock() {
             if let Some(map) = guard.as_ref() {
                 if let Some(cached) = map.get(&cache_key) {
                     return cached.clone();
@@ -1404,7 +1627,7 @@ mod win_hw {
             let mut handle: u32 = 0;
             let size = GetFileVersionInfoSizeW(path_w.as_ptr(), &mut handle);
             if size == 0 || size > 16 * 1024 * 1024 {
-                None
+                super::ExeMetadata::default()
             } else {
                 let mut buf = vec![0u8; size as usize];
                 if GetFileVersionInfoW(
@@ -1414,7 +1637,7 @@ mod win_hw {
                     buf.as_mut_ptr() as *mut std::ffi::c_void,
                 ) == 0
                 {
-                    None
+                    super::ExeMetadata::default()
                 } else {
                     let mut langs: Vec<(u16, u16)> = Vec::new();
                     let trans_w = to_wide(r"\VarFileInfo\Translation");
@@ -1442,9 +1665,8 @@ mod win_hw {
                         }
                     }
 
-                    let mut found: Option<String> = None;
-                    'outer: for (lang, cp) in langs {
-                        for field in ["FileDescription", "ProductName"] {
+                    let query_field = |field: &str| -> Option<String> {
+                        for &(lang, cp) in &langs {
                             let sub = format!(r"\StringFileInfo\{:04x}{:04x}\{}", lang, cp, field);
                             let sub_w = to_wide(&sub);
                             let mut val_ptr: *const std::ffi::c_void = std::ptr::null();
@@ -1465,18 +1687,28 @@ mod win_hw {
                                 let end = units.iter().position(|&c| c == 0).unwrap_or(units.len());
                                 let s = String::from_utf16_lossy(&units[..end]).trim().to_string();
                                 if !s.is_empty() {
-                                    found = Some(s);
-                                    break 'outer;
+                                    return Some(s);
                                 }
                             }
                         }
+                        None
+                    };
+
+                    let file_description = query_field("FileDescription");
+                    let product_name = query_field("ProductName");
+                    let company_name = query_field("CompanyName");
+                    let display_name = file_description.clone().or_else(|| product_name.clone());
+                    super::ExeMetadata {
+                        display_name,
+                        file_description,
+                        product_name,
+                        company_name,
                     }
-                    found
                 }
             }
         };
 
-        if let Ok(mut guard) = super::EXE_DISPLAY_NAME_CACHE.lock() {
+        if let Ok(mut guard) = super::EXE_METADATA_CACHE.lock() {
             let map = guard.get_or_insert_with(std::collections::HashMap::new);
             if map.len() > 1024 {
                 map.clear();
@@ -3116,8 +3348,40 @@ fn lookup_service_description<'a>(
     if let Some(entry) = map.get(&lower) {
         return Some(entry);
     }
-    let base = strip_per_user_service_suffix(trimmed).to_lowercase();
-    map.get(&base)
+    let canon = canonical_service_name(trimmed).to_lowercase();
+    map.get(&canon)
+}
+
+fn load_process_descriptions_map(
+    root: &Path,
+) -> std::collections::HashMap<String, ProcessDescriptionEntry> {
+    let disk_path = root.join("Config").join("process_descriptions.json");
+    let raw = std::fs::read_to_string(&disk_path).unwrap_or_else(|_| {
+        String::from_utf8_lossy(include_bytes!("../../../Config/process_descriptions.json"))
+            .into_owned()
+    });
+    let mut out = std::collections::HashMap::new();
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}')) {
+        if let Some(obj) = val.get("Descriptions").and_then(|v| v.as_object()) {
+            for (k, v) in obj {
+                if let Ok(entry) = serde_json::from_value::<ProcessDescriptionEntry>(v.clone()) {
+                    out.insert(strip_exe_suffix(k).to_lowercase(), entry);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn lookup_process_description<'a>(
+    map: &'a std::collections::HashMap<String, ProcessDescriptionEntry>,
+    process_name: &str,
+) -> Option<&'a ProcessDescriptionEntry> {
+    let clean = strip_exe_suffix(process_name).trim().to_lowercase();
+    if clean.is_empty() {
+        return None;
+    }
+    map.get(&clean)
 }
 
 fn get_cached_hw_static() -> &'static CachedHardwareStatic {
@@ -3344,17 +3608,14 @@ fn read_services_lists_from_root(
         .ok_or_else(|| format!("В файле {} отсутствует поле TargetServices", bl_path.display()))?;
 
     let find_live_entry = |svc_name: &str| -> Option<&(String, String, String)> {
-        let lower = svc_name.trim().to_lowercase();
+        let trimmed = svc_name.trim();
+        let lower = trimmed.to_lowercase();
         if let Some(exact) = live_map.get(&lower) {
             return Some(exact);
         }
-        let prefix_under = format!("{}_", lower);
-        for (k, v) in &live_map {
-            if k.starts_with(&prefix_under)
-                || (k.starts_with(&lower)
-                    && k.len() > lower.len()
-                    && k.as_bytes()[lower.len()].is_ascii_digit())
-            {
+        let target_canon = canonical_service_name(trimmed);
+        for v in live_map.values() {
+            if canonical_service_name(&v.0).eq_ignore_ascii_case(target_canon) {
                 return Some(v);
             }
         }
@@ -3400,6 +3661,7 @@ fn read_services_lists_from_root(
             if parsed.category.trim().is_empty() {
                 parsed.category = infer_service_category(&parsed.name, &parsed.reason);
             }
+            let is_core = is_immutable_core_service(&parsed.name);
             if let Some(desc) = lookup_service_description(&desc_map, &parsed.name) {
                 if parsed.summary_ru.trim().is_empty() {
                     parsed.summary_ru = desc.summary_ru.clone();
@@ -3407,8 +3669,14 @@ fn read_services_lists_from_root(
                 if parsed.can_disable_hint.trim().is_empty() {
                     parsed.can_disable_hint = desc.can_disable_ru.clone();
                 }
+                parsed.safety_level = normalize_safety_level(&desc.safety_level, is_core);
+            } else {
+                parsed.safety_level = normalize_safety_level(&parsed.safety_level, is_core);
             }
-            bl_category_map.insert(parsed.name.to_lowercase(), parsed.category.clone());
+            bl_category_map.insert(
+                canonical_service_name(&parsed.name).to_lowercase(),
+                parsed.category.clone(),
+            );
             blacklist.push(parsed);
         }
     }
@@ -3464,60 +3732,96 @@ fn read_services_lists_from_root(
             } else {
                 s.to_string()
             };
+            let is_core = is_immutable_core_service(s);
             let summary_ru = desc.map(|d| d.summary_ru.clone()).unwrap_or_default();
             let can_disable_hint = desc.map(|d| d.can_disable_ru.clone()).unwrap_or_default();
+            let safety_level = normalize_safety_level(
+                desc.map(|d| d.safety_level.as_str()).unwrap_or("protected"),
+                is_core,
+            );
             whitelist_items.push(WhitelistServiceItem {
                 name: s.to_string(),
                 display_name,
                 status,
-                is_core_locked: is_immutable_core_service(s),
+                is_core_locked: is_core,
                 summary_ru,
                 can_disable_hint,
+                safety_level,
             });
             whitelist.push(s.to_string());
         }
     }
 
     let in_whitelist = |svc: &str| -> bool {
-        let base = strip_per_user_service_suffix(svc);
-        whitelist
-            .iter()
-            .any(|w| w.eq_ignore_ascii_case(svc) || w.eq_ignore_ascii_case(base))
+        whitelist.iter().any(|w| service_names_match(w, svc))
     };
     let in_blacklist = |svc: &str| -> bool {
-        let base = strip_per_user_service_suffix(svc);
-        blacklist
-            .iter()
-            .any(|b| b.name.eq_ignore_ascii_case(svc) || b.name.eq_ignore_ascii_case(base))
+        blacklist.iter().any(|b| service_names_match(&b.name, svc))
     };
 
     let mut all_installed_services: Vec<InstalledServiceItem> = Vec::new();
     if include_live_status {
+        #[cfg(target_os = "windows")]
+        let scm_desc_fallback = {
+            let missing_names: Vec<String> = live_map
+                .values()
+                .filter(|(orig_name, _, _)| lookup_service_description(&desc_map, orig_name).is_none())
+                .map(|(orig_name, _, _)| orig_name.clone())
+                .collect();
+            win_hw::read_service_scm_descriptions(&missing_names)
+        };
+        #[cfg(not(target_os = "windows"))]
+        let scm_desc_fallback: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+
         for (orig_name, status, scm_disp) in live_map.values() {
             let is_core = is_immutable_core_service(orig_name);
+            let wl_hit = in_whitelist(orig_name);
+            let bl_hit = in_blacklist(orig_name);
             let membership = if is_core {
                 "core"
-            } else if in_whitelist(orig_name) {
+            } else if wl_hit {
                 "whitelist"
-            } else if in_blacklist(orig_name) {
+            } else if bl_hit {
                 "blacklist"
             } else {
                 "none"
             }
             .to_string();
+            let disable_in_gaming = !is_core && !wl_hit && bl_hit;
 
             let disp = if scm_disp.trim().is_empty() {
                 orig_name.clone()
             } else {
                 scm_disp.trim().to_string()
             };
-            let base = strip_per_user_service_suffix(orig_name);
+            let canon = canonical_service_name(orig_name);
             let cat = bl_category_map
                 .get(&orig_name.to_lowercase())
-                .or_else(|| bl_category_map.get(&base.to_lowercase()))
+                .or_else(|| bl_category_map.get(&canon.to_lowercase()))
                 .cloned()
                 .unwrap_or_else(|| infer_service_category(orig_name, &disp));
             let desc = lookup_service_description(&desc_map, orig_name);
+            let summary_ru = if let Some(d) = desc.filter(|d| !d.summary_ru.trim().is_empty()) {
+                d.summary_ru.clone()
+            } else if let Some(scm_d) = scm_desc_fallback.get(&orig_name.to_lowercase()) {
+                scm_d.clone()
+            } else {
+                format!("Служба Windows или стороннего ПО («{}»).", disp)
+            };
+            let can_disable_hint = if let Some(d) =
+                desc.filter(|d| !d.can_disable_ru.trim().is_empty())
+            {
+                d.can_disable_ru.clone()
+            } else if is_core {
+                "Критическая служба ядра Windows — отключать нельзя.".to_string()
+            } else {
+                "Редкая или сторонняя служба. Отключайте в Gaming Mode, только если уверены, что она не нужна во время игры.".to_string()
+            };
+            let safety_level = normalize_safety_level(
+                desc.map(|d| d.safety_level.as_str()).unwrap_or("optional"),
+                is_core,
+            );
             #[cfg(target_os = "windows")]
             let start_type = win_hw::read_service_start_type(orig_name);
             #[cfg(not(target_os = "windows"))]
@@ -3531,8 +3835,10 @@ fn read_services_lists_from_root(
                 category: cat,
                 membership,
                 is_core_locked: is_core,
-                summary_ru: desc.map(|d| d.summary_ru.clone()).unwrap_or_default(),
-                can_disable_hint: desc.map(|d| d.can_disable_ru.clone()).unwrap_or_default(),
+                disable_in_gaming,
+                summary_ru,
+                can_disable_hint,
+                safety_level,
             });
         }
         all_installed_services.sort_by(|a, b| {
@@ -3624,7 +3930,7 @@ fn apply_service_feature_pack_in_root(
             if !wl_arr
                 .iter()
                 .filter_map(|v| v.as_str())
-                .any(|s| s.eq_ignore_ascii_case(svc))
+                .any(|s| service_names_match(s, svc))
             {
                 wl_arr.push(serde_json::Value::String(svc.to_string()));
             }
@@ -3635,7 +3941,7 @@ fn apply_service_feature_pack_in_root(
         {
             bl_arr.retain(|item| {
                 let name = item.get("Name").and_then(|v| v.as_str()).unwrap_or("");
-                !pack.services.iter().any(|s| s.eq_ignore_ascii_case(name))
+                !pack.services.iter().any(|s| service_names_match(s, name))
             });
         }
     } else {
@@ -3644,7 +3950,7 @@ fn apply_service_feature_pack_in_root(
             if is_immutable_core_service(name) {
                 return true;
             }
-            !pack.services.iter().any(|s| s.eq_ignore_ascii_case(name))
+            !pack.services.iter().any(|s| service_names_match(s, name))
         });
 
         let bl_arr = doc_bl
@@ -3659,7 +3965,7 @@ fn apply_service_feature_pack_in_root(
             let exists = bl_arr.iter().any(|item| {
                 item.get("Name")
                     .and_then(|v| v.as_str())
-                    .map(|n| n.eq_ignore_ascii_case(svc))
+                    .map(|n| service_names_match(n, svc))
                     .unwrap_or(false)
             });
             if !exists {
@@ -5425,6 +5731,185 @@ fn update_process_list_in_root(
     read_process_lists_from_root(root)
 }
 
+fn set_process_gaming_mode_in_root(
+    root: &Path,
+    process_name: &str,
+    disable_in_gaming: bool,
+) -> Result<ProcessConfigLists, String> {
+    let clean_name = strip_exe_suffix(process_name).trim().to_string();
+    if !is_safe_identifier(&clean_name) {
+        return Err(format!("Недопустимое имя процесса: '{}'", process_name));
+    }
+    if disable_in_gaming && is_protected_process_name(&clean_name) {
+        return Err(format!(
+            "Процесс '{}' защищён системой, античитом или приложением и не может отключаться в Gaming Mode.",
+            clean_name
+        ));
+    }
+
+    let path = root.join("Config").join("startup_apps.json");
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Не удалось прочитать {}: {}", path.display(), e))?;
+    let mut doc: serde_json::Value = serde_json::from_str(raw.trim_start_matches('\u{feff}'))
+        .map_err(|e| format!("Ошибка разбора {}: {}", path.display(), e))?;
+
+    let obj = doc
+        .as_object_mut()
+        .ok_or_else(|| "Некорректная структура startup_apps.json".to_string())?;
+
+    if !obj.contains_key("BlacklistProcesses") {
+        obj.insert(
+            "BlacklistProcesses".to_string(),
+            serde_json::Value::Array(Vec::new()),
+        );
+    }
+    if !obj.contains_key("ProtectedStartupNames") {
+        obj.insert(
+            "ProtectedStartupNames".to_string(),
+            serde_json::Value::Array(Vec::new()),
+        );
+    }
+
+    if disable_in_gaming {
+        if let Some(prot_arr) = obj
+            .get_mut("ProtectedStartupNames")
+            .and_then(|v| v.as_array_mut())
+        {
+            prot_arr.retain(|v| {
+                v.as_str()
+                    .map(|s| !strip_exe_suffix(s).eq_ignore_ascii_case(&clean_name))
+                    .unwrap_or(true)
+            });
+        }
+        let bl_arr = obj
+            .get_mut("BlacklistProcesses")
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| "Поле BlacklistProcesses должно быть массивом".to_string())?;
+        let exists = bl_arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .any(|s| strip_exe_suffix(s).eq_ignore_ascii_case(&clean_name));
+        if !exists {
+            bl_arr.push(serde_json::Value::String(clean_name));
+        }
+    } else {
+        if let Some(bl_arr) = obj
+            .get_mut("BlacklistProcesses")
+            .and_then(|v| v.as_array_mut())
+        {
+            bl_arr.retain(|v| {
+                v.as_str()
+                    .map(|s| !strip_exe_suffix(s).eq_ignore_ascii_case(&clean_name))
+                    .unwrap_or(true)
+            });
+        }
+        let prot_arr = obj
+            .get_mut("ProtectedStartupNames")
+            .and_then(|v| v.as_array_mut())
+            .ok_or_else(|| "Поле ProtectedStartupNames должно быть массивом".to_string())?;
+        let exists = prot_arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .any(|s| strip_exe_suffix(s).eq_ignore_ascii_case(&clean_name));
+        if !exists {
+            prot_arr.push(serde_json::Value::String(clean_name));
+        }
+    }
+
+    write_json_no_bom(&path, &doc)?;
+    read_process_lists_from_root(root)
+}
+
+fn set_service_gaming_mode_in_root(
+    root: &Path,
+    service_name: &str,
+    disable_in_gaming: bool,
+    include_live_status: bool,
+) -> Result<ServicesLists, String> {
+    let clean_name = service_name.trim();
+    if !is_safe_identifier(clean_name) {
+        return Err(format!("Недопустимое имя службы: '{}'", service_name));
+    }
+    let canon_name = canonical_service_name(clean_name).to_string();
+    if disable_in_gaming && is_immutable_core_service(clean_name) {
+        return Err(format!(
+            "Критическая служба ОС '{}' защищена ядром и не может отключаться в Gaming Mode.",
+            clean_name
+        ));
+    }
+
+    let bl_path = root.join("Config").join("services_blacklist.json");
+    let wl_path = root.join("Config").join("services_whitelist.json");
+    let desc_map = load_service_descriptions_map(root);
+
+    let raw_bl = std::fs::read_to_string(&bl_path)
+        .map_err(|e| format!("Не удалось прочитать {}: {}", bl_path.display(), e))?;
+    let mut doc_bl: serde_json::Value =
+        serde_json::from_str(raw_bl.trim_start_matches('\u{feff}'))
+            .map_err(|e| format!("Ошибка разбора {}: {}", bl_path.display(), e))?;
+
+    let raw_wl = std::fs::read_to_string(&wl_path)
+        .map_err(|e| format!("Не удалось прочитать {}: {}", wl_path.display(), e))?;
+    let mut doc_wl: serde_json::Value =
+        serde_json::from_str(raw_wl.trim_start_matches('\u{feff}'))
+            .map_err(|e| format!("Ошибка разбора {}: {}", wl_path.display(), e))?;
+
+    let wl_arr = doc_wl
+        .get_mut("ProtectedServices")
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| "Отсутствует массив ProtectedServices".to_string())?;
+    let bl_arr = doc_bl
+        .get_mut("TargetServices")
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| "Отсутствует массив TargetServices".to_string())?;
+
+    if disable_in_gaming {
+        wl_arr.retain(|v| {
+            let Some(name) = v.as_str() else { return true };
+            if is_immutable_core_service(name) {
+                return true;
+            }
+            !service_names_match(name, &canon_name)
+        });
+        let exists = bl_arr.iter().any(|item| {
+            item.get("Name")
+                .and_then(|v| v.as_str())
+                .map(|n| service_names_match(n, &canon_name))
+                .unwrap_or(false)
+        });
+        if !exists {
+            let reason = lookup_service_description(&desc_map, &canon_name)
+                .map(|d| d.summary_ru.clone())
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "Настроено пользователем".to_string());
+            let cat = infer_service_category(&canon_name, &reason);
+            let mut map = serde_json::Map::new();
+            map.insert("Name".into(), serde_json::Value::String(canon_name.clone()));
+            map.insert("Category".into(), serde_json::Value::String(cat));
+            map.insert("Reason".into(), serde_json::Value::String(reason));
+            bl_arr.push(serde_json::Value::Object(map));
+        }
+    } else {
+        bl_arr.retain(|item| {
+            item.get("Name")
+                .and_then(|v| v.as_str())
+                .map(|n| !service_names_match(n, &canon_name))
+                .unwrap_or(true)
+        });
+        let exists = wl_arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .any(|s| service_names_match(s, &canon_name));
+        if !exists {
+            wl_arr.push(serde_json::Value::String(canon_name));
+        }
+    }
+
+    write_json_no_bom(&wl_path, &doc_wl)?;
+    write_json_no_bom(&bl_path, &doc_bl)?;
+    read_services_lists_from_root(root, include_live_status)
+}
+
 fn update_service_list_in_root(
     root: &Path,
     list_type: &str,
@@ -5435,10 +5920,11 @@ fn update_service_list_in_root(
     operation: &str,
     include_live_status: bool,
 ) -> Result<ServicesLists, String> {
-    let clean_name = service_name.trim().to_string();
-    if !is_safe_identifier(&clean_name) {
+    let raw_trimmed = service_name.trim();
+    if !is_safe_identifier(raw_trimmed) {
         return Err(format!("Недопустимое имя службы: '{}'", service_name));
     }
+    let clean_name = canonical_service_name(raw_trimmed).to_string();
     if operation != "add" && operation != "remove" {
         return Err("Недопустимая операция со списком служб".into());
     }
@@ -5461,7 +5947,6 @@ fn update_service_list_in_root(
     match list_type {
         "blacklist" => {
             if operation == "add" {
-                let base_clean = strip_per_user_service_suffix(&clean_name);
                 if is_immutable_core_service(&clean_name) {
                     return Err(format!(
                         "Критическая служба ОС '{}' не может быть добавлена в чёрный список.",
@@ -5472,10 +5957,9 @@ fn update_service_list_in_root(
                     .get("ProtectedServices")
                     .and_then(|v| v.as_array())
                     .map(|arr| {
-                        arr.iter().filter_map(|v| v.as_str()).any(|s| {
-                            s.eq_ignore_ascii_case(&clean_name)
-                                || s.eq_ignore_ascii_case(base_clean)
-                        })
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .any(|s| service_names_match(s, &clean_name))
                     })
                     .unwrap_or(false);
                 if in_whitelist {
@@ -5495,7 +5979,7 @@ fn update_service_list_in_root(
                 let exists = arr.iter().any(|item| {
                     item.get("Name")
                         .and_then(|v| v.as_str())
-                        .map(|n| n.eq_ignore_ascii_case(&clean_name))
+                        .map(|n| service_names_match(n, &clean_name))
                         .unwrap_or(false)
                 });
                 if exists {
@@ -5543,7 +6027,7 @@ fn update_service_list_in_root(
                 arr.retain(|item| {
                     item.get("Name")
                         .and_then(|v| v.as_str())
-                        .map(|n| !n.eq_ignore_ascii_case(&clean_name))
+                        .map(|n| !service_names_match(n, &clean_name))
                         .unwrap_or(true)
                 });
                 if arr.len() == before {
@@ -5568,7 +6052,7 @@ fn update_service_list_in_root(
                 let exists = wl_arr
                     .iter()
                     .filter_map(|v| v.as_str())
-                    .any(|s| s.eq_ignore_ascii_case(&clean_name));
+                    .any(|s| service_names_match(s, &clean_name));
                 if exists {
                     return Err(format!("Служба '{}' уже находится в белом списке.", clean_name));
                 }
@@ -5583,7 +6067,7 @@ fn update_service_list_in_root(
                     bl_arr.retain(|item| {
                         item.get("Name")
                             .and_then(|v| v.as_str())
-                            .map(|n| !n.eq_ignore_ascii_case(&clean_name))
+                            .map(|n| !service_names_match(n, &clean_name))
                             .unwrap_or(true)
                     });
                     if bl_arr.len() != before_bl {
@@ -5594,7 +6078,7 @@ fn update_service_list_in_root(
                 let before = wl_arr.len();
                 wl_arr.retain(|v| {
                     v.as_str()
-                        .map(|s| !s.eq_ignore_ascii_case(&clean_name))
+                        .map(|s| !service_names_match(s, &clean_name))
                         .unwrap_or(true)
                 });
                 if wl_arr.len() == before {
@@ -5609,18 +6093,202 @@ fn update_service_list_in_root(
     read_services_lists_from_root(root, include_live_status)
 }
 
+fn startup_entry_matches_process(
+    entry_name: &str,
+    entry_display: &str,
+    entry_target: &str,
+    process_name: &str,
+) -> bool {
+    let target_clean = strip_exe_suffix(process_name).trim().to_lowercase();
+    if target_clean.is_empty() {
+        return false;
+    }
+    let matches_token = |haystack: &str| -> bool {
+        let lower = strip_exe_suffix(haystack.trim()).to_lowercase();
+        if lower == target_clean {
+            return true;
+        }
+        // Align word-boundary matching with PowerShell Test-StartupEntryMatchesNames ([^A-Za-z0-9] boundaries)
+        let bytes = lower.as_bytes();
+        let t_bytes = target_clean.as_bytes();
+        let mut search_from = 0usize;
+        while let Some(rel) = lower[search_from..].find(&target_clean) {
+            let pos = search_from + rel;
+            let end = pos + t_bytes.len();
+            let before_ok = pos == 0 || !bytes[pos - 1].is_ascii_alphanumeric();
+            let after_ok = end == bytes.len() || !bytes[end].is_ascii_alphanumeric();
+            if before_ok && after_ok {
+                return true;
+            }
+            search_from = pos + 1;
+        }
+        false
+    };
+    if matches_token(entry_name) || matches_token(entry_display) {
+        return true;
+    }
+    // Check quoted .exe paths (supporting spaces in filenames) and unquoted .exe stems (covers Squirrel Update.exe --processStart Discord.exe)
+    let lower_target = entry_target.to_lowercase();
+    for quote in ['"', '\''] {
+        let mut rest = lower_target.as_str();
+        while let Some(open) = rest.find(quote) {
+            let after_open = &rest[open + 1..];
+            let Some(close) = after_open.find(quote) else {
+                break;
+            };
+            let quoted = after_open[..close].trim();
+            if let Some(stem_part) = quoted.strip_suffix(".exe") {
+                let stem_start = stem_part
+                    .rfind(|c: char| matches!(c, '\\' | '/'))
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                if stem_part[stem_start..].trim() == target_clean {
+                    return true;
+                }
+            }
+            rest = &after_open[close + 1..];
+        }
+    }
+    let mut start = 0;
+    while let Some(pos) = lower_target[start..].find(".exe") {
+        let abs_end = start + pos;
+        let prefix = &lower_target[..abs_end];
+        let stem_start = prefix
+            .rfind(|c: char| matches!(c, '\\' | '/' | '"' | '\'' | ' ' | '\t'))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        if &prefix[stem_start..] == target_clean {
+            return true;
+        }
+        start = abs_end + 4;
+    }
+    false
+}
+
+fn build_process_tooltip_meta(
+    name: &str,
+    protection_kind: Option<&str>,
+    curated: Option<&ProcessDescriptionEntry>,
+    exe_meta: &ExeMetadata,
+) -> (String, String, String, String) {
+    let is_protected = protection_kind.is_some();
+    let display_name = curated
+        .map(|c| c.display_name_ru.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(|| exe_meta.display_name.clone().filter(|s| !s.trim().is_empty()))
+        .unwrap_or_else(|| name.to_string());
+
+    let summary_ru = if let Some(c) = curated.filter(|c| !c.summary_ru.trim().is_empty()) {
+        c.summary_ru.clone()
+    } else if let Some(fd) = exe_meta
+        .file_description
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if let Some(comp) = exe_meta
+            .company_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !fd.to_lowercase().contains(&s.to_lowercase()))
+        {
+            format!("{} ({}).", fd, comp)
+        } else {
+            format!("{}.", fd)
+        }
+    } else if let Some(pn) = exe_meta
+        .product_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if let Some(comp) = exe_meta
+            .company_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !pn.to_lowercase().contains(&s.to_lowercase()))
+        {
+            format!("{} ({}).", pn, comp)
+        } else {
+            format!("{}.", pn)
+        }
+    } else if is_protected {
+        match protection_kind {
+            Some("anticheat") => format!("Процесс античита ({}).", name),
+            Some("game_client") => format!("Компонент игрового клиента ({}).", name),
+            Some("network_bypass") => format!("Компонент обхода DPI Zapret ({}).", name),
+            Some("self_app") => "Процесс самого приложения Ultra Gaming Mode.".to_string(),
+            _ => format!("Системный процесс ядра Windows ({}).", name),
+        }
+    } else {
+        format!("Фоновый процесс сторонней программы ({}.exe).", name)
+    };
+
+    let can_disable_hint = if let Some(c) = curated.filter(|c| !c.can_disable_ru.trim().is_empty()) {
+        c.can_disable_ru.clone()
+    } else if is_protected {
+        match protection_kind {
+            Some("anticheat") => {
+                "Защищён как античит — принудительное отключение нарушит запуск онлайн-игр."
+                    .to_string()
+            }
+            Some("game_client") => {
+                "Защищён как игровой клиент — нужен для стабильного запуска игр.".to_string()
+            }
+            Some("network_bypass") => {
+                "Защищён как обход DPI (Zapret) — остаётся работать в Gaming Mode.".to_string()
+            }
+            Some("self_app") => {
+                "Текущее приложение защищено от самоотключения.".to_string()
+            }
+            _ => "Системный компонент Windows — отключать нельзя.".to_string(),
+        }
+    } else {
+        "Сторонняя программа. Выключайте в Gaming Mode, если она не нужна во время игры (её автозагрузка также будет временно приостановлена)."
+            .to_string()
+    };
+
+    let safety_level = normalize_safety_level(
+        curated.map(|c| c.safety_level.as_str()).unwrap_or("optional"),
+        is_protected,
+    );
+
+    (display_name, summary_ru, can_disable_hint, safety_level)
+}
+
 #[tauri::command]
 async fn get_running_processes() -> Result<LiveProcessesSnapshot, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let root = get_workspace_root();
         let cfg = read_process_lists_from_root(&root)?;
+        let proc_desc_map = load_process_descriptions_map(&root);
 
         #[cfg(target_os = "windows")]
         let raw_procs = win_hw::enumerate_running_processes_raw();
         #[cfg(not(target_os = "windows"))]
         let raw_procs: Vec<(u32, String, String, f64)> = Vec::new();
 
+        #[cfg(target_os = "windows")]
+        let raw_startup: Vec<(String, String, String)> = win_hw::enumerate_windows_startup_raw()
+            .into_iter()
+            .filter(|(_, _, _, _, _, _, enabled)| *enabled)
+            .map(|(_, name, display, _, _, target, _)| (name, display, target))
+            .collect();
+        #[cfg(not(target_os = "windows"))]
+        let raw_startup: Vec<(String, String, String)> = Vec::new();
+
+        let is_in_startup = |proc_name: &str| -> bool {
+            raw_startup
+                .iter()
+                .any(|(s_name, s_disp, s_target)| {
+                    startup_entry_matches_process(s_name, s_disp, s_target, proc_name)
+                })
+        };
+
         let self_pid = std::process::id();
+        let mut startup_process_names_set: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         let mut processes: Vec<ProcessItem> = raw_procs
             .into_iter()
             .map(|(pid, name, executable_path, memory_mb)| {
@@ -5633,11 +6301,17 @@ async fn get_running_processes() -> Result<LiveProcessesSnapshot, String> {
                 };
                 let is_protected = protection_kind.is_some();
                 #[cfg(target_os = "windows")]
-                let display_name = win_hw::read_exe_display_name(&executable_path)
-                    .filter(|d| !d.trim().is_empty())
-                    .unwrap_or_else(|| name.clone());
+                let exe_meta = win_hw::read_exe_metadata(&executable_path);
                 #[cfg(not(target_os = "windows"))]
-                let display_name = name.clone();
+                let exe_meta = ExeMetadata::default();
+                let curated = lookup_process_description(&proc_desc_map, &name);
+                let (display_name, summary_ru, can_disable_hint, safety_level) =
+                    build_process_tooltip_meta(
+                        &name,
+                        protection_kind.as_deref(),
+                        curated,
+                        &exe_meta,
+                    );
                 let is_blacklisted = cfg
                     .blacklist_processes
                     .iter()
@@ -5645,7 +6319,11 @@ async fn get_running_processes() -> Result<LiveProcessesSnapshot, String> {
                 let is_startup_protected = cfg
                     .protected_startup_names
                     .iter()
-                    .any(|p| p.eq_ignore_ascii_case(&name));
+                    .any(|p| strip_exe_suffix(p).eq_ignore_ascii_case(&name));
+                let in_startup = is_in_startup(&name);
+                if in_startup {
+                    startup_process_names_set.insert(name.to_lowercase());
+                }
                 ProcessItem {
                     pid,
                     name,
@@ -5656,9 +6334,42 @@ async fn get_running_processes() -> Result<LiveProcessesSnapshot, String> {
                     is_protected,
                     is_blacklisted,
                     is_startup_protected,
+                    in_startup,
+                    summary_ru,
+                    can_disable_hint,
+                    safety_level,
                 }
             })
             .collect();
+
+        let mut process_descriptions = std::collections::HashMap::new();
+        for rule_name in cfg
+            .blacklist_processes
+            .iter()
+            .chain(cfg.protected_startup_names.iter())
+        {
+            let clean = strip_exe_suffix(rule_name).trim();
+            if clean.is_empty() {
+                continue;
+            }
+            if is_in_startup(clean) {
+                startup_process_names_set.insert(clean.to_lowercase());
+            }
+            let prot_kind = classify_process_protection(clean);
+            let curated = lookup_process_description(&proc_desc_map, clean);
+            let (disp, sum, hint, lvl) =
+                build_process_tooltip_meta(clean, prot_kind, curated, &ExeMetadata::default());
+            process_descriptions.insert(
+                clean.to_lowercase(),
+                ProcessDescriptionEntry {
+                    display_name_ru: disp,
+                    summary_ru: sum,
+                    can_disable_ru: hint,
+                    safety_level: lvl,
+                    protection_kind: prot_kind.map(|s| s.to_string()),
+                },
+            );
+        }
 
         processes.sort_by(|a, b| {
             b.memory_mb
@@ -5667,10 +6378,16 @@ async fn get_running_processes() -> Result<LiveProcessesSnapshot, String> {
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
 
+        let mut startup_process_names: Vec<String> =
+            startup_process_names_set.into_iter().collect();
+        startup_process_names.sort();
+
         Ok(LiveProcessesSnapshot {
             processes,
             blacklist_processes: cfg.blacklist_processes,
             protected_startup_names: cfg.protected_startup_names,
+            process_descriptions,
+            startup_process_names,
         })
     })
     .await
@@ -5777,6 +6494,37 @@ async fn kill_process(pid: u32, name: String) -> Result<ActionResult, String> {
 }
 
 #[tauri::command]
+async fn set_process_gaming_mode(
+    process_name: String,
+    disable_in_gaming: bool,
+) -> Result<ProcessConfigLists, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = get_workspace_root();
+        set_process_gaming_mode_in_root(&root, &process_name, disable_in_gaming)
+    })
+    .await
+    .map_err(|e| format!("Сбой переключения режима процесса: {}", e))?
+}
+
+#[tauri::command]
+async fn set_service_gaming_mode(
+    service_name: String,
+    disable_in_gaming: bool,
+) -> Result<ServicesLists, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = get_workspace_root();
+        set_service_gaming_mode_in_root(
+            &root,
+            &service_name,
+            disable_in_gaming,
+            cfg!(target_os = "windows"),
+        )
+    })
+    .await
+    .map_err(|e| format!("Сбой переключения режима службы: {}", e))?
+}
+
+#[tauri::command]
 async fn update_process_list(
     list_type: String,
     process_name: String,
@@ -5811,11 +6559,8 @@ async fn control_service(
     tauri::async_runtime::spawn_blocking(move || {
         let root = get_workspace_root();
         let lists = read_services_lists_from_root(&root, false)?;
-        let base_name = strip_per_user_service_suffix(&clean_name);
         let is_protected = is_immutable_core_service(&clean_name)
-            || lists.whitelist.iter().any(|w| {
-                w.eq_ignore_ascii_case(&clean_name) || w.eq_ignore_ascii_case(base_name)
-            });
+            || lists.whitelist.iter().any(|w| service_names_match(w, &clean_name));
 
         if (safe_op == "Stop" || safe_op == "Disabled") && is_protected {
             return Err(format!(
@@ -6345,9 +7090,11 @@ pub fn run() {
             set_autostart,
             get_services_lists,
             apply_service_feature_pack,
+            set_service_gaming_mode,
             get_running_processes,
             get_windows_startup_entries,
             kill_process,
+            set_process_gaming_mode,
             update_process_list,
             control_service,
             update_service_list,
@@ -6384,7 +7131,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_services_lists_deserializes_all_205_blacklist_and_92_whitelist() {
+    fn test_services_lists_deserializes_all_205_blacklist_and_95_whitelist() {
         let lists = read_services_lists_sync().expect("read_services_lists_sync should succeed");
         assert_eq!(
             lists.blacklist.len(),
@@ -6393,11 +7140,14 @@ mod tests {
         );
         assert_eq!(
             lists.whitelist.len(),
-            92,
-            "Expected 92 whitelisted services from Config/services_whitelist.json"
+            95,
+            "Expected 95 whitelisted services from Config/services_whitelist.json"
         );
         assert!(lists.whitelist.iter().any(|s| s == "FACEIT"));
         assert!(lists.whitelist.iter().any(|s| s == "FACEITService"));
+        assert!(lists.whitelist.iter().any(|s| s == "zapret"));
+        assert!(lists.whitelist.iter().any(|s| s == "WinDivert"));
+        assert!(lists.whitelist.iter().any(|s| s == "WinDivert14"));
         assert!(!lists.blacklist.iter().any(|s| s.name == "FACEIT" || s.name == "FACEITService"));
         assert_eq!(lists.feature_packs.len(), 7);
         let faceit_pack = lists
@@ -6862,7 +7612,7 @@ mod tests {
         let lists =
             read_services_lists_from_root(&root, false).expect("read_services_lists_from_root");
         assert_eq!(lists.blacklist.len(), 205);
-        assert_eq!(lists.whitelist.len(), 92);
+        assert_eq!(lists.whitelist.len(), 95);
         for item in &lists.blacklist {
             assert!(
                 !item.summary_ru.trim().is_empty(),
@@ -7124,6 +7874,9 @@ mod tests {
         assert_eq!(classify_process_protection("FACEITClient"), Some("anticheat"));
         assert_eq!(classify_process_protection("vgk"), Some("anticheat"));
         assert_eq!(classify_process_protection("steam.exe"), Some("game_client"));
+        assert_eq!(classify_process_protection("winws.exe"), Some("network_bypass"));
+        assert_eq!(classify_process_protection("winws2"), Some("network_bypass"));
+        assert_eq!(classify_process_protection("zapret"), Some("network_bypass"));
         assert_eq!(classify_process_protection("Discord"), None);
 
         let temp_root =
@@ -7235,5 +7988,281 @@ mod tests {
         assert_eq!(&pending_icon.rgba()[center_idx..center_idx + 4], &[245, 158, 11, 255]);
 
         let _ = std::fs::remove_dir_all(&base_temp);
+    }
+
+    #[test]
+    fn test_canonical_service_name_and_matching_per_user_and_versioned() {
+        assert_eq!(canonical_service_name("WpnUserService_5e3a4"), "WpnUserService");
+        assert_eq!(
+            canonical_service_name("GoogleUpdaterService159.0.8140.0"),
+            "GoogleUpdaterService"
+        );
+        assert_eq!(
+            canonical_service_name("GoogleUpdaterInternalService159.0.8140.0"),
+            "GoogleUpdaterInternalService"
+        );
+        assert_eq!(canonical_service_name("FontCache3.0.0.0"), "FontCache3.0.0.0");
+        assert_eq!(
+            canonical_service_name("igfxCUIService2.0.0.0"),
+            "igfxCUIService2.0.0.0"
+        );
+        // Short numeric/hex suffixes like _64, _32, _1 are NOT per-user LUIDs and must remain intact
+        assert_eq!(canonical_service_name("MyDriver_64"), "MyDriver_64");
+        assert_eq!(canonical_service_name("AudioSvc_32"), "AudioSvc_32");
+        assert_eq!(canonical_service_name("Worker_1"), "Worker_1");
+
+        assert!(service_names_match("WpnUserService", "WpnUserService_5e3a4"));
+        assert!(service_names_match("WpnUserService_11a2b", "WpnUserService_99f0c"));
+        assert!(service_names_match(
+            "GoogleUpdaterService",
+            "GoogleUpdaterService159.0.8140.0"
+        ));
+        assert!(!service_names_match("Spooler", "SysMain"));
+        assert!(!service_names_match("", "Spooler"));
+        assert!(!service_names_match("   ", "   "));
+    }
+
+    #[test]
+    fn test_set_service_gaming_mode_atomic_toggle_and_core_protection() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "ugm_svc_mode_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        sync_embedded_runtime(&temp_root).expect("sync_embedded_runtime");
+
+        // Core services and invalid names cannot be set to disable_in_gaming = true
+        for forbidden in ["RpcSs", "Audiosrv", "DcomLaunch", "../evil", "svc;calc"] {
+            assert!(
+                set_service_gaming_mode_in_root(&temp_root, forbidden, true, false).is_err(),
+                "Expected '{}' to be rejected for disable_in_gaming=true",
+                forbidden
+            );
+        }
+
+        // Toggle DiagTrack: Disable -> Normal (Без утилки) -> Disable (Выкл. в Gaming Mode)
+        let normal = set_service_gaming_mode_in_root(&temp_root, "DiagTrack", false, false)
+            .expect("DiagTrack -> normal");
+        assert!(normal.whitelist.iter().any(|w| w.eq_ignore_ascii_case("DiagTrack")));
+        assert!(!normal.blacklist.iter().any(|b| b.name.eq_ignore_ascii_case("DiagTrack")));
+
+        let gaming = set_service_gaming_mode_in_root(&temp_root, "DiagTrack", true, false)
+            .expect("DiagTrack -> gaming");
+        assert!(gaming.blacklist.iter().any(|b| b.name.eq_ignore_ascii_case("DiagTrack")));
+        assert!(!gaming.whitelist.iter().any(|w| w.eq_ignore_ascii_case("DiagTrack")));
+
+        // Per-user (_LUID) and versioned updater names canonicalize cleanly without duplicates
+        let wpn_normal =
+            set_service_gaming_mode_in_root(&temp_root, "WpnUserService_5e3a4", false, false)
+                .expect("WpnUserService_5e3a4 -> normal");
+        assert!(wpn_normal
+            .whitelist
+            .iter()
+            .any(|w| w.eq_ignore_ascii_case("WpnUserService")));
+        assert!(!wpn_normal
+            .blacklist
+            .iter()
+            .any(|b| service_names_match(&b.name, "WpnUserService")));
+
+        let goog_gaming = set_service_gaming_mode_in_root(
+            &temp_root,
+            "GoogleUpdaterService159.0.8140.0",
+            true,
+            false,
+        )
+        .expect("GoogleUpdaterService159.0.8140.0 -> gaming");
+        let goog_matches = goog_gaming
+            .blacklist
+            .iter()
+            .filter(|b| service_names_match(&b.name, "GoogleUpdaterService"))
+            .count();
+        assert_eq!(goog_matches, 1, "Versioned service must not create duplicates");
+
+        // Verify pure UTF-8 without BOM
+        for rel in ["services_blacklist.json", "services_whitelist.json"] {
+            let bytes = std::fs::read(temp_root.join("Config").join(rel)).unwrap();
+            assert!(!bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
+        }
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_set_process_gaming_mode_atomic_toggle_and_protection() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "ugm_proc_mode_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&temp_root);
+        sync_embedded_runtime(&temp_root).expect("sync_embedded_runtime");
+
+        // Protected OS, anti-cheat, game client, and self processes must be blocked
+        for forbidden in [
+            "lsass",
+            "UltraGamingMode.exe",
+            "FACEIT",
+            "FACEITClient",
+            "FACEITService",
+            "vgk",
+            "steam.exe",
+            "msedgewebview2",
+            "ctfmon",
+        ] {
+            assert!(
+                set_process_gaming_mode_in_root(&temp_root, forbidden, true).is_err(),
+                "Expected protected process '{}' to be rejected",
+                forbidden
+            );
+        }
+
+        // Toggle Discord.exe -> Normal (Без утилки) -> Gaming (Выкл. в Gaming Mode)
+        let normal = set_process_gaming_mode_in_root(&temp_root, "Discord.exe", false)
+            .expect("Discord -> normal");
+        assert!(normal
+            .protected_startup_names
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("Discord")));
+        assert!(!normal
+            .blacklist_processes
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("Discord")));
+
+        let gaming = set_process_gaming_mode_in_root(&temp_root, "Discord", true)
+            .expect("Discord -> gaming");
+        assert!(gaming
+            .blacklist_processes
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("Discord")));
+        assert!(!gaming
+            .protected_startup_names
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("Discord")));
+
+        // Widgets strictly obeys user choice
+        let widgets_keep = set_process_gaming_mode_in_root(&temp_root, "Widgets", false)
+            .expect("Widgets -> normal");
+        assert!(!widgets_keep
+            .blacklist_processes
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("Widgets")));
+        assert!(widgets_keep
+            .protected_startup_names
+            .iter()
+            .any(|p| p.eq_ignore_ascii_case("Widgets")));
+
+        let bytes = std::fs::read(temp_root.join("Config").join("startup_apps.json")).unwrap();
+        assert!(!bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn test_descriptions_safety_levels_and_tooltip_fallback_and_startup_matching() {
+        let root = get_workspace_root();
+        let svc_descs = load_service_descriptions_map(&root);
+        assert!(svc_descs.len() >= 300, "Expected >=300 curated service descriptions");
+        for (name, entry) in &svc_descs {
+            assert!(!entry.summary_ru.trim().is_empty(), "Empty summaryRu for {}", name);
+            assert!(
+                !entry.can_disable_ru.trim().is_empty(),
+                "Empty canDisableRu for {}",
+                name
+            );
+            assert!(
+                matches!(entry.safety_level.as_str(), "safe" | "optional" | "protected"),
+                "Invalid safetyLevel '{}' for service {}",
+                entry.safety_level,
+                name
+            );
+            assert!(
+                !entry.summary_ru.contains('\u{FFFD}')
+                    && !entry.summary_ru.contains('╨')
+                    && !entry.can_disable_ru.contains('\u{FFFD}')
+                    && !entry.can_disable_ru.contains('╨'),
+                "Detected encoding corruption in service description for {}",
+                name
+            );
+        }
+
+        let proc_descs = load_process_descriptions_map(&root);
+        let proc_lists = read_process_lists_from_root(&root).expect("read_process_lists_from_root");
+        for name in proc_lists
+            .blacklist_processes
+            .iter()
+            .chain(proc_lists.protected_startup_names.iter())
+        {
+            let entry = lookup_process_description(&proc_descs, name)
+                .unwrap_or_else(|| panic!("Missing process_descriptions.json entry for {}", name));
+            assert!(!entry.display_name_ru.trim().is_empty());
+            assert!(!entry.summary_ru.trim().is_empty());
+            assert!(!entry.can_disable_ru.trim().is_empty());
+            assert!(matches!(
+                entry.safety_level.as_str(),
+                "safe" | "optional" | "protected"
+            ));
+        }
+
+        // EXE metadata fallback for unknown third-party apps
+        let meta = ExeMetadata {
+            display_name: Some("Custom RGB Hub".to_string()),
+            file_description: Some("RGB Controller Service".to_string()),
+            product_name: Some("RGB Hub".to_string()),
+            company_name: Some("Acme Peripherals".to_string()),
+        };
+        let (disp, sum, hint, lvl) = build_process_tooltip_meta("CustomRgbHub", None, None, &meta);
+        assert_eq!(disp, "Custom RGB Hub");
+        assert!(sum.contains("RGB Controller Service") && sum.contains("Acme Peripherals"));
+        assert!(!hint.trim().is_empty());
+        assert_eq!(lvl, "optional");
+
+        // Protected processes always enforce safetyLevel="protected"
+        let (_, _, _, prot_lvl) =
+            build_process_tooltip_meta("FACEITClient", Some("anticheat"), None, &ExeMetadata::default());
+        assert_eq!(prot_lvl, "protected");
+
+        // Startup entry matching covers Squirrel Update.exe --processStart Discord.exe without false positives
+        assert!(startup_entry_matches_process(
+            "Discord",
+            "Discord",
+            r#"C:\Users\Player\AppData\Local\Discord\Update.exe --processStart Discord.exe"#,
+            "Discord"
+        ));
+        assert!(startup_entry_matches_process(
+            "DiscordLauncher",
+            "Discord Launcher",
+            r#"C:\Users\Player\AppData\Local\Discord\Update.exe --processStart Discord.exe"#,
+            "Discord"
+        ));
+        assert!(!startup_entry_matches_process(
+            "Discord",
+            "Discord",
+            r#"C:\Users\Player\AppData\Local\Discord\Update.exe --processStart Discord.exe"#,
+            "Spotify"
+        ));
+        // Consistent underscore/UWP/spaced-path matching with PowerShell engine
+        assert!(startup_entry_matches_process(
+            "Discord_AutoStart",
+            "Discord_AutoStart",
+            "",
+            "Discord"
+        ));
+        assert!(startup_entry_matches_process(
+            "28017CharlesMilette.TranslucentTB",
+            "TranslucentTB",
+            r"28017CharlesMilette.TranslucentTB_v826wp6bftszj\TranslucentTB",
+            "TranslucentTB"
+        ));
+        assert!(startup_entry_matches_process(
+            "CustomTool",
+            "Custom Tool",
+            r#""C:\Program Files\My App\My App.exe" --minimized"#,
+            "My App"
+        ));
+        assert!(startup_entry_matches_process(
+            "LogiLamp",
+            "LogiLamp",
+            r#"C:\Program Files\Logi\logi_lamparray_service.AMD64.exe"#,
+            "logi_lamparray_service.AMD64"
+        ));
     }
 }

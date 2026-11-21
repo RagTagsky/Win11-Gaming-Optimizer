@@ -56,13 +56,15 @@ Write-Host "`n[Test Group 2] Core Module Exports & Live Hardware Auto-Detection:
 $requiredExports = @(
     "Select-PrimaryGamingGpu", "Resolve-StorageDeviceMediaType", "Test-IsLowRamSystem",
     "Test-IsHighPerformanceScheme", "Set-ServiceStateSafe", "Invoke-ServiceControlSafe",
+    "Get-CanonicalServiceName", "Test-ServiceInList", "Test-ServiceShouldDisableInGaming",
+    "Find-MatchingLiveServices", "Test-ProcessShouldCloseInGaming", "Test-StartupEntryMatchesNames",
     "Test-SafeServiceName", "Test-IsProtectedProcess", "Stop-ProcessSafe",
     "Get-HardwareProfile", "Apply-CpuGamingOptimizations", "Apply-GpuGamingOptimizations",
     "Set-NTFSGamingOptimizations", "Restore-NTFSGamingOptimizations",
     "Get-KernelDpcConfig", "Set-KernelDpcOptimizations", "Restore-KernelDpcOptimizations",
     "Get-InputBufferConfig", "Set-InputBufferOptimizations", "Restore-InputBufferOptimizations",
     "Get-BcdeditTimerConfig", "Set-BcdeditTimerOptimizations", "Restore-BcdeditTimerOptimizations",
-    "Get-TcpStackConfig", "Set-TcpGamingStackOptimizations", "Restore-TcpGamingStackOptimizations",
+    "Get-TcpStackConfig", "Test-ShouldPreserveTcpTimestamps", "Set-TcpGamingStackOptimizations", "Restore-TcpGamingStackOptimizations",
     "Get-HagsGpuSchedulingConfig", "Set-HagsGpuScheduling", "Restore-HagsGpuScheduling",
     "Get-ExtendedGamingTargets", "Set-ExtendedGamingOptimizations",
     "Get-PowerLatencyConfig", "Set-PowerLatencyOptimizations", "Restore-PowerLatencyOptimizations",
@@ -161,22 +163,53 @@ $wlNames = @($wlConfig.ProtectedServices)
 $overlapServices = @($blNames | Where-Object { $wlNames -contains $_ })
 
 Assert-Test ($blNames.Count -eq 205) "services_blacklist.json contains 205 TargetServices (actual: $($blNames.Count))"
-Assert-Test ($wlNames.Count -eq 92) "services_whitelist.json contains 92 ProtectedServices (actual: $($wlNames.Count))"
+Assert-Test ($wlNames.Count -eq 95) "services_whitelist.json contains 95 ProtectedServices (actual: $($wlNames.Count))"
 Assert-Test ($overlapServices.Count -eq 0) "Zero overlap between services_blacklist.json and services_whitelist.json"
 
-$criticalWhitelisted = @("FACEIT", "FACEITService", "vgk", "vgc", "EasyAntiCheat", "BEService", "Audiosrv", "camsvc", "CaptureService", "cbdhsvc", "Apple Mobile Device Service", "ProcessGovernor")
+$criticalWhitelisted = @("FACEIT", "FACEITService", "vgk", "vgc", "EasyAntiCheat", "BEService", "Audiosrv", "camsvc", "CaptureService", "cbdhsvc", "Apple Mobile Device Service", "ProcessGovernor", "zapret", "WinDivert", "WinDivert14")
 $missingCriticalWl = @($criticalWhitelisted | Where-Object { $wlNames -notcontains $_ })
-Assert-Test ($missingCriticalWl.Count -eq 0) "services_whitelist.json protects all critical anti-cheat, audio, mic & screenshot services"
+Assert-Test ($missingCriticalWl.Count -eq 0) "services_whitelist.json protects all critical anti-cheat, audio, mic, Zapret/DPI & screenshot services"
 
 $svcDescObj = (Get-Content -LiteralPath $descPath -Raw -Encoding UTF8 | ConvertFrom-Json).Descriptions
 $missingDesc = @()
+$invalidSvcSafety = @()
 foreach ($svcName in ($blNames + $wlNames)) {
     $p = $svcDescObj.PSObject.Properties[$svcName]
     if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
         $missingDesc += $svcName
     }
 }
+foreach ($prop in $svcDescObj.PSObject.Properties) {
+    if ($prop.Value.safetyLevel -notin @("safe", "optional", "protected")) {
+        $invalidSvcSafety += $prop.Name
+    }
+}
 Assert-Test ($missingDesc.Count -eq 0) "service_descriptions.json covers all $($blNames.Count + $wlNames.Count) managed services (missing: $($missingDesc.Count))"
+Assert-Test ($invalidSvcSafety.Count -eq 0) "service_descriptions.json defines valid safetyLevel on every entry (invalid: $($invalidSvcSafety.Count))"
+
+$procDescPath = Join-Path $repoRoot "Config\process_descriptions.json"
+$procDescObj = (Get-Content -LiteralPath $procDescPath -Raw -Encoding UTF8 | ConvertFrom-Json).Descriptions
+$procDescKeys = @{}
+$invalidProcSafety = @()
+foreach ($prop in $procDescObj.PSObject.Properties) {
+    $procDescKeys[$prop.Name.ToLowerInvariant()] = $prop.Value
+    if (
+        [string]::IsNullOrWhiteSpace($prop.Value.displayNameRu) -or
+        [string]::IsNullOrWhiteSpace($prop.Value.summaryRu) -or
+        [string]::IsNullOrWhiteSpace($prop.Value.canDisableRu) -or
+        $prop.Value.safetyLevel -notin @("safe", "optional", "protected")
+    ) {
+        $invalidProcSafety += $prop.Name
+    }
+}
+$missingProcDesc = @()
+foreach ($pName in (@($stConfig.BlacklistProcesses) + @($stConfig.ProtectedStartupNames))) {
+    $cleanKey = ($pName.Trim() -replace '(?i)\.exe$', '').ToLowerInvariant()
+    if (-not $procDescKeys.ContainsKey($cleanKey)) {
+        $missingProcDesc += $pName
+    }
+}
+Assert-Test ($missingProcDesc.Count -eq 0 -and $invalidProcSafety.Count -eq 0) "process_descriptions.json covers all configured processes with valid Russian metadata and safetyLevel (missing: $($missingProcDesc.Count), invalid: $($invalidProcSafety.Count))"
 
 Assert-Test ($stConfig.BlacklistProcesses -notcontains "SearchHost" -and $stConfig.BlacklistProcesses -notcontains "TextInputHost" -and $stConfig.BlacklistProcesses -notcontains "UltraGamingMode") "startup_apps.json excludes SearchHost, TextInputHost, and UltraGamingMode from BlacklistProcesses"
 Assert-Test (
@@ -206,6 +239,12 @@ Assert-Test ($null -eq $stockBcd.DynamicTick -and $null -eq $stockBcd.TscSyncPol
 $tcpCfg = Get-TcpStackConfig
 $tcpGuids = @($tcpCfg.Interfaces | ForEach-Object { if ($_ -is [hashtable]) { $_["Guid"] } else { $_.Guid } })
 Assert-Test ($tcpCfg -is [hashtable] -and $tcpGuids -notcontains "{8eb6cecf-6919-4cf4-8c70-e55823aa4b53}" -and $tcpGuids -notcontains "{2e219888-9139-4199-ea45-cb771d7dad1d}") "Get-TcpStackConfig isolates physical interfaces and excludes Apple USB Tethering & Wintun GUIDs"
+Assert-Test (
+    (Test-ShouldPreserveTcpTimestamps -CurrentTimestamps "disabled" -ActiveServiceNames @("zapret") -ActiveProcessNames @()) -and
+    (Test-ShouldPreserveTcpTimestamps -CurrentTimestamps "disabled" -ActiveServiceNames @() -ActiveProcessNames @("winws.exe")) -and
+    (Test-ShouldPreserveTcpTimestamps -CurrentTimestamps "enabled" -ActiveServiceNames @() -ActiveProcessNames @()) -and
+    -not (Test-ShouldPreserveTcpTimestamps -CurrentTimestamps "disabled" -ActiveServiceNames @("Spooler") -ActiveProcessNames @("Discord"))
+) "Test-ShouldPreserveTcpTimestamps preserves RFC 1323 timestamps when Zapret/WinDivert/winws is present or already enabled"
 
 $gamingAdapterNames = @(Get-PhysicalGamingAdapters | ForEach-Object { $_.Name })
 Assert-Test ($gamingAdapterNames -notcontains "Ethernet 2" -and $gamingAdapterNames -notcontains "wwan99") "Get-PhysicalGamingAdapters excludes 'Ethernet 2' and 'wwan99'"
@@ -352,20 +391,20 @@ Assert-Test ($debloatSnap -is [hashtable] -and $debloatSnap.Count -eq 14) "Get-W
 
 # -- 9. SemVer Parser, Suite Version & URL/Tag Injection Guards ---------------
 Write-Host "`n[Test Group 9] SemVer Engine, Suite Version & URL Security Guards:" -ForegroundColor Cyan
-Assert-Test ((Get-AppCurrentVersion) -eq "3.5.2") "Get-AppCurrentVersion returns '3.5.2'"
+Assert-Test ((Get-AppCurrentVersion) -eq "3.6.0") "Get-AppCurrentVersion returns '3.6.0'"
 
 $vBase  = ConvertTo-SemVer "v2.8"
 $vPad   = ConvertTo-SemVer "2.8.0"
 $vPatch = ConvertTo-SemVer "v2.8.1"
-$vCurr  = ConvertTo-SemVer "v3.5.2"
+$vCurr  = ConvertTo-SemVer "v3.6.0"
 Assert-Test ($vBase -eq $vPad -and $vPatch -gt $vBase -and $vCurr -gt $vPatch) "ConvertTo-SemVer normalizes and compares versions accurately"
 Assert-Test ($null -eq (ConvertTo-SemVer "") -and $null -eq (ConvertTo-SemVer "invalid")) "ConvertTo-SemVer returns null on invalid version input"
 
-Assert-Test ((Test-SafeVersionTag -Tag "v3.5.2") -and -not (Test-SafeVersionTag -Tag 'v3.5.2"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
+Assert-Test ((Test-SafeVersionTag -Tag "v3.6.0") -and -not (Test-SafeVersionTag -Tag 'v3.6.0"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
 Assert-Test (
-    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.2") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.2") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.5.2") -and
+    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.6.0") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.6.0") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.6.0") -and
     -not (Test-SafeGitHubReleaseUrl -Url "file:///C:/Windows/System32/calc.exe")
 ) "Test-SafeGitHubReleaseUrl enforces HTTPS and github.com repository allowlist"
 
@@ -393,6 +432,80 @@ try { $null = Invoke-ServiceControlSafe -ServiceName "Audiosrv" -Operation "Stop
 $svcBlockedCore = $false
 try { $null = Invoke-ServiceControlSafe -ServiceName "RpcSs" -Operation "Disabled" -Whitelist @() } catch { $svcBlockedCore = $true }
 Assert-Test ($svcBlockedAudio -and $svcBlockedCore) "Invoke-ServiceControlSafe throws on stopping whitelisted or disabling immutable core services"
+
+# -- 11. Two-Mode Service/Process Rules & Canonical Name Matching (v3.6.0) ----
+Write-Host "`n[Test Group 11] Two-Mode Service/Process Rules & Canonical Name Matching:" -ForegroundColor Cyan
+Assert-Test (
+    (Get-CanonicalServiceName -ServiceName "WpnUserService_5e3a4") -eq "WpnUserService" -and
+    (Get-CanonicalServiceName -ServiceName "GoogleUpdaterService159.0.8140.0") -eq "GoogleUpdaterService" -and
+    (Get-CanonicalServiceName -ServiceName "FontCache3.0.0.0") -eq "FontCache3.0.0.0" -and
+    (Get-CanonicalServiceName -ServiceName "igfxCUIService2.0.0.0") -eq "igfxCUIService2.0.0.0" -and
+    (Get-CanonicalServiceName -ServiceName "MyDriver_64") -eq "MyDriver_64" -and
+    (Get-CanonicalServiceName -ServiceName "AudioSvc_32") -eq "AudioSvc_32" -and
+    (Get-CanonicalServiceName -ServiceName "Worker_1") -eq "Worker_1"
+) "Get-CanonicalServiceName strips per-user _LUID (4-16 hex) and dynamic 4-part updater versions while keeping fixed-version and short _64/_32/_1 suffixes"
+
+$liveWpnInstances = @(Get-Service -Name "WpnUserService_*" -ErrorAction SilentlyContinue)
+if ($liveWpnInstances.Count -gt 0) {
+    $resolvedWpn = @(Find-MatchingLiveServices -ServiceName "WpnUserService")
+    Assert-Test (
+        $resolvedWpn.Count -gt 0 -and
+        ($resolvedWpn | Where-Object { $_.Name -match '^WpnUserService_[0-9a-fA-F]{4,16}$' }).Count -eq $resolvedWpn.Count
+    ) "Find-MatchingLiveServices resolves active per-user _LUID instance instead of non-runnable template service"
+} else {
+    Assert-Test ($true) "Find-MatchingLiveServices resolves active per-user _LUID instance (no active WpnUserService instance in session)"
+}
+
+Assert-Test (
+    (Test-ServiceInList -ServiceName "WpnUserService_5e3a4" -List @("WpnUserService")) -and
+    (Test-ServiceInList -ServiceName "GoogleUpdaterService159.0.8140.0" -List @(@{ Name = "GoogleUpdaterService" })) -and
+    -not (Test-ServiceInList -ServiceName "Spooler" -List @("SysMain"))
+) "Test-ServiceInList matches canonical per-user and versioned service names across string and object lists"
+
+Assert-Test (
+    (Test-ServiceShouldDisableInGaming -ServiceName "SysMain" -Blacklist @("SysMain") -Whitelist @()) -and
+    -not (Test-ServiceShouldDisableInGaming -ServiceName "SysMain" -Blacklist @("SysMain") -Whitelist @("SysMain")) -and
+    -not (Test-ServiceShouldDisableInGaming -ServiceName "WSAIFabricSvc" -Blacklist @("WSAIFabricSvc") -Whitelist @("WSAIFabricSvc")) -and
+    -not (Test-ServiceShouldDisableInGaming -ServiceName "RpcSs" -Blacklist @("RpcSs") -Whitelist @())
+) "Test-ServiceShouldDisableInGaming respects user choice for SysMain/WSAIFabricSvc and blocks immutable core services"
+
+$mockStartupCfg = [PSCustomObject]@{
+    BlacklistProcesses = @("Discord", "Widgets")
+    ProtectedStartupNames = @("Spotify", "Widgets")
+}
+$mockStartupWidgetsOn = [PSCustomObject]@{
+    BlacklistProcesses = @("Discord", "Widgets")
+    ProtectedStartupNames = @("Spotify")
+}
+Assert-Test (
+    (Test-ProcessShouldCloseInGaming -ProcessName "Discord.exe" -StartupConfig $mockStartupCfg) -and
+    -not (Test-ProcessShouldCloseInGaming -ProcessName "Spotify" -StartupConfig $mockStartupCfg) -and
+    -not (Test-ProcessShouldCloseInGaming -ProcessName "Widgets" -StartupConfig $mockStartupCfg) -and
+    (Test-ProcessShouldCloseInGaming -ProcessName "Widgets" -StartupConfig $mockStartupWidgetsOn) -and
+    -not (Test-ProcessShouldCloseInGaming -ProcessName "FACEITClient" -StartupConfig ([PSCustomObject]@{ BlacklistProcesses = @("FACEITClient"); ProtectedStartupNames = @() })) -and
+    -not (Test-ProcessShouldCloseInGaming -ProcessName "winws.exe" -StartupConfig ([PSCustomObject]@{ BlacklistProcesses = @("winws"); ProtectedStartupNames = @() })) -and
+    -not (Test-ProcessShouldCloseInGaming -ProcessName "zapret" -StartupConfig ([PSCustomObject]@{ BlacklistProcesses = @("zapret"); ProtectedStartupNames = @() }))
+) "Test-ProcessShouldCloseInGaming enforces 2-mode priority, Widgets rule compliance, and FACEITClient/Zapret protection"
+
+Assert-Test (
+    (Test-StartupEntryMatchesNames -EntryName "Discord" -CommandValue 'C:\Users\P\AppData\Local\Discord\Update.exe --processStart Discord.exe' -Names @("Discord")) -and
+    (Test-StartupEntryMatchesNames -EntryName "AppLauncher" -CommandValue 'C:\Users\P\AppData\Local\Discord\Update.exe --processStart Discord.exe' -Names @("Discord")) -and
+    (Test-StartupEntryMatchesNames -EntryName "Discord_AutoStart" -CommandValue '' -Names @("Discord")) -and
+    (Test-StartupEntryMatchesNames -EntryName "CustomTool" -CommandValue '"C:\Program Files\My App\My App.exe" --minimized' -Names @("My App")) -and
+    -not (Test-StartupEntryMatchesNames -EntryName "Discord" -CommandValue 'C:\Users\P\AppData\Local\Discord\Update.exe --processStart Discord.exe' -Names @("Spotify"))
+) "Test-StartupEntryMatchesNames matches direct, underscore-bounded, quoted spaced-path, and Squirrel --processStart exe targets without false positives"
+
+$stopCmd = Get-Command Stop-BlacklistedProcesses -ErrorAction SilentlyContinue
+$stopHasProtParam = [bool]($stopCmd -and $stopCmd.Parameters.ContainsKey("ProtectedNames"))
+$stopSafeNoKill = $true
+try {
+    # Invoke with current pwsh process name in BOTH ProcessNames and ProtectedNames; must not terminate self or throw
+    $selfProcName = (Get-Process -Id $PID).ProcessName
+    Stop-BlacklistedProcesses -ProcessNames @($selfProcName) -ProtectedNames @($selfProcName)
+} catch {
+    $stopSafeNoKill = $false
+}
+Assert-Test ($stopHasProtParam -and $stopSafeNoKill) "Stop-BlacklistedProcesses enforces ProtectedNames override alongside critical process protection"
 
 # -- Summary ------------------------------------------------------------------
 Write-Host "`n=====================================================" -ForegroundColor Magenta

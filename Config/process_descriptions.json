@@ -1,0 +1,1091 @@
+{
+  "Description": "Подробные описания процессов Windows на русском языке: назначение процесса, влияние отключения в Gaming Mode и явный уровень безопасности (safe / optional / protected).",
+  "Descriptions": {
+    "System": {
+      "displayNameRu": "Ядро Windows (System)",
+      "summaryRu": "Базовый системный процесс ядра Windows и драйверов устройств.",
+      "canDisableRu": "Критический компонент ядра ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "Idle": {
+      "displayNameRu": "Бездействие системы",
+      "summaryRu": "Системный счётчик свободных ресурсов процессора Windows.",
+      "canDisableRu": "Служебный процесс ядра — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "Registry": {
+      "displayNameRu": "Реестр Windows",
+      "summaryRu": "Хранение кустов системного реестра в оперативной памяти для быстрого доступа.",
+      "canDisableRu": "Критическая часть ядра Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "Secure System": {
+      "displayNameRu": "Защищённая система (VSM)",
+      "summaryRu": "Изолированный режим безопасности ядра Windows (Virtual Secure Mode).",
+      "canDisableRu": "Критическая подсистема безопасности — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "Memory Compression": {
+      "displayNameRu": "Сжатие памяти Windows",
+      "summaryRu": "Системный контейнер сжатых страниц ОЗУ ядра Windows.",
+      "canDisableRu": "Системный процесс ядра — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "smss": {
+      "displayNameRu": "Диспетчер сеансов Windows",
+      "summaryRu": "Инициализация сеансов пользователей и системных подсистем при загрузке ОС.",
+      "canDisableRu": "Критическая служба ядра — остановка вызовет BSOD.",
+      "safetyLevel": "protected"
+    },
+    "csrss": {
+      "displayNameRu": "Подсистема клиент-сервер (CSRSS)",
+      "summaryRu": "Базовая системная подсистема Win32, отвечающая за окна и потоки ОС.",
+      "canDisableRu": "Критический процесс Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "wininit": {
+      "displayNameRu": "Инициализация Windows",
+      "summaryRu": "Запуск ключевых фоновых служб и подсистем при старте системы.",
+      "canDisableRu": "Критический системный процесс — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "services": {
+      "displayNameRu": "Диспетчер служб Windows (SCM)",
+      "summaryRu": "Управление запуском, остановкой и взаимодействием всех служб Windows.",
+      "canDisableRu": "Критический компонент ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "lsass": {
+      "displayNameRu": "Служба локальной безопасности (LSASS)",
+      "summaryRu": "Проверка подлинности входа, политик безопасности и прав доступа.",
+      "canDisableRu": "Критический процесс безопасности — остановка перезагрузит ПК.",
+      "safetyLevel": "protected"
+    },
+    "lsm": {
+      "displayNameRu": "Диспетчер локальных сеансов",
+      "summaryRu": "Управление локальными сеансами входа пользователей Windows.",
+      "canDisableRu": "Критический процесс ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "svchost": {
+      "displayNameRu": "Хост-процесс служб Windows",
+      "summaryRu": "Контейнер, в котором работают системные службы Windows (звук, сеть, драйверы).",
+      "canDisableRu": "Критический системный хост — управляется через раздел «Службы».",
+      "safetyLevel": "protected"
+    },
+    "fontdrvhost": {
+      "displayNameRu": "Хост драйвера шрифтов",
+      "summaryRu": "Изолированная отрисовка шрифтов в Windows и приложениях.",
+      "canDisableRu": "Системный компонент интерфейса — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "dwm": {
+      "displayNameRu": "Диспетчер окон рабочего стола (DWM)",
+      "summaryRu": "Композитор графического интерфейса Windows, вывод кадра и VRR/FreeSync/G-SYNC.",
+      "canDisableRu": "Критический графический процесс — без него пропадёт изображение.",
+      "safetyLevel": "protected"
+    },
+    "winlogon": {
+      "displayNameRu": "Процесс входа в Windows",
+      "summaryRu": "Обработка входа в систему, блокировки экрана и Ctrl+Alt+Del.",
+      "canDisableRu": "Критический процесс ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "LogonUI": {
+      "displayNameRu": "Экран входа Windows",
+      "summaryRu": "Интерфейс экрана блокировки и ввода пароля/PIN.",
+      "canDisableRu": "Системный процесс ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "sihost": {
+      "displayNameRu": "Хост инфраструктуры оболочки",
+      "summaryRu": "Поддержка панели задач, меню Пуск, уведомлений и визуальных элементов оболочки.",
+      "canDisableRu": "Системный процесс оболочки Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "taskhostw": {
+      "displayNameRu": "Хост-процесс задач Windows",
+      "summaryRu": "Выполнение встроенных фоновых системных задач и обработчиков событий ОС.",
+      "canDisableRu": "Системный компонент ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "explorer": {
+      "displayNameRu": "Проводник Windows",
+      "summaryRu": "Рабочий стол, панель задач, системный трей и файловый менеджер.",
+      "canDisableRu": "Основная оболочка Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "ShellExperienceHost": {
+      "displayNameRu": "Оболочка Windows Shell",
+      "summaryRu": "Системные всплывающие панели (календарь, громкость, быстрые настройки).",
+      "canDisableRu": "Компонент интерфейса Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "StartMenuExperienceHost": {
+      "displayNameRu": "Меню «Пуск» Windows",
+      "summaryRu": "Отрисовка и работа меню «Пуск» в Windows 10/11.",
+      "canDisableRu": "Компонент оболочки Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "SearchHost": {
+      "displayNameRu": "Поиск Windows (Start)",
+      "summaryRu": "Интерфейс поиска программ и файлов по клавише Win.",
+      "canDisableRu": "Защищён, чтобы поиск в меню «Пуск» всегда оставался рабочим.",
+      "safetyLevel": "protected"
+    },
+    "TextInputHost": {
+      "displayNameRu": "Служба текстового ввода Windows",
+      "summaryRu": "Ввод текста, переключение раскладки и панель эмодзи в Windows.",
+      "canDisableRu": "Защищён, чтобы не ломался ввод текста и переключение языков.",
+      "safetyLevel": "protected"
+    },
+    "LockApp": {
+      "displayNameRu": "Экран блокировки Windows",
+      "summaryRu": "Отображение системного экрана блокировки Win+L.",
+      "canDisableRu": "Компонент ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "RuntimeBroker": {
+      "displayNameRu": "Брокер среды выполнения (Runtime Broker)",
+      "summaryRu": "Контроль прав доступа приложений к микрофону, камере и файлам.",
+      "canDisableRu": "Системный компонент Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "ApplicationFrameHost": {
+      "displayNameRu": "Контейнер окон UWP-приложений",
+      "summaryRu": "Оконная рамка системных «Параметров» и встроенных приложений Windows.",
+      "canDisableRu": "Компонент интерфейса Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "dllhost": {
+      "displayNameRu": "COM Surrogate (dllhost)",
+      "summaryRu": "Изолированный хост для системных библиотек, миниатюр и диалогов файлов.",
+      "canDisableRu": "Системный хост Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "conhost": {
+      "displayNameRu": "Хост окна консоли Windows",
+      "summaryRu": "Поддержка консольных подсистем и системных скриптов.",
+      "canDisableRu": "Системный процесс ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "OpenConsole": {
+      "displayNameRu": "Консольный хост Windows Terminal",
+      "summaryRu": "Движок отрисовки терминала и консольных команд.",
+      "canDisableRu": "Системный процесс консоли — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "WindowsTerminal": {
+      "displayNameRu": "Терминал Windows",
+      "summaryRu": "Системный терминал для командной строки и PowerShell.",
+      "canDisableRu": "Защищён от случайного закрытия во время работы скриптов.",
+      "safetyLevel": "protected"
+    },
+    "ctfmon": {
+      "displayNameRu": "Загрузчик CTF (раскладка клавиатуры)",
+      "summaryRu": "Отвечает за переключение языков (Alt+Shift / Win+Space) и ввод текста.",
+      "canDisableRu": "Критичен для переключения раскладки клавиатуры — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "audiodg": {
+      "displayNameRu": "Изоляция графов аудиоустройств",
+      "summaryRu": "Обработка звукового потока и микрофона Windows (WASAPI / APO).",
+      "canDisableRu": "Критический звуковой процесс — при закрытии пропадёт звук и микрофон.",
+      "safetyLevel": "protected"
+    },
+    "spoolsv": {
+      "displayNameRu": "Процесс диспетчера печати",
+      "summaryRu": "Исполняемый процесс службы печати Spooler.",
+      "canDisableRu": "Защищён как системный хост; управляйте печатью через службу Spooler в разделе «Службы».",
+      "safetyLevel": "protected"
+    },
+    "MsMpEng": {
+      "displayNameRu": "Антивирус Microsoft Defender",
+      "summaryRu": "Основной движок защиты Windows Security (в Gaming Mode регулируется политикой).",
+      "canDisableRu": "Защищён самой Windows — завершать напрямую нельзя.",
+      "safetyLevel": "protected"
+    },
+    "NisSrv": {
+      "displayNameRu": "Сетевой фильтр Microsoft Defender",
+      "summaryRu": "Сетевая инспекция Microsoft Defender.",
+      "canDisableRu": "Защищён системой Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "SecurityHealthService": {
+      "displayNameRu": "Служба безопасности Windows",
+      "summaryRu": "Мониторинг статуса антивируса и брандмауэра Windows.",
+      "canDisableRu": "Системный компонент безопасности — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "SecurityHealthSystray": {
+      "displayNameRu": "Значок Windows Security в трее",
+      "summaryRu": "Индикатор состояния защиты Windows на панели задач.",
+      "canDisableRu": "Защищённый системный компонент автозагрузки — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "SgrmBroker": {
+      "displayNameRu": "Брокер System Guard",
+      "summaryRu": "Системный мониторинг целостности среды выполнения Windows.",
+      "canDisableRu": "Защищённый компонент ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "WmiPrvSE": {
+      "displayNameRu": "Поставщик WMI Windows",
+      "summaryRu": "Предоставляет датчики, данные оборудования и служб для драйверов и программ.",
+      "canDisableRu": "Требуется Windows, драйверам и самой утилите — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "unsecapp": {
+      "displayNameRu": "Приёмник асинхронных событий WMI",
+      "summaryRu": "Вспомогательный системный процесс WMI.",
+      "canDisableRu": "Системный компонент ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "TrustedInstaller": {
+      "displayNameRu": "Установщик модулей Windows",
+      "summaryRu": "Обслуживание и целостность системных компонентов ОС.",
+      "canDisableRu": "Защищённый компонент Windows — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "TiWorker": {
+      "displayNameRu": "Рабочий процесс установщика модулей",
+      "summaryRu": "Фоновая установка системных компонентов Windows.",
+      "canDisableRu": "Системный компонент ОС — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "msiexec": {
+      "displayNameRu": "Установщик Windows Installer",
+      "summaryRu": "Установка и обновление MSI-пакетов игр, библиотек и программ.",
+      "canDisableRu": "Системный установщик — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "powershell": {
+      "displayNameRu": "Windows PowerShell",
+      "summaryRu": "Среда выполнения системных сценариев, используемая движком Ultra Gaming Mode.",
+      "canDisableRu": "Необходим для применения и отката игрового режима — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "pwsh": {
+      "displayNameRu": "PowerShell 7",
+      "summaryRu": "Среда выполнения сценариев PowerShell.",
+      "canDisableRu": "Защищён от принудительного завершения — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "cmd": {
+      "displayNameRu": "Командная строка Windows",
+      "summaryRu": "Системный интерпретатор команд Windows.",
+      "canDisableRu": "Защищён от завершения во время системных операций — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "UltraGamingMode": {
+      "displayNameRu": "Ultra Gaming Mode",
+      "summaryRu": "Само приложение Ultra Gaming Mode (управление игровым режимом, таймером и треем).",
+      "canDisableRu": "Это текущая утилита — защищена от самоотключения.",
+      "safetyLevel": "protected"
+    },
+    "com.ultragamingmode.optimizer": {
+      "displayNameRu": "Ultra Gaming Mode",
+      "summaryRu": "Идентификатор процесса приложения Ultra Gaming Mode.",
+      "canDisableRu": "Это текущая утилита — защищена от самоотключения.",
+      "safetyLevel": "protected"
+    },
+    "msedgewebview2": {
+      "displayNameRu": "Microsoft Edge WebView2",
+      "summaryRu": "Встроенный движок интерфейса Windows (используется окном Ultra Gaming Mode и системными панелями).",
+      "canDisableRu": "Защищён, чтобы интерфейс приложения и поиск Windows не закрывались аварийно.",
+      "safetyLevel": "protected"
+    },
+    "vgk": {
+      "displayNameRu": "Riot Vanguard (ядро)",
+      "summaryRu": "Драйвер античита Riot Vanguard для VALORANT и League of Legends.",
+      "canDisableRu": "Античит — отключение сломает запуск игр Riot.",
+      "safetyLevel": "protected"
+    },
+    "vgc": {
+      "displayNameRu": "Riot Vanguard (служба)",
+      "summaryRu": "Клиентский процесс античита Riot Vanguard.",
+      "canDisableRu": "Античит — отключение приведёт к вылету VALORANT / LoL.",
+      "safetyLevel": "protected"
+    },
+    "EasyAntiCheat": {
+      "displayNameRu": "Easy Anti-Cheat",
+      "summaryRu": "Античит для Apex Legends, Fortnite, Rust и других онлайн-игр.",
+      "canDisableRu": "Античит — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "EasyAntiCheat_EOS": {
+      "displayNameRu": "Easy Anti-Cheat (EOS)",
+      "summaryRu": "Современная версия античита Easy Anti-Cheat (Epic Online Services).",
+      "canDisableRu": "Античит — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "BEService": {
+      "displayNameRu": "BattlEye Anti-Cheat",
+      "summaryRu": "Античит BattlEye для PUBG, Rainbow Six Siege, Escape from Tarkov и др.",
+      "canDisableRu": "Античит — отключать нельзя.",
+      "safetyLevel": "protected"
+    },
+    "FACEIT": {
+      "displayNameRu": "FACEIT Anti-Cheat",
+      "summaryRu": "Античит FACEIT AC для соревновательных матчей CS2.",
+      "canDisableRu": "Античит защищён от принудительного закрытия; при желании управляйте службой FACEIT через пресет в разделе «Службы».",
+      "safetyLevel": "protected"
+    },
+    "FACEITClient": {
+      "displayNameRu": "Клиент FACEIT",
+      "summaryRu": "Десктопный клиент и античит-оболочка FACEIT.",
+      "canDisableRu": "Защищён как античит/игровой клиент, чтобы не выкидывало из матча.",
+      "safetyLevel": "protected"
+    },
+    "FACEITService": {
+      "displayNameRu": "Служба FACEIT",
+      "summaryRu": "Фоновый процесс клиента FACEIT.",
+      "canDisableRu": "Защищён как компонент античита FACEIT.",
+      "safetyLevel": "protected"
+    },
+    "steam": {
+      "displayNameRu": "Steam Client",
+      "summaryRu": "Основной игровой клиент Steam (запуск игр, VAC, друзья и контроллеры).",
+      "canDisableRu": "Игровой клиент защищён, чтобы игры и античит VAC не закрывались.",
+      "safetyLevel": "protected"
+    },
+    "steamservice": {
+      "displayNameRu": "Steam Client Service",
+      "summaryRu": "Служебный процесс Steam для проверки целостности игр и VAC.",
+      "canDisableRu": "Защищён для стабильной работы игр Steam и VAC.",
+      "safetyLevel": "protected"
+    },
+    "steamwebhelper": {
+      "displayNameRu": "Steam WebHelper",
+      "summaryRu": "Интерфейс библиотеки, друзей и игрового оверлея Steam.",
+      "canDisableRu": "Защищён как часть клиента Steam.",
+      "safetyLevel": "protected"
+    },
+    "AMDNoiseSuppression": {
+      "displayNameRu": "Шумоподавление AMD Radeon",
+      "summaryRu": "Аппаратное шумоподавление микрофона AMD Radeon.",
+      "canDisableRu": "Оставляйте «Без утилки», если пользуетесь шумоподавлением микрофона AMD.",
+      "safetyLevel": "optional"
+    },
+    "Apple": {
+      "displayNameRu": "Компоненты Apple (USB-модем iPhone)",
+      "summaryRu": "Поддержка подключения iPhone и режима USB-модема Apple.",
+      "canDisableRu": "Оставляйте «Без утилки», если выходите в интернет через iPhone по кабелю.",
+      "safetyLevel": "optional"
+    },
+    "TranslucentTB": {
+      "displayNameRu": "TranslucentTB",
+      "summaryRu": "Утилита прозрачности панели задач (добавляет нагрузку на композитор DWM).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode — снижает оверхед DWM и освобождает ОЗУ.",
+      "safetyLevel": "safe"
+    },
+    "Telegram": {
+      "displayNameRu": "Telegram Desktop",
+      "summaryRu": "Десктопный мессенджер Telegram (фоновая сеть, кэш медиа и уведомления).",
+      "canDisableRu": "Если Telegram не нужен во время игры — выключайте; если ждёте сообщения — переключите на «Без утилки».",
+      "safetyLevel": "optional"
+    },
+    "AyuGram": {
+      "displayNameRu": "AyuGram Desktop",
+      "summaryRu": "Альтернативный клиент Telegram (работает в фоне и держит ОЗУ/сеть).",
+      "canDisableRu": "Выключайте, если мессенджер не нужен во время игровой сессии.",
+      "safetyLevel": "optional"
+    },
+    "Discord": {
+      "displayNameRu": "Discord",
+      "summaryRu": "Голосовой и текстовый мессенджер (Electron, активно использует ОЗУ и GPU-оверлей).",
+      "canDisableRu": "Если общаетесь с тиммейтами в игре — оставьте «Без утилки»; для соло-игр полезно выключить.",
+      "safetyLevel": "optional"
+    },
+    "Spotify": {
+      "displayNameRu": "Spotify",
+      "summaryRu": "Музыкальный плеер (Chromium-оболочка, расходует 150–400 МБ ОЗУ и сеть).",
+      "canDisableRu": "Выключайте, если не слушаете музыку во время игры; иначе оставьте «Без утилки».",
+      "safetyLevel": "optional"
+    },
+    "firefox": {
+      "displayNameRu": "Mozilla Firefox",
+      "summaryRu": "Веб-браузер Firefox (занимает ОЗУ, ЦП и аппаратное декодирование GPU).",
+      "canDisableRu": "Обычно полезно закрыть перед игрой; оставьте «Без утилки», если держите гайды/музыку во вкладках.",
+      "safetyLevel": "optional"
+    },
+    "chrome": {
+      "displayNameRu": "Google Chrome",
+      "summaryRu": "Веб-браузер Google Chrome (высокое потребление ОЗУ и фоновых потоков).",
+      "canDisableRu": "Рекомендуется выключать перед игрой, если браузер не нужен на втором мониторе.",
+      "safetyLevel": "optional"
+    },
+    "msedge": {
+      "displayNameRu": "Microsoft Edge",
+      "summaryRu": "Веб-браузер Microsoft Edge и его фоновый предзапуск Startup Boost.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode (на окно Ultra Gaming Mode и WebView2 не влияет).",
+      "safetyLevel": "safe"
+    },
+    "Widgets": {
+      "displayNameRu": "Виджеты Windows 11",
+      "summaryRu": "Панель новостей, погоды и виджетов Windows 11 (держит в памяти WebView2).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode — освобождает ОЗУ и убирает фоновые обновления ленты.",
+      "safetyLevel": "safe"
+    },
+    "WidgetService": {
+      "displayNameRu": "Служба виджетов Windows",
+      "summaryRu": "Фоновый хост данных для панели виджетов Windows 11.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode — на игры и ОС не влияет.",
+      "safetyLevel": "safe"
+    },
+    "CrossDeviceResume": {
+      "displayNameRu": "Синхронизация между устройствами Windows",
+      "summaryRu": "Фоновый процесс продолжения работы между смартфоном и ПК Microsoft.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode, если не пользуетесь синхронизацией со смартфоном.",
+      "safetyLevel": "safe"
+    },
+    "PhoneExperienceHost": {
+      "displayNameRu": "Связь с телефоном (Phone Link)",
+      "summaryRu": "Приложение синхронизации звонков, SMS и уведомлений со смартфоном.",
+      "canDisableRu": "Можно выключать в Gaming Mode, если не читаете уведомления телефона на ПК во время игры.",
+      "safetyLevel": "safe"
+    },
+    "AMDRSServ": {
+      "displayNameRu": "AMD Radeon Software Host",
+      "summaryRu": "Фоновый хост интерфейса AMD Software: Adrenalin Edition (оверлей и метрики).",
+      "canDisableRu": "Можно смело выключать — сам видеодрайвер AMD, FreeSync и Anti-Lag работают на уровне драйвера.",
+      "safetyLevel": "safe"
+    },
+    "RadeonSoftware": {
+      "displayNameRu": "AMD Software: Adrenalin Edition",
+      "summaryRu": "Оболочка панели управления AMD Radeon и внутриигрового оверлея.",
+      "canDisableRu": "Можно выключать в Gaming Mode (если записываете клипы через ReLive — оставьте «Без утилки»).",
+      "safetyLevel": "optional"
+    },
+    "AMDRSSrcExt": {
+      "displayNameRu": "AMD Radeon Software Extension",
+      "summaryRu": "Вспомогательное расширение оверлея и записи AMD Adrenalin.",
+      "canDisableRu": "Можно смело выключать, если не используете запись ReLive.",
+      "safetyLevel": "safe"
+    },
+    "CPUMetricsServer": {
+      "displayNameRu": "AMD CPU Metrics Server",
+      "summaryRu": "Фоновый сервер опроса датчиков ЦП для оверлея AMD (вызывает лишние пробуждения ЦП).",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode — убирает лишний опрос сенсоров.",
+      "safetyLevel": "safe"
+    },
+    "cncmd": {
+      "displayNameRu": "AMD Command Line Helper",
+      "summaryRu": "Вспомогательный фоновый процесс AMD Adrenalin.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "amdow": {
+      "displayNameRu": "AMD Radeon Overlay (DVR)",
+      "summaryRu": "Фоновый процесс внутриигрового оверлея и захвата экрана AMD.",
+      "canDisableRu": "Можно выключать в Gaming Mode (оставьте «Без утилки», если записываете экран через AMD ReLive).",
+      "safetyLevel": "optional"
+    },
+    "amdfendrsr": {
+      "displayNameRu": "AMD Crash Defender (user process)",
+      "summaryRu": "Сбор диагностических дампов и телеметрии драйвера AMD.",
+      "canDisableRu": "Можно смело выключать — на работу видеокарты не влияет.",
+      "safetyLevel": "safe"
+    },
+    "EpicGamesLauncher": {
+      "displayNameRu": "Epic Games Launcher",
+      "summaryRu": "Лаунчер магазина Epic Games (тяжёлый интерфейс на Unreal Engine).",
+      "canDisableRu": "Выключайте, если играете в Steam/Riot; если запускаете Fortnite или игры из EGS — оставьте «Без утилки».",
+      "safetyLevel": "optional"
+    },
+    "GoogleDriveFS": {
+      "displayNameRu": "Google Диск",
+      "summaryRu": "Фоновая синхронизация файлов облака Google Drive (нагружает диск и сеть).",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode, чтобы синхронизация файлов не вызывала фризы и пинг.",
+      "safetyLevel": "safe"
+    },
+    "EALauncher": {
+      "displayNameRu": "EA App Launcher",
+      "summaryRu": "Загрузчик лаунчера Electronic Arts.",
+      "canDisableRu": "Выключайте, если в этой сессии не играете в игры EA App.",
+      "safetyLevel": "optional"
+    },
+    "EADesktop": {
+      "displayNameRu": "EA App",
+      "summaryRu": "Клиент магазина игр Electronic Arts (фоновая телеметрия и обновления).",
+      "canDisableRu": "Выключайте, если не играете в игры из EA App прямо сейчас.",
+      "safetyLevel": "optional"
+    },
+    "SocialClubHelper": {
+      "displayNameRu": "Rockstar Social Club Helper",
+      "summaryRu": "Вспомогательный браузерный процесс Rockstar Games Launcher.",
+      "canDisableRu": "Выключайте, если не играете в GTA V / RDR2 в этой сессии.",
+      "safetyLevel": "optional"
+    },
+    "Launcher": {
+      "displayNameRu": "Rockstar / сторонний лаунчер",
+      "summaryRu": "Фоновый процесс игрового лаунчера (обычно Rockstar Games Launcher).",
+      "canDisableRu": "Выключайте, если не запускаете игры, которым требуется этот лаунчер.",
+      "safetyLevel": "optional"
+    },
+    "LauncherPatcher": {
+      "displayNameRu": "Обновление лаунчера (LauncherPatcher)",
+      "summaryRu": "Фоновый загрузчик обновлений игрового лаунчера (Rockstar и др.).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "RockstarService": {
+      "displayNameRu": "Rockstar Games Library Service",
+      "summaryRu": "Тяжёлый фоновый процесс библиотеки Rockstar Games.",
+      "canDisableRu": "Выключайте, если не играете в GTA / RDR2 — экономит сотни мегабайт ОЗУ.",
+      "safetyLevel": "optional"
+    },
+    "RockstarErrorHandler": {
+      "displayNameRu": "Обработчик ошибок Rockstar",
+      "summaryRu": "Отправка отчётов о сбоях игр Rockstar.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "happd": {
+      "displayNameRu": "Happ Proxy Daemon",
+      "summaryRu": "Фоновый процесс прокси-клиента Happ.",
+      "canDisableRu": "Оставьте «Без утилки», если играете через прокси Happ; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "crashhelper": {
+      "displayNameRu": "Сборщик отчётов о сбоях (CrashHelper)",
+      "summaryRu": "Фоновый процесс отправки краш-репортов сторонних программ.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "srvstub": {
+      "displayNameRu": "Вспомогательная заглушка службы (srvstub)",
+      "summaryRu": "Фоновый служебный агент обновлений стороннего ПО.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "logi_lamparray_service.AMD64": {
+      "displayNameRu": "Logitech LampArray RGB",
+      "summaryRu": "Фоновая синхронизация RGB-подсветки устройств Logitech.",
+      "canDisableRu": "Можно смело выключать — сенсор и кнопки мыши Logitech работают без неё.",
+      "safetyLevel": "safe"
+    },
+    "MidiSrv": {
+      "displayNameRu": "Windows MIDI Service",
+      "summaryRu": "Фоновый синтезатор MIDI-звуков Windows.",
+      "canDisableRu": "Можно выключать, если не используете MIDI-инструменты / DAW (обычный звук не затрагивается).",
+      "safetyLevel": "safe"
+    },
+    "AggregatorHost": {
+      "displayNameRu": "Windows Aggregator Host",
+      "summaryRu": "Фоновый сбор телеметрии и диагностических метрик Windows.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "ParkControl": {
+      "displayNameRu": "Bitsum ParkControl",
+      "summaryRu": "Утилита управления парковкой ядер (Ultra Gaming Mode сам распарковывает все ядра в игре).",
+      "canDisableRu": "Можно выключать в Gaming Mode, чтобы не было конфликта профилей питания.",
+      "safetyLevel": "safe"
+    },
+    "incy": {
+      "displayNameRu": "Incy (фоновый агент)",
+      "summaryRu": "Сторонний фоновый агент мониторинга / синхронизации.",
+      "canDisableRu": "Можно выключать в Gaming Mode, если не нужен во время игры.",
+      "safetyLevel": "safe"
+    },
+    "PulseSync": {
+      "displayNameRu": "PulseSync",
+      "summaryRu": "Фоновая утилита синхронизации и интеграции музыки/статусов.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode, если не используете во время игры.",
+      "safetyLevel": "safe"
+    },
+    "GeminiAppLauncher": {
+      "displayNameRu": "Лаунчер фонового веб-приложения",
+      "summaryRu": "Фоновый загрузчик стороннего веб-приложения в трее.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "updater": {
+      "displayNameRu": "Фоновый обновлятор (updater)",
+      "summaryRu": "Проверка и загрузка обновлений сторонних программ в фоне.",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode, чтобы загрузки не мешали пингу и диску.",
+      "safetyLevel": "safe"
+    },
+    "pythonw": {
+      "displayNameRu": "Python (фоновый скрипт)",
+      "summaryRu": "Фоновый интерпретатор Python без окна консоли.",
+      "canDisableRu": "Выключайте, если не держите нужные Python-скрипты запущенными во время игры.",
+      "safetyLevel": "optional"
+    },
+    "wscript": {
+      "displayNameRu": "Windows Script Host",
+      "summaryRu": "Фоновый запуск VBS/JS скриптов Windows.",
+      "canDisableRu": "Обычно можно выключить в Gaming Mode, если не используете пользовательские VBS-скрипты.",
+      "safetyLevel": "safe"
+    },
+    "OneDrive": {
+      "displayNameRu": "Microsoft OneDrive",
+      "summaryRu": "Облачная синхронизация файлов Microsoft (может резко нагружать диск и интернет).",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode для стабильного пинга и отсутствия дисковых фризов.",
+      "safetyLevel": "safe"
+    },
+    "ms-teams": {
+      "displayNameRu": "Microsoft Teams",
+      "summaryRu": "Корпоративный мессенджер и видеозвонки (WebView2, большой расход ОЗУ).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode, если нет рабочих созвонов.",
+      "safetyLevel": "safe"
+    },
+    "Teams": {
+      "displayNameRu": "Microsoft Teams (Classic)",
+      "summaryRu": "Клиент Microsoft Teams (Electron, расходует 300–600 МБ ОЗУ).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "obs64": {
+      "displayNameRu": "OBS Studio",
+      "summaryRu": "Программа для записи геймплея и стриминга.",
+      "canDisableRu": "Оставьте «Без утилки», если стримите или пишете видео; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "obs32": {
+      "displayNameRu": "OBS Studio (32-bit)",
+      "summaryRu": "Программа для записи и трансляции экрана.",
+      "canDisableRu": "Оставьте «Без утилки», если используете запись/стрим во время игры.",
+      "safetyLevel": "optional"
+    },
+    "ShareX": {
+      "displayNameRu": "ShareX",
+      "summaryRu": "Утилита для скриншотов и записи экрана.",
+      "canDisableRu": "Оставьте «Без утилки», если делаете скриншоты через ShareX; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "brave": {
+      "displayNameRu": "Brave Browser",
+      "summaryRu": "Веб-браузер на базе Chromium (занимает ОЗУ и аппаратное ускорение GPU).",
+      "canDisableRu": "Выключайте перед игрой для экономии ОЗУ, если браузер не нужен.",
+      "safetyLevel": "optional"
+    },
+    "opera": {
+      "displayNameRu": "Opera / Opera GX",
+      "summaryRu": "Веб-браузер Opera (расходует ОЗУ и фоновые потоки ЦП).",
+      "canDisableRu": "Выключайте, если не держите браузер открытым на втором мониторе.",
+      "safetyLevel": "optional"
+    },
+    "vivaldi": {
+      "displayNameRu": "Vivaldi Browser",
+      "summaryRu": "Веб-браузер на базе Chromium.",
+      "canDisableRu": "Выключайте перед игрой, если не нужен во время игровой сессии.",
+      "safetyLevel": "optional"
+    },
+    "browser": {
+      "displayNameRu": "Яндекс Браузер",
+      "summaryRu": "Веб-браузер (многопроцессный Chromium, активно занимает ОЗУ и ЦП).",
+      "canDisableRu": "Полезно выключать перед игрой, если браузер не используется.",
+      "safetyLevel": "optional"
+    },
+    "Code": {
+      "displayNameRu": "Visual Studio Code",
+      "summaryRu": "Редактор кода VS Code (Electron + языковые серверы, занимает много ОЗУ).",
+      "canDisableRu": "Выключайте, если не программируете во время игры (не забудьте сохранить файлы!).",
+      "safetyLevel": "optional"
+    },
+    "Overwolf": {
+      "displayNameRu": "Overwolf",
+      "summaryRu": "Платформа внутриигровых оверлеев и трекеров статистики (заметно влияет на 1% Low FPS).",
+      "canDisableRu": "Полезно выключить для максимума FPS, если трекеры (Porofessor/Outplayed и др.) не нужны.",
+      "safetyLevel": "optional"
+    },
+    "OverwolfBrowser": {
+      "displayNameRu": "Overwolf Browser",
+      "summaryRu": "Встроенный браузерный процесс оверлея Overwolf.",
+      "canDisableRu": "Можно выключать, если не используете приложения Overwolf во время матча.",
+      "safetyLevel": "optional"
+    },
+    "Medal": {
+      "displayNameRu": "Medal.tv",
+      "summaryRu": "Фоновая запись клипов и моментов из игр.",
+      "canDisableRu": "Выключайте, если не пишете клипы в этой сессии — убирает нагрузку кодировщика GPU.",
+      "safetyLevel": "optional"
+    },
+    "MedalEncoder": {
+      "displayNameRu": "Кодировщик Medal.tv",
+      "summaryRu": "Процесс кодирования видеоклипов Medal.tv.",
+      "canDisableRu": "Выключайте, если не записываете клипы в Medal.",
+      "safetyLevel": "optional"
+    },
+    "RiotClientServices": {
+      "displayNameRu": "Riot Client",
+      "summaryRu": "Лаунчер игр Riot Games (VALORANT, League of Legends).",
+      "canDisableRu": "Оставьте «Без утилки», если играете в VALORANT / LoL; для других игр можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "RiotClientUx": {
+      "displayNameRu": "Интерфейс Riot Client",
+      "summaryRu": "Окно и интерфейс клиента Riot Games.",
+      "canDisableRu": "Оставьте «Без утилки», если запускаете игры Riot; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "Battle.net": {
+      "displayNameRu": "Battle.net",
+      "summaryRu": "Игровой клиент Blizzard (Overwatch 2, Call of Duty, Diablo, WoW).",
+      "canDisableRu": "Оставьте «Без утилки», если играете в игры Blizzard; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "GalaxyClient": {
+      "displayNameRu": "GOG Galaxy",
+      "summaryRu": "Игровой лаунчер GOG Galaxy.",
+      "canDisableRu": "Выключайте, если не запускаете игры через GOG Galaxy.",
+      "safetyLevel": "optional"
+    },
+    "UbisoftConnect": {
+      "displayNameRu": "Ubisoft Connect",
+      "summaryRu": "Игровой лаунчер Ubisoft (Rainbow Six Siege, Assassin's Creed и др.).",
+      "canDisableRu": "Оставьте «Без утилки», если играете в игры Ubisoft; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "upc": {
+      "displayNameRu": "Ubisoft Connect (upc)",
+      "summaryRu": "Основной исполняемый процесс лаунчера Ubisoft Connect.",
+      "canDisableRu": "Оставьте «Без утилки», если запускаете игры Ubisoft.",
+      "safetyLevel": "optional"
+    },
+    "lghub": {
+      "displayNameRu": "Logitech G HUB",
+      "summaryRu": "Приложение настройки мышей, клавиатур и гарнитур Logitech.",
+      "canDisableRu": "Если профили сохранены во встроенной памяти мыши — можно выключить; для программных макросов и DTS оставьте «Без утилки».",
+      "safetyLevel": "optional"
+    },
+    "lghub_agent": {
+      "displayNameRu": "Агент Logitech G HUB",
+      "summaryRu": "Фоновый драйверный агент профилей и макросов Logitech G HUB.",
+      "canDisableRu": "Оставьте «Без утилки», если используете программные профили DPI, макросы или эквалайзер гарнитуры Logitech.",
+      "safetyLevel": "optional"
+    },
+    "lghub_system_tray": {
+      "displayNameRu": "Значок Logitech G HUB в трее",
+      "summaryRu": "Оболочка системного трея Logitech G HUB.",
+      "canDisableRu": "Можно выключить без потери аппаратных настроек мыши.",
+      "safetyLevel": "safe"
+    },
+    "Synapse3": {
+      "displayNameRu": "Razer Synapse 3",
+      "summaryRu": "Утилита настройки периферии и подсветки Razer.",
+      "canDisableRu": "Если профили хранятся в памяти устройства — можно выключить; для макросов и THX Audio оставьте «Без утилки».",
+      "safetyLevel": "optional"
+    },
+    "RazerAppEngine": {
+      "displayNameRu": "Razer Synapse / App Engine",
+      "summaryRu": "Оболочка приложений и профилей Razer.",
+      "canDisableRu": "Оставьте «Без утилки», если нужны программные макросы и профили Razer.",
+      "safetyLevel": "optional"
+    },
+    "iCUE": {
+      "displayNameRu": "Corsair iCUE",
+      "summaryRu": "Управление подсветкой, вентиляторами и периферией Corsair (может давать ощутимую нагрузку на ЦП).",
+      "canDisableRu": "Если кривые вентиляторов/СЖО не зависят от iCUE — можно выключить для снижения DPC-задержек.",
+      "safetyLevel": "optional"
+    },
+    "MSIAfterburner": {
+      "displayNameRu": "MSI Afterburner",
+      "summaryRu": "Разгон, андервольтинг и кривая вентиляторов видеокарты.",
+      "canDisableRu": "Оставьте «Без утилки», если используете пользовательскую кривую вентиляторов или мониторинг.",
+      "safetyLevel": "optional"
+    },
+    "RTSS": {
+      "displayNameRu": "RivaTuner Statistics Server",
+      "summaryRu": "Ограничитель FPS с ровным фреймтаймом и оверлей мониторинга.",
+      "canDisableRu": "Оставьте «Без утилки», если ограничиваете FPS или смотрите показатели через RTSS.",
+      "safetyLevel": "optional"
+    },
+    "ProcessLasso": {
+      "displayNameRu": "Process Lasso GUI",
+      "summaryRu": "Окно интерфейса Process Lasso (балансировка работает отдельно в ProcessGovernor).",
+      "canDisableRu": "Окно GUI можно выключить — сама служба ProcessGovernor продолжит работать в фоне.",
+      "safetyLevel": "safe"
+    },
+    "ProcessGovernor": {
+      "displayNameRu": "Process Lasso Governor",
+      "summaryRu": "Фоновое ядро приоритетов и привязки ядер Process Lasso.",
+      "canDisableRu": "Оставьте «Без утилки», если используете правила Process Lasso для игр.",
+      "safetyLevel": "optional"
+    },
+    "HWiNFO64": {
+      "displayNameRu": "HWiNFO64",
+      "summaryRu": "Глубокий мониторинг датчиков оборудования (частый опрос сенсоров способен вызывать микрофризы).",
+      "canDisableRu": "Полезно выключить на время соревновательного матча, если датчики прямо сейчас не нужны.",
+      "safetyLevel": "optional"
+    },
+    "wallpaper64": {
+      "displayNameRu": "Wallpaper Engine (64-bit)",
+      "summaryRu": "Анимированные обои рабочего стола (расходует видеопамять VRAM и GPU).",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode — освобождает VRAM и убирает нагрузку на GPU.",
+      "safetyLevel": "safe"
+    },
+    "wallpaper32": {
+      "displayNameRu": "Wallpaper Engine (32-bit)",
+      "summaryRu": "Анимированные обои рабочего стола (расходует видеопамять VRAM и GPU).",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode — освобождает VRAM и GPU.",
+      "safetyLevel": "safe"
+    },
+    "NVDisplay.Container": {
+      "displayNameRu": "NVIDIA Display Container",
+      "summaryRu": "Системный контейнер видеодрайвера NVIDIA (G-SYNC, панель управления, вывод на дисплей).",
+      "canDisableRu": "Важен для стабильной работы видеокарты NVIDIA — отключать не рекомендуется.",
+      "safetyLevel": "protected"
+    },
+    "nvcontainer": {
+      "displayNameRu": "NVIDIA Container",
+      "summaryRu": "Контейнер компонентов драйвера NVIDIA и NVIDIA App.",
+      "canDisableRu": "Часть драйвера NVIDIA — лучше оставить «Без утилки».",
+      "safetyLevel": "optional"
+    },
+    "NVIDIA Overlay": {
+      "displayNameRu": "NVIDIA Overlay / ShadowPlay",
+      "summaryRu": "Внутриигровой оверлей и мгновенный повтор NVIDIA.",
+      "canDisableRu": "Оставьте «Без утилки», если записываете откаты ShadowPlay; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "NvidiaShare": {
+      "displayNameRu": "NVIDIA ShadowPlay (Share)",
+      "summaryRu": "Фоновая запись и оверлей GeForce Experience / NVIDIA App.",
+      "canDisableRu": "Оставьте «Без утилки», если пользуетесь ShadowPlay; иначе можно выключить.",
+      "safetyLevel": "optional"
+    },
+    "SteelSeriesGG": {
+      "displayNameRu": "SteelSeries GG / Sonar",
+      "summaryRu": "Управление гарнитурами, микрофоном Sonar и периферией SteelSeries.",
+      "canDisableRu": "Оставьте «Без утилки», если звук идёт через виртуальные каналы SteelSeries Sonar.",
+      "safetyLevel": "optional"
+    },
+    "voicemeeter": {
+      "displayNameRu": "VoiceMeeter",
+      "summaryRu": "Виртуальный аудиомикшер и маршрутизация звука/микрофона.",
+      "canDisableRu": "Оставьте «Без утилки», иначе пропадёт звук, если VoiceMeeter выбран аудиоустройством.",
+      "safetyLevel": "optional"
+    },
+    "voicemeeter8": {
+      "displayNameRu": "VoiceMeeter Potato",
+      "summaryRu": "Виртуальный аудиомикшер и маршрутизация звука/микрофона.",
+      "canDisableRu": "Оставьте «Без утилки», если звук и микрофон идут через VoiceMeeter.",
+      "safetyLevel": "optional"
+    },
+    "voicemeeterpro": {
+      "displayNameRu": "VoiceMeeter Banana",
+      "summaryRu": "Виртуальный аудиомикшер и маршрутизация звука/микрофона.",
+      "canDisableRu": "Оставьте «Без утилки», если звук и микрофон идут через VoiceMeeter.",
+      "safetyLevel": "optional"
+    },
+    "WhatsApp": {
+      "displayNameRu": "WhatsApp Desktop",
+      "summaryRu": "Мессенджер WhatsApp для Windows.",
+      "canDisableRu": "Выключайте в Gaming Mode, если не нужен во время игры.",
+      "safetyLevel": "optional"
+    },
+    "Slack": {
+      "displayNameRu": "Slack",
+      "summaryRu": "Рабочий мессенджер (Electron, занимает много ОЗУ).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode, если рабочий день завершён.",
+      "safetyLevel": "safe"
+    },
+    "Zoom": {
+      "displayNameRu": "Zoom",
+      "summaryRu": "Приложение видеоконференций Zoom.",
+      "canDisableRu": "Можно выключать в Gaming Mode, если нет звонков.",
+      "safetyLevel": "safe"
+    },
+    "Notion": {
+      "displayNameRu": "Notion",
+      "summaryRu": "Приложение для заметок и баз знаний (Electron).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode — освобождает 200–500 МБ ОЗУ.",
+      "safetyLevel": "safe"
+    },
+    "Obsidian": {
+      "displayNameRu": "Obsidian",
+      "summaryRu": "Приложение для локальных Markdown-заметок (Electron).",
+      "canDisableRu": "Можно выключать в Gaming Mode, если заметки не нужны во время игры.",
+      "safetyLevel": "optional"
+    },
+    "Dropbox": {
+      "displayNameRu": "Dropbox",
+      "summaryRu": "Фоновая синхронизация облачного хранилища Dropbox.",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode, чтобы снизить фоновую нагрузку на диск и сеть.",
+      "safetyLevel": "safe"
+    },
+    "YandexDisk": {
+      "displayNameRu": "Яндекс Диск",
+      "summaryRu": "Фоновая синхронизация облачных файлов Яндекс Диска.",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode, чтобы не было дисковых фризов и сетевых скачков.",
+      "safetyLevel": "safe"
+    },
+    "YandexDisk2": {
+      "displayNameRu": "Яндекс Диск",
+      "summaryRu": "Фоновая синхронизация облачных файлов Яндекс Диска.",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "qBittorrent": {
+      "displayNameRu": "qBittorrent",
+      "summaryRu": "Торрент-клиент (создаёт сотни сетевых соединений и сильно повышает пинг/джиттер).",
+      "canDisableRu": "Настоятельно рекомендуется выключать в Gaming Mode — резко улучшает стабильность пинга.",
+      "safetyLevel": "safe"
+    },
+    "uTorrent": {
+      "displayNameRu": "uTorrent",
+      "summaryRu": "Торрент-клиент (сильно нагружает сеть и диск).",
+      "canDisableRu": "Настоятельно рекомендуется выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "Everything": {
+      "displayNameRu": "Everything Search",
+      "summaryRu": "Мгновенный поиск файлов по таблице NTFS (лёгкий процесс).",
+      "canDisableRu": "Почти не тратит ресурсы; можно оставить «Без утилки» или выключить по желанию.",
+      "safetyLevel": "optional"
+    },
+    "PowerToys": {
+      "displayNameRu": "Microsoft PowerToys",
+      "summaryRu": "Набор расширений и горячих клавиш для Windows.",
+      "canDisableRu": "Можно выключать в Gaming Mode, чтобы убрать лишние перехваты клавиш и освободить ОЗУ.",
+      "safetyLevel": "optional"
+    },
+    "GameBar": {
+      "displayNameRu": "Xbox Game Bar",
+      "summaryRu": "Системный игровой оверлей Xbox Game Bar.",
+      "canDisableRu": "Можно выключать, если не используете чат Xbox и запись Game Bar (на CPU Ryzen X3D иногда оставляют включённым).",
+      "safetyLevel": "optional"
+    },
+    "XboxPcApp": {
+      "displayNameRu": "Приложение Xbox",
+      "summaryRu": "Клиент Xbox / PC Game Pass.",
+      "canDisableRu": "Выключайте, если играете в Steam/Riot и не запускаете игры Game Pass.",
+      "safetyLevel": "optional"
+    },
+    "SearchIndexer": {
+      "displayNameRu": "Индексатор поиска Windows",
+      "summaryRu": "Фоновое индексирование файлов (управляется службой WSearch).",
+      "canDisableRu": "Можно безопасно отключать в Gaming Mode — снижает фоновую нагрузку на диск.",
+      "safetyLevel": "safe"
+    },
+    "CompatTelRunner": {
+      "displayNameRu": "Телеметрия совместимости Microsoft",
+      "summaryRu": "Фоновый сбор телеметрии совместимости Windows (часто нагружает ЦП и диск).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "docker": {
+      "displayNameRu": "Docker Desktop",
+      "summaryRu": "Контейнеризация Docker (резервирует гигабайты ОЗУ и потоки виртуализации).",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode, если контейнеры не нужны во время игры.",
+      "safetyLevel": "optional"
+    },
+    "vmmem": {
+      "displayNameRu": "WSL 2 / Hyper-V (vmmem)",
+      "summaryRu": "Память виртуальных машин WSL 2 и Docker.",
+      "canDisableRu": "Завершается через остановку WSL/Docker; если не используете Linux/Docker в игре — лучше остановить заранее.",
+      "safetyLevel": "optional"
+    },
+    "vmmemWSL": {
+      "displayNameRu": "WSL 2 (vmmemWSL)",
+      "summaryRu": "Виртуальная машина подсистемы Windows для Linux.",
+      "canDisableRu": "Если WSL 2 не нужен в игре — отключите службу WSLService или закройте контейнеры.",
+      "safetyLevel": "optional"
+    },
+    "FanControl": {
+      "displayNameRu": "Fan Control",
+      "summaryRu": "Управление скоростью корпусных и процессорных вентиляторов.",
+      "canDisableRu": "Оставьте «Без утилки», чтобы охлаждение ПК корректно реагировало на нагрев в игре!",
+      "safetyLevel": "optional"
+    },
+    "OpenRGB": {
+      "displayNameRu": "OpenRGB",
+      "summaryRu": "Управление RGB-подсветкой комплектующих.",
+      "canDisableRu": "Если статический цвет уже задан — можно выключить в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "SignalRgb": {
+      "displayNameRu": "SignalRGB",
+      "summaryRu": "Динамическая синхронизация RGB-подсветки (заметно нагружает ЦП и USB-шину).",
+      "canDisableRu": "Рекомендуется выключать в Gaming Mode — освобождает ЦП и уменьшает USB-нагрузку.",
+      "safetyLevel": "safe"
+    },
+    "RtkAudUService64": {
+      "displayNameRu": "Realtek HD Audio Service",
+      "summaryRu": "Фоновая служба звукового драйвера Realtek (определение наушников и микрофона).",
+      "canDisableRu": "Не выключайте, если пользуетесь встроенным звуком Realtek на материнской плате.",
+      "safetyLevel": "protected"
+    },
+    "NahimicSvc64": {
+      "displayNameRu": "Nahimic Audio",
+      "summaryRu": "Программные аудиоэффекты и эквалайзер Nahimic.",
+      "canDisableRu": "Можно выключить, если не пользуетесь эффектами Nahimic.",
+      "safetyLevel": "optional"
+    },
+    "ArmouryCrate": {
+      "displayNameRu": "ASUS Armoury Crate",
+      "summaryRu": "Центр управления материнской платой, подсветкой и профилями ASUS.",
+      "canDisableRu": "Можно выключить в Gaming Mode, если не меняете профили вентиляторов на лету.",
+      "safetyLevel": "optional"
+    },
+    "CCXProcess": {
+      "displayNameRu": "Adobe Creative Cloud (CCX)",
+      "summaryRu": "Фоновый процесс библиотеки и обновлений Adobe Creative Cloud.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode — освобождает ОЗУ и ЦП.",
+      "safetyLevel": "safe"
+    },
+    "CoreSync": {
+      "displayNameRu": "Adobe CoreSync",
+      "summaryRu": "Фоновая синхронизация файлов и шрифтов Adobe Cloud.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "AdobeCollabSync": {
+      "displayNameRu": "Adobe Collaboration Synchronizer",
+      "summaryRu": "Фоновая синхронизация документов Adobe Acrobat.",
+      "canDisableRu": "Можно смело выключать в Gaming Mode.",
+      "safetyLevel": "safe"
+    },
+    "atieclxx": {
+      "displayNameRu": "AMD External Events Client Module",
+      "summaryRu": "Клиентский модуль видеодрайвера AMD для переключения разрешений, DisplayPort и горячих клавиш.",
+      "canDisableRu": "Не рекомендуется выключать — может нарушить работу монитора, FreeSync и DisplayPort.",
+      "safetyLevel": "protected"
+    },
+    "atiesrxx": {
+      "displayNameRu": "AMD External Events Utility",
+      "summaryRu": "Служебный процесс видеодрайвера AMD, поддерживающий стабильный вывод сигнала на монитор.",
+      "canDisableRu": "Не рекомендуется выключать — критичен для стабильной работы видеокарты AMD и DisplayPort.",
+      "safetyLevel": "protected"
+    },
+    "WUDFHost": {
+      "displayNameRu": "Хост драйверов пользовательского режима (WUDF)",
+      "summaryRu": "Системный процесс Windows для драйверов периферии, гарнитур, датчиков и USB-устройств.",
+      "canDisableRu": "Системный хост драйверов Windows — отключать не рекомендуется.",
+      "safetyLevel": "protected"
+    },
+    "ShellHost": {
+      "displayNameRu": "Хост оболочки Windows 11",
+      "summaryRu": "Системный процесс интерфейса рабочего стола и панели задач Windows 11.",
+      "canDisableRu": "Компонент оболочки Windows — отключать не рекомендуется.",
+      "safetyLevel": "protected"
+    },
+    "AppleMobileDeviceService": {
+      "displayNameRu": "Служба устройств Apple (iPhone USB)",
+      "summaryRu": "Обеспечивает подключение iPhone/iPad по USB и режим модема Apple USB Tethering.",
+      "canDisableRu": "Оставьте «Без утилки», если используете интернет через iPhone по USB-кабелю.",
+      "safetyLevel": "optional"
+    },
+    "winws": {
+      "displayNameRu": "Zapret (winws — обход DPI)",
+      "summaryRu": "Движок Zapret для обхода DPI-блокировок Discord, YouTube и голосовых серверов.",
+      "canDisableRu": "Защищено по умолчанию — не отключается в Gaming Mode, чтобы не пропадала связь в Discord и играх.",
+      "safetyLevel": "protected"
+    },
+    "winws2": {
+      "displayNameRu": "Zapret 2 (winws2 — обход DPI)",
+      "summaryRu": "Движок Zapret 2 для обхода DPI-блокировок Discord, YouTube и сетевых сервисов.",
+      "canDisableRu": "Защищено по умолчанию — не отключается в Gaming Mode.",
+      "safetyLevel": "protected"
+    },
+    "zapret": {
+      "displayNameRu": "Zapret (обход DPI)",
+      "summaryRu": "Компонент или сценарий автозапуска Zapret для обхода DPI-блокировок Discord и YouTube.",
+      "canDisableRu": "Защищено по умолчанию — не отключается и не убирается из автозагрузки в Gaming Mode.",
+      "safetyLevel": "protected"
+    }
+  }
+}

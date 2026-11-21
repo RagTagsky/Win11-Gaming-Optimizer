@@ -4,7 +4,10 @@
     "ctfmon",
     "AMDNoiseSuppression",
     "SecurityHealthSystray",
-    "Apple"
+    "Apple",
+    "zapret",
+    "winws",
+    "winws2"
   ],
   "BlacklistProcesses": [
     "TranslucentTB",

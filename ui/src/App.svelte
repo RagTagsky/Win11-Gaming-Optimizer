@@ -14,12 +14,10 @@
   import TitleBar from './lib/components/TitleBar.svelte';
   import DashboardView from './lib/components/DashboardView.svelte';
   import ProcessesView, {
-    type ProcessFilterMode,
-    type ProcessViewMode
+    type ProcessFilterMode
   } from './lib/components/ProcessesView.svelte';
   import ServicesView, {
-    type ServiceCategoryFilter,
-    type ServiceViewMode
+    type ServiceFilterMode
   } from './lib/components/ServicesView.svelte';
   import TweaksView from './lib/components/TweaksView.svelte';
   import RepairView, { type RepairStatusMessage } from './lib/components/RepairView.svelte';
@@ -29,7 +27,6 @@
     applyServiceFeaturePack,
     buildProfileTuningPreset,
     checkForUpdates,
-    controlService,
     executeEmergencyRepair,
     executeModeAction,
     fetchAutostartStatus,
@@ -37,54 +34,45 @@
     fetchServicesLists,
     fetchSystemStatus,
     fetchTuningConfig,
-    fetchWindowsStartupEntries,
     finishPendingRestore,
     formatIpcError,
     installGithubUpdate,
     isTauri,
-    killProcess,
     lockTimerResolution,
     openReleaseUrl,
     rebootPc,
     resolveProfileFromTuning,
     saveTuningConfig,
     setAutostart,
+    setProcessGamingMode,
+    setServiceGamingMode,
     setWindowTheme,
-    unlockTimerResolution,
-    updateProcessList,
-    updateServiceList
+    unlockTimerResolution
   } from './lib/api';
   import type {
     AutostartStatus,
-    BlacklistServiceItem,
     ConfirmDialogRequest,
     ErrorBannerState,
     HardwareInfo,
     InstalledServiceItem,
-    ListMutationOperation,
     LogEntry,
     ModeAction,
     ModeState,
     OptimizationProfile,
+    ProcessDescriptionEntry,
     ProcessItem,
-    ProcessListType,
     RepairType,
-    ServiceCategory,
-    ServiceControlOperation,
-    ServiceDescriptionEntry,
+    SafetyLevel,
     ServiceFeaturePack,
-    ServiceListType,
-    StartupEntry,
     TabId,
     ThemeMode,
     TuningConfig,
-    UpdateInfo,
-    WhitelistServiceItem
+    UpdateInfo
   } from './lib/types';
 
   const TAB_META: Array<{ id: TabId; label: string }> = [
     { id: 'dashboard', label: 'Обзор' },
-    { id: 'processes', label: 'Программы' },
+    { id: 'processes', label: 'Процессы' },
     { id: 'services', label: 'Службы' },
     { id: 'tweaks', label: 'Настройки' },
     { id: 'repair', label: 'Обслуживание' }
@@ -131,36 +119,48 @@
   let timerLocked = $state(false);
   let isTimerLocking = $state(false);
 
-  // Processes / Programs & Startup Tab State (persists across tabs)
+  // Processes Tab State (persists across tabs)
   let processes = $state<ProcessItem[]>([]);
   let blacklistProcesses = $state<string[]>([]);
   let protectedStartupNames = $state<string[]>([]);
-  let startupEntries = $state<StartupEntry[]>([]);
-  let processesViewMode = $state<ProcessViewMode>('running');
+  let processDescriptions = $state<Record<string, ProcessDescriptionEntry>>({});
+  let startupProcessNames = $state<string[]>([]);
   let processesFilterMode = $state<ProcessFilterMode>('all');
   let processesSearchQuery = $state('');
   let isProcessesLoading = $state(false);
-  let isStartupLoading = $state(false);
   let processBusyKey = $state<string | null>(null);
   let processesError = $state<string | null>(null);
 
   // Services Tab State (persists across tabs)
-  let blacklist = $state<BlacklistServiceItem[]>([]);
-  let whitelist = $state<string[]>([]);
-  let whitelistDescriptions = $state<Record<string, ServiceDescriptionEntry>>({});
-  let whitelistItems = $state<WhitelistServiceItem[]>([]);
   let allInstalledServices = $state<InstalledServiceItem[]>([]);
   let wifiActive = $state(false);
   let featurePacks = $state<ServiceFeaturePack[]>([]);
   let busyFeaturePack = $state<string | null>(null);
-  let servicesViewMode = $state<ServiceViewMode>('disable');
+  let servicesFilterMode = $state<ServiceFilterMode>('all');
   let servicesSearchQuery = $state('');
-  let servicesCategory = $state<ServiceCategoryFilter>('all');
   let isServicesLoading = $state(false);
   let busyService = $state<string | null>(null);
   let servicesError = $state<string | null>(null);
   let servicesLoaded = false;
   let processesLoaded = false;
+
+  const disabledServicesCount = $derived(
+    allInstalledServices.filter((s) => !s.isCoreLocked && Boolean(s.disableInGaming)).length
+  );
+  const disabledProcessesCount = $derived.by(() => {
+    const protSet = new Set(
+      protectedStartupNames.map((n) => n.trim().replace(/\.exe$/i, '').toLowerCase()).filter(Boolean)
+    );
+    const active = new Set<string>();
+    for (const raw of blacklistProcesses) {
+      const key = raw.trim().replace(/\.exe$/i, '').toLowerCase();
+      if (!key || protSet.has(key)) continue;
+      const desc = processDescriptions[key];
+      if (desc?.protectionKind) continue;
+      active.add(key);
+    }
+    return active.size;
+  });
 
   // Elevated Autostart State
   let autostartStatus = $state<AutostartStatus | null>(null);
@@ -314,42 +314,25 @@
     }
   }
 
-  async function loadStartupEntries(silent = false) {
-    if (!silent) {
-      isStartupLoading = true;
-    }
-    try {
-      startupEntries = await fetchWindowsStartupEntries();
-    } catch (err) {
-      const detail = formatIpcError(err);
-      if (!silent) {
-        addLog('error', `Сбой чтения автозагрузки Windows: ${detail}`);
-      }
-    } finally {
-      isStartupLoading = false;
-    }
-  }
-
   async function loadProcesses(silent = false) {
     if (!silent) {
       isProcessesLoading = true;
     }
     try {
-      const [snap] = await Promise.all([
-        fetchRunningProcesses(),
-        loadStartupEntries(true)
-      ]);
+      const snap = await fetchRunningProcesses();
       processes = snap.processes;
       blacklistProcesses = snap.blacklistProcesses;
       protectedStartupNames = snap.protectedStartupNames;
+      processDescriptions = snap.processDescriptions ?? {};
+      startupProcessNames = snap.startupProcessNames ?? [];
       processesError = null;
       clearErrorIfSource('processes');
     } catch (err) {
       const detail = formatIpcError(err);
       processesError = detail;
       if (!silent) {
-        setError('processes', 'Ошибка сканирования программ Windows', detail);
-        addLog('error', `Сбой чтения программ: ${detail}`);
+        setError('processes', 'Ошибка сканирования процессов Windows', detail);
+        addLog('error', `Сбой чтения процессов: ${detail}`);
       }
     } finally {
       isProcessesLoading = false;
@@ -357,10 +340,6 @@
   }
 
   function applyServicesListsResponse(lists: Awaited<ReturnType<typeof fetchServicesLists>>) {
-    blacklist = lists.blacklist;
-    whitelist = lists.whitelist;
-    whitelistDescriptions = lists.whitelistDescriptions ?? {};
-    whitelistItems = lists.whitelistItems ?? [];
     allInstalledServices = lists.allInstalledServices ?? [];
     wifiActive = Boolean(lists.wifiActive);
     featurePacks = lists.featurePacks ?? [];
@@ -919,102 +898,44 @@
     liveAnnouncement = 'Журнал событий очищен.';
   }
 
-  async function handleKillProcess(proc: ProcessItem) {
-    if (processBusyKey !== null || proc.isProtected) return;
-    const approved = await requestConfirm({
-      title: `Завершить процесс «${proc.name}»?`,
-      description: `Вы собираетесь принудительно завершить процесс ${proc.name} (PID ${proc.pid}). Несохранённые данные в этом приложении будут потеряны.`,
-      confirmLabel: 'Завершить процесс',
-      cancelLabel: 'Отмена',
-      tone: 'danger'
-    });
-    if (!approved) return;
-
-    processBusyKey = `kill:${proc.pid}`;
-    try {
-      const res = await killProcess(proc.pid, proc.name);
-      if (res.success) {
-        clearErrorIfSource('processes');
-        addLog('success', res.message);
-        liveAnnouncement = res.message;
-        await loadProcesses(true);
-      } else {
-        setError('processes', 'Не удалось завершить процесс', res.message);
-        addLog('error', res.message);
-      }
-    } catch (err) {
-      const detail = formatIpcError(err);
-      setError('processes', 'Сбой завершения процесса', detail);
-      addLog('error', detail);
-    } finally {
-      processBusyKey = null;
-    }
-  }
-
-  async function handleKillProcessGroup(displayName: string, procs: ProcessItem[]) {
-    const targets = procs.filter((p) => !p.isProtected);
-    if (processBusyKey !== null || targets.length === 0) return;
-    const sampleName = targets[0].name;
-    const approved = await requestConfirm({
-      title: `Закрыть все процессы «${displayName}»?`,
-      description: `Будет завершено процессов: ${targets.length} (${sampleName}.exe). Несохранённые данные в этой программе будут потеряны.`,
-      confirmLabel: 'Закрыть все',
-      cancelLabel: 'Отмена',
-      tone: 'danger'
-    });
-    if (!approved) return;
-
-    processBusyKey = `killgroup:${sampleName}`;
-    try {
-      let okCount = 0;
-      let lastErr = '';
-      for (const proc of targets) {
-        const res = await killProcess(proc.pid, proc.name);
-        if (res.success) okCount += 1;
-        else lastErr = res.message;
-      }
-      if (okCount > 0) {
-        clearErrorIfSource('processes');
-        const msg = `Завершено процессов «${displayName}»: ${okCount} из ${targets.length}.`;
-        addLog('success', msg);
-        liveAnnouncement = msg;
-      } else if (lastErr) {
-        setError('processes', 'Не удалось закрыть программу', lastErr);
-        addLog('error', lastErr);
-      }
-      await loadProcesses(true);
-    } catch (err) {
-      const detail = formatIpcError(err);
-      setError('processes', 'Сбой закрытия программы', detail);
-      addLog('error', detail);
-    } finally {
-      processBusyKey = null;
-    }
-  }
-
-  async function handleUpdateProcessList(
-    listType: ProcessListType,
+  async function handleSetProcessGamingMode(
     processName: string,
-    operation: ListMutationOperation
-  ) {
-    if (processBusyKey !== null) return;
-    processBusyKey = `proc:${processName}`;
+    disableInGaming: boolean,
+    safetyLevel?: SafetyLevel
+  ): Promise<boolean> {
+    if (processBusyKey !== null) return false;
+    const clean = processName.trim().replace(/\.exe$/i, '');
+    if (!clean) return false;
+    if (disableInGaming && safetyLevel === 'protected') {
+      const approved = await requestConfirm({
+        title: `Отключать важный процесс «${clean}» в Gaming Mode?`,
+        description:
+          'Этот процесс отмечен как важный для драйверов, звука или стабильности системы. Вы точно хотите перевести его в режим «Выкл. в Gaming Mode»?',
+        confirmLabel: 'Выкл. в Gaming Mode',
+        cancelLabel: 'Оставить без утилки',
+        tone: 'warn'
+      });
+      if (!approved) return false;
+    }
+
+    processBusyKey = `proc:${clean.toLowerCase()}`;
     try {
-      const updated = await updateProcessList(listType, processName, operation);
+      const updated = await setProcessGamingMode(clean, disableInGaming);
       blacklistProcesses = updated.blacklistProcesses;
       protectedStartupNames = updated.protectedStartupNames;
       clearErrorIfSource('processes');
-      const targetLabel =
-        listType === 'blacklist' ? 'закрытия в игре' : 'сохранения в автозагрузке';
-      const actionLabel = operation === 'add' ? 'добавлено в правило' : 'удалено из правила';
-      const msg = `«${processName}» ${actionLabel} (${targetLabel}).`;
+      const msg = disableInGaming
+        ? `Процесс «${clean}» теперь выключается в Gaming Mode.`
+        : `Процесс «${clean}» теперь работает без утилки (автозагрузка сохраняется).`;
       addLog('success', msg);
       liveAnnouncement = msg;
       await loadProcesses(true);
+      return true;
     } catch (err) {
       const detail = formatIpcError(err);
-      setError('processes', 'Ошибка обновления правил программ', detail);
+      setError('processes', 'Не удалось изменить режим процесса', detail);
       addLog('error', detail);
+      return false;
     } finally {
       processBusyKey = null;
     }
@@ -1029,8 +950,8 @@
       clearErrorIfSource('services');
       const packTitle = updated.featurePacks?.find((p) => p.id === packId)?.title ?? packId;
       const msg = keepEnabledInGame
-        ? `Функция «${packTitle}» теперь всегда остаётся включённой в игре.`
-        : `Функция «${packTitle}» теперь отключается на время игры для максимального FPS.`;
+        ? `Пресет «${packTitle}»: службы переведены в режим «Без утилки».`
+        : `Пресет «${packTitle}»: службы будут выключаться в Gaming Mode.`;
       addLog('success', msg);
       liveAnnouncement = msg;
     } catch (err) {
@@ -1042,55 +963,19 @@
     }
   }
 
-  async function handleMoveToDisableList(serviceName: string) {
+  async function handleSetServiceGamingMode(
+    serviceName: string,
+    disableInGaming: boolean,
+    safetyLevel?: SafetyLevel
+  ) {
     if (busyService !== null || busyFeaturePack !== null) return;
-    const approved = await requestConfirm({
-      title: `Отключать «${serviceName}» в игровом режиме?`,
-      description:
-        'Служба будет убрана из списка «Всегда включены» и перенесена в список отключаемых на время игры (при выходе из игры её работа восстановится).',
-      confirmLabel: 'Отключать в игре',
-      cancelLabel: 'Отмена',
-      tone: 'warn'
-    });
-    if (!approved) return;
-
-    busyService = serviceName;
-    try {
-      await updateServiceList({
-        listType: 'whitelist',
-        serviceName,
-        operation: 'remove'
-      });
-      const updated = await updateServiceList({
-        listType: 'blacklist',
-        serviceName,
-        operation: 'add'
-      });
-      applyServicesListsResponse(updated);
-      clearErrorIfSource('services');
-      const msg = `Служба «${serviceName}» перенесена в «Отключаются в игре».`;
-      addLog('success', msg);
-      liveAnnouncement = msg;
-    } catch (err) {
-      const detail = formatIpcError(err);
-      setError('services', 'Ошибка переноса службы', detail);
-      addLog('error', detail);
-    } finally {
-      busyService = null;
-    }
-  }
-
-  async function handleControlService(serviceName: string, operation: ServiceControlOperation) {
-    if (busyService !== null) return;
-    if (operation === 'Stop' || operation === 'Disabled') {
+    if (disableInGaming && safetyLevel === 'protected') {
       const approved = await requestConfirm({
-        title: `Остановить службу «${serviceName}»?`,
+        title: `Отключать важную службу «${serviceName}» в Gaming Mode?`,
         description:
-          operation === 'Stop'
-            ? `Служба «${serviceName}» будет немедленно остановлена. При необходимости её можно запустить снова в этой же вкладке.`
-            : `Тип запуска службы «${serviceName}» будет переключён на «Отключена».`,
-        confirmLabel: operation === 'Stop' ? 'Остановить' : 'Отключить',
-        cancelLabel: 'Отмена',
+          'Эта служба отмечена как важная для безопасности, звука или античита. Вы точно хотите перевести её в режим «Выкл. в Gaming Mode»?',
+        confirmLabel: 'Выкл. в Gaming Mode',
+        cancelLabel: 'Оставить без утилки',
         tone: 'warn'
       });
       if (!approved) return;
@@ -1098,62 +983,17 @@
 
     busyService = serviceName;
     try {
-      const res = await controlService(serviceName, operation);
-      if (res.success) {
-        clearErrorIfSource('services');
-        addLog('success', res.message);
-        liveAnnouncement = res.message;
-        await loadServices();
-      } else {
-        setError('services', `Не удалось управлять службой «${serviceName}»`, res.message);
-        addLog('error', res.message);
-      }
-    } catch (err) {
-      const detail = formatIpcError(err);
-      setError('services', `Сбой управления службой «${serviceName}»`, detail);
-      addLog('error', detail);
-    } finally {
-      busyService = null;
-    }
-  }
-
-  async function handleUpdateServiceList(params: {
-    listType: ServiceListType;
-    serviceName: string;
-    displayName?: string;
-    category?: ServiceCategory;
-    reason?: string;
-    operation: ListMutationOperation;
-  }) {
-    if (busyService !== null) return;
-    if (params.listType === 'whitelist' && params.operation === 'remove') {
-      const approved = await requestConfirm({
-        title: `Убрать «${params.serviceName}» из белого списка?`,
-        description:
-          'Снятие защиты позволит добавлять эту службу в оптимизируемый список. Критические службы ОС всё равно останутся защищены на уровне бэкенда.',
-        confirmLabel: 'Убрать защиту',
-        cancelLabel: 'Отмена',
-        tone: 'warn'
-      });
-      if (!approved) return;
-    }
-
-    busyService = params.serviceName;
-    try {
-      const updated = await updateServiceList(params);
+      const updated = await setServiceGamingMode(serviceName, disableInGaming);
       applyServicesListsResponse(updated);
       clearErrorIfSource('services');
-      const scopeLabel =
-        params.listType === 'blacklist' ? 'отключаемых в игре служб' : 'всегда включённых служб';
-      const msg =
-        params.operation === 'add'
-          ? `Служба «${params.serviceName}» добавлена (${scopeLabel}).`
-          : `Служба «${params.serviceName}» убрана (${scopeLabel}).`;
+      const msg = disableInGaming
+        ? `Служба «${serviceName}» теперь выключается в Gaming Mode.`
+        : `Служба «${serviceName}» переведена в режим «Без утилки».`;
       addLog('success', msg);
       liveAnnouncement = msg;
     } catch (err) {
       const detail = formatIpcError(err);
-      setError('services', 'Ошибка обновления списков служб', detail);
+      setError('services', 'Не удалось изменить режим службы', detail);
       addLog('error', detail);
     } finally {
       busyService = null;
@@ -1225,7 +1065,7 @@
             {/if}
 
             <span>
-              {tab.label}{#if tab.id === 'services' && blacklist.length > 0}&nbsp;<span class="tabular-nums opacity-85">({blacklist.length})</span>{:else if tab.id === 'processes' && processes.length > 0}&nbsp;<span class="tabular-nums opacity-85">({processes.length})</span>{/if}
+              {tab.label}{#if tab.id === 'services' && disabledServicesCount > 0}&nbsp;<span class="tabular-nums opacity-85">({disabledServicesCount})</span>{:else if tab.id === 'processes' && disabledProcessesCount > 0}&nbsp;<span class="tabular-nums opacity-85">({disabledProcessesCount})</span>{/if}
             </span>
           </button>
         {/each}
@@ -1337,25 +1177,21 @@
         hidden={currentTab !== 'processes'}
       >
         <ProcessesView
+          active={currentTab === 'processes'}
           {processes}
           {blacklistProcesses}
           {protectedStartupNames}
-          {startupEntries}
-          viewMode={processesViewMode}
+          {processDescriptions}
+          {startupProcessNames}
           filterMode={processesFilterMode}
           searchQuery={processesSearchQuery}
           isLoading={isProcessesLoading}
-          {isStartupLoading}
           busyKey={processBusyKey}
           loadError={processesError}
-          onViewModeChange={(m) => (processesViewMode = m)}
           onFilterModeChange={(f) => (processesFilterMode = f)}
           onSearchChange={(q) => (processesSearchQuery = q)}
           onRefresh={() => loadProcesses()}
-          onRefreshStartup={() => loadStartupEntries()}
-          onKillProcess={handleKillProcess}
-          onKillGroup={handleKillProcessGroup}
-          onUpdateList={handleUpdateProcessList}
+          onSetProcessMode={handleSetProcessGamingMode}
         />
       </div>
 
@@ -1366,28 +1202,21 @@
         hidden={currentTab !== 'services'}
       >
         <ServicesView
-          {blacklist}
-          {whitelist}
-          {whitelistDescriptions}
-          {whitelistItems}
+          active={currentTab === 'services'}
           {allInstalledServices}
           {wifiActive}
           {featurePacks}
           {busyFeaturePack}
-          viewMode={servicesViewMode}
+          filterMode={servicesFilterMode}
           searchQuery={servicesSearchQuery}
-          selectedCategory={servicesCategory}
           isLoading={isServicesLoading}
           {busyService}
           loadError={servicesError}
-          onViewModeChange={(m) => (servicesViewMode = m)}
+          onFilterModeChange={(f) => (servicesFilterMode = f)}
           onSearchChange={(q) => (servicesSearchQuery = q)}
-          onCategoryChange={(c) => (servicesCategory = c)}
           onRetry={loadServices}
           onApplyFeaturePack={handleApplyFeaturePack}
-          onMoveToDisableList={handleMoveToDisableList}
-          onControlService={handleControlService}
-          onUpdateServiceList={handleUpdateServiceList}
+          onSetServiceMode={handleSetServiceGamingMode}
         />
       </div>
 

@@ -1223,11 +1223,14 @@ function Set-WindowsWidgetsAndSearchGamingState {
         [bool]$Disable,
 
         [Parameter(Mandatory = $false)]
-        [switch]$SkipSystemPolicies
+        [switch]$SkipSystemPolicies,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$DisableWidgets = $true
     )
 
     if ($Disable) {
-        Write-Host "[*] Disabling Windows 11 Widgets and Bing web search in Start menu..." -ForegroundColor Cyan
+        Write-Host "[*] Disabling Bing web search in Start menu$(if ($DisableWidgets) { ' and Windows 11 Widgets' } else { ' (Widgets preserved by user rule)' })..." -ForegroundColor Cyan
         # 1. Disable Bing web search in Start
         $searchPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Search"
         if (-not (Test-Path $searchPath)) { New-Item -Path $searchPath -Force -ErrorAction SilentlyContinue | Out-Null }
@@ -1241,19 +1244,22 @@ function Set-WindowsWidgetsAndSearchGamingState {
             Set-ItemProperty -Path $expPol -Name "DisableSearchBoxSuggestions" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
         }
 
-        # 2. Disable Taskbar Widgets safely (terminates only Widgets host without touching UltraGamingMode or Search WebView2)
-        $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
-        if (Test-Path $advPath) {
-            Set-ItemProperty -Path $advPath -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+        # 2. Disable Taskbar Widgets strictly when enabled by user process rule (without touching UltraGamingMode or Search WebView2)
+        if ($DisableWidgets) {
+            $advPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+            if (Test-Path $advPath) {
+                Set-ItemProperty -Path $advPath -Name "TaskbarDa" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+            $dshPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
+            if (-not (Test-Path $dshPath)) { New-Item -Path $dshPath -Force -ErrorAction SilentlyContinue | Out-Null }
+            if (Test-Path $dshPath) {
+                Set-ItemProperty -Path $dshPath -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+            }
+            Get-Process -Name "Widgets" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Host "  [+] Widgets and Bing Start search disabled (UI WebView2 preserved)." -ForegroundColor Green
+        } else {
+            Write-Host "  [+] Bing Start search disabled; Widgets kept active per user setting." -ForegroundColor Green
         }
-        $dshPath = "HKLM:\SOFTWARE\Policies\Microsoft\Dsh"
-        if (-not (Test-Path $dshPath)) { New-Item -Path $dshPath -Force -ErrorAction SilentlyContinue | Out-Null }
-        if (Test-Path $dshPath) {
-            Set-ItemProperty -Path $dshPath -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-        }
-        Get-Process -Name "Widgets" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-        Write-Host "  [+] Widgets and Bing Start search disabled (UI WebView2 preserved)." -ForegroundColor Green
     }
     else {
         Write-Host "[*] Restoring Windows Widgets and Start search..." -ForegroundColor Cyan
@@ -2762,11 +2768,69 @@ function Get-TcpStackConfig {
     return $result
 }
 
+function Test-ShouldPreserveTcpTimestamps {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$CurrentTimestamps = $null,
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [string[]]$ActiveServiceNames = $null,
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [string[]]$ActiveProcessNames = $null
+    )
+
+    $bypassServices = @("zapret", "WinDivert", "WinDivert14")
+    $bypassProcs    = @("winws", "winws2")
+
+    $ts = $CurrentTimestamps
+    if ($null -eq $ts -and $null -eq $ActiveServiceNames -and $null -eq $ActiveProcessNames) {
+        $cfg = Get-TcpStackConfig
+        $ts = if ($cfg -is [hashtable]) { $cfg["Timestamps"] } else { $cfg.Timestamps }
+    }
+    if ($ts -and $ts.Trim().ToLowerInvariant() -eq "enabled") {
+        return $true
+    }
+
+    if ($null -ne $ActiveServiceNames) {
+        foreach ($s in $ActiveServiceNames) {
+            if ($bypassServices -contains $s) { return $true }
+        }
+    } else {
+        foreach ($svcName in $bypassServices) {
+            if ((Test-Path -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$svcName") -or (Get-Service -Name $svcName -ErrorAction SilentlyContinue)) {
+                return $true
+            }
+        }
+    }
+
+    if ($null -ne $ActiveProcessNames) {
+        foreach ($p in $ActiveProcessNames) {
+            $cleanP = ($p.Trim() -replace '(?i)\.exe$', '')
+            if ($bypassProcs -contains $cleanP) { return $true }
+        }
+    } else {
+        foreach ($procName in $bypassProcs) {
+            if (Get-Process -Name $procName -ErrorAction SilentlyContinue) {
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
 function Set-TcpGamingStackOptimizations {
     [CmdletBinding()]
     param()
 
-    Write-Host "[*] Applying TCP Gaming Stack Optimizations (TcpAckFrequency=1, TCPNoDelay=1, timestamps=disabled, ecn=disabled, rss=enabled)..." -ForegroundColor Cyan
+    $preserveTimestamps = Test-ShouldPreserveTcpTimestamps
+    $tsMode = if ($preserveTimestamps) { "enabled" } else { "disabled" }
+
+    Write-Host "[*] Applying TCP Gaming Stack Optimizations (TcpAckFrequency=1, TCPNoDelay=1, timestamps=$tsMode, ecn=disabled, rss=enabled)..." -ForegroundColor Cyan
 
     $interfacesPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
     $gamingAdapters = Get-PhysicalGamingAdapters
@@ -2805,8 +2869,12 @@ function Set-TcpGamingStackOptimizations {
     }
 
     try {
-        $null = netsh int tcp set global timestamps=disabled ecncapability=disabled rss=enabled 2>&1
-        Write-Host "  [+] TCP global parameters applied: timestamps=disabled, ecncapability=disabled, rss=enabled." -ForegroundColor Green
+        $null = netsh int tcp set global timestamps=$tsMode ecncapability=disabled rss=enabled 2>&1
+        if ($preserveTimestamps) {
+            Write-Host "  [+] TCP global parameters applied: timestamps=enabled (preserved for Zapret/DPI bypass), ecncapability=disabled, rss=enabled." -ForegroundColor Green
+        } else {
+            Write-Host "  [+] TCP global parameters applied: timestamps=disabled, ecncapability=disabled, rss=enabled." -ForegroundColor Green
+        }
     }
     catch {
         Write-Warning "Failed to set netsh tcp global parameters: $($_.Exception.Message)"
@@ -3357,7 +3425,7 @@ function Set-ExtendedGamingOptimizations {
         [Parameter(Mandatory = $false)] [string[]]$Whitelist
     )
 
-    Write-Host "[*] Applying v3.5.2 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying v3.6.0 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
     $targets = @(Get-ExtendedGamingTargets -HardwareProfile $HardwareProfile -Whitelist $Whitelist)
     $applied = Set-RegistryTargets -Targets $targets
     $groups = ($targets | ForEach-Object { $_.Group } | Sort-Object -Unique) -join ", "
@@ -3723,12 +3791,39 @@ function Set-Windows11DebloatOptimizations {
         [Parameter(Mandatory = $false)]
         [switch]$DisableBingSearch,
         [Parameter(Mandatory = $false)]
-        [switch]$All
+        [switch]$All,
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist = $null,
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [array]$Blacklist = $null,
+        [Parameter(Mandatory = $false)]
+        [switch]$SkipWidgets
     )
 
     Write-Host "[*] Applying Windows 11 Deep Debloat & Background Suppression..." -ForegroundColor Cyan
     $isSystem = $false
     try { $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem } catch {}
+
+    $effectiveWhitelist = $Whitelist
+    if ($null -eq $effectiveWhitelist) {
+        $wlFile = Join-Path $PSScriptRoot "..\Config\services_whitelist.json"
+        if (Test-Path -LiteralPath $wlFile) {
+            try { $effectiveWhitelist = @((Get-Content -LiteralPath $wlFile -Raw -Encoding UTF8 | ConvertFrom-Json).ProtectedServices) } catch { $effectiveWhitelist = @() }
+        } else {
+            $effectiveWhitelist = @()
+        }
+    }
+    $effectiveBlacklist = $Blacklist
+    if ($null -eq $effectiveBlacklist) {
+        $blFile = Join-Path $PSScriptRoot "..\Config\services_blacklist.json"
+        if (Test-Path -LiteralPath $blFile) {
+            try { $effectiveBlacklist = @((Get-Content -LiteralPath $blFile -Raw -Encoding UTF8 | ConvertFrom-Json).TargetServices) } catch { $effectiveBlacklist = @() }
+        } else {
+            $effectiveBlacklist = @()
+        }
+    }
 
     # 1. GameDVR & Background Recording
     if ($All -or $DisableGameBar) {
@@ -3780,9 +3875,16 @@ function Set-Windows11DebloatOptimizations {
                 Set-ItemProperty -Path $k -Name "TurnOffWindowsCopilot" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
             }
 
-            if (Get-Service -Name "WSAIFabricSvc" -ErrorAction SilentlyContinue) {
+            $allowDisableWsai = if (Get-Command Test-ServiceShouldDisableInGaming -ErrorAction SilentlyContinue) {
+                Test-ServiceShouldDisableInGaming -ServiceName "WSAIFabricSvc" -Blacklist $effectiveBlacklist -Whitelist $effectiveWhitelist
+            } else {
+                ($effectiveWhitelist -notcontains "WSAIFabricSvc") -and (@($effectiveBlacklist | ForEach-Object { if ($_ -is [string]) { $_ } else { $_.Name } }) -contains "WSAIFabricSvc")
+            }
+            if ($allowDisableWsai -and (Get-Service -Name "WSAIFabricSvc" -ErrorAction SilentlyContinue)) {
                 Stop-Service -Name "WSAIFabricSvc" -Force -ErrorAction SilentlyContinue
                 Set-Service -Name "WSAIFabricSvc" -StartupType Disabled -ErrorAction SilentlyContinue
+            } elseif (-not $allowDisableWsai) {
+                Write-Host "  [v] Retained 'WSAIFabricSvc' per user service configuration." -ForegroundColor Green
             }
             Write-Host "  [+] Windows Copilot & AI telemetry background analysis disabled." -ForegroundColor Green
         } catch {
@@ -3791,7 +3893,7 @@ function Set-Windows11DebloatOptimizations {
     }
 
     # 4. Widgets & NewsFeeds
-    if ($All -or $DisableWidgets) {
+    if (($All -or $DisableWidgets) -and -not $SkipWidgets) {
         try {
             if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh")) { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Force | Out-Null }
             Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue

@@ -24,7 +24,14 @@ export type ServiceCategory =
   | 'Remote'
   | 'System';
 
-export type ProcessProtectionKind = 'os_core' | 'self_app' | 'anticheat' | 'game_client';
+export type ProcessProtectionKind =
+  | 'os_core'
+  | 'self_app'
+  | 'anticheat'
+  | 'game_client'
+  | 'network_bypass';
+
+export type SafetyLevel = 'safe' | 'optional' | 'protected';
 
 export type ServiceControlOperation = 'Start' | 'Stop' | 'Automatic' | 'Manual' | 'Disabled';
 
@@ -79,6 +86,15 @@ export interface AutostartStatus {
 export interface ServiceDescriptionEntry {
   summaryRu: string;
   canDisableRu: string;
+  safetyLevel?: SafetyLevel;
+}
+
+export interface ProcessDescriptionEntry {
+  displayNameRu: string;
+  summaryRu: string;
+  canDisableRu: string;
+  safetyLevel?: SafetyLevel;
+  protectionKind?: ProcessProtectionKind | null;
 }
 
 export interface BlacklistServiceItem {
@@ -90,6 +106,7 @@ export interface BlacklistServiceItem {
   StartType?: string;
   SummaryRu?: string;
   CanDisableHint?: string;
+  safetyLevel?: SafetyLevel;
 }
 
 export interface WhitelistServiceItem {
@@ -99,6 +116,7 @@ export interface WhitelistServiceItem {
   isCoreLocked: boolean;
   SummaryRu?: string;
   CanDisableHint?: string;
+  safetyLevel?: SafetyLevel;
 }
 
 export interface InstalledServiceItem {
@@ -109,8 +127,10 @@ export interface InstalledServiceItem {
   Category: ServiceCategory;
   membership: 'core' | 'whitelist' | 'blacklist' | 'none';
   isCoreLocked: boolean;
+  disableInGaming?: boolean;
   SummaryRu?: string;
   CanDisableHint?: string;
+  safetyLevel?: SafetyLevel;
 }
 
 export interface ServiceFeaturePack {
@@ -154,6 +174,10 @@ export interface ProcessItem {
   isProtected: boolean;
   isBlacklisted: boolean;
   isStartupProtected: boolean;
+  inStartup?: boolean;
+  summaryRu?: string;
+  canDisableHint?: string;
+  safetyLevel?: SafetyLevel;
 }
 
 export interface StartupEntry {
@@ -177,6 +201,8 @@ export interface LiveProcessesSnapshot {
   processes: ProcessItem[];
   blacklistProcesses: string[];
   protectedStartupNames: string[];
+  processDescriptions?: Record<string, ProcessDescriptionEntry>;
+  startupProcessNames?: string[];
 }
 
 export interface LogEntry {

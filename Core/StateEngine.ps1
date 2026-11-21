@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "3.5.2"
+$Script:APP_VERSION = "3.6.0"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -151,7 +151,9 @@ $Script:CriticalProtectedProcesses = @(
     "SgrmBroker", "WmiPrvSE", "unsecapp", "TrustedInstaller", "TiWorker",
     "msiexec", "powershell", "pwsh", "cmd", "UltraGamingMode",
     "com.ultragamingmode.optimizer", "vgk", "vgc", "EasyAntiCheat",
-    "EasyAntiCheat_EOS", "BEService", "FACEIT", "steam", "steamservice", "steamwebhelper"
+    "EasyAntiCheat_EOS", "BEService", "FACEIT", "FACEITClient", "FACEITService",
+    "steam", "steamservice", "steamwebhelper",
+    "winws", "winws2", "zapret"
 )
 
 function Test-ShouldStopWebViewProcess {
@@ -202,6 +204,96 @@ function Test-IsProtectedProcess {
     if ($clean -ieq 'msedgewebview2') {
         return (-not (Test-ShouldStopWebViewProcess -CommandLine $CommandLine))
     }
+    return $false
+}
+
+function Test-ProcessShouldCloseInGaming {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProcessName,
+
+        [Parameter(Mandatory = $false)]
+        [PSCustomObject]$StartupConfig = $null
+    )
+
+    $clean = ($ProcessName.Trim() -replace '(?i)\.exe$', '')
+    if ([string]::IsNullOrWhiteSpace($clean)) { return $false }
+    if ($clean -ine 'msedgewebview2' -and (Test-IsProtectedProcess -ProcessName $clean)) {
+        return $false
+    }
+    if (-not $StartupConfig) { return $false }
+
+    if ($StartupConfig.ProtectedStartupNames) {
+        foreach ($prot in $StartupConfig.ProtectedStartupNames) {
+            if ([string]::IsNullOrWhiteSpace($prot)) { continue }
+            $pClean = ($prot.Trim() -replace '(?i)\.exe$', '')
+            if ($pClean -ieq $clean) { return $false }
+        }
+    }
+    if ($StartupConfig.BlacklistProcesses) {
+        foreach ($bl in $StartupConfig.BlacklistProcesses) {
+            if ([string]::IsNullOrWhiteSpace($bl)) { continue }
+            $bClean = ($bl.Trim() -replace '(?i)\.exe$', '')
+            if ($bClean -ieq $clean) { return $true }
+        }
+    }
+    return $false
+}
+
+function Test-StartupEntryMatchesNames {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$EntryName = "",
+
+        [Parameter(Mandatory = $false)]
+        [string]$CommandValue = "",
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [string[]]$Names = @()
+    )
+
+    if (-not $Names -or $Names.Count -eq 0) { return $false }
+
+    $entryClean = ($EntryName.Trim() -replace '(?i)\.(lnk|url|exe)$', '')
+    $cmdText = if ($null -ne $CommandValue) { [string]$CommandValue } else { "" }
+
+    # Extract candidate executable stems from command line (quoted paths with spaces + unquoted exe / --processStart targets)
+    $exeStems = [System.Collections.Generic.List[string]]::new()
+    if (-not [string]::IsNullOrWhiteSpace($cmdText)) {
+        foreach ($qm in [regex]::Matches($cmdText, '(?i)["'']([^"'']+?\.exe)["'']')) {
+            try {
+                $qStem = [System.IO.Path]::GetFileNameWithoutExtension($qm.Groups[1].Value.Trim())
+                if (-not [string]::IsNullOrWhiteSpace($qStem)) {
+                    $exeStems.Add($qStem)
+                }
+            } catch {}
+        }
+        foreach ($m in [regex]::Matches($cmdText, '(?i)([^\\/"''\s]+)\.exe')) {
+            $stem = $m.Groups[1].Value.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($stem)) {
+                $exeStems.Add($stem)
+            }
+        }
+    }
+
+    foreach ($raw in $Names) {
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+        $target = ($raw.Trim() -replace '(?i)\.exe$', '')
+        if ([string]::IsNullOrWhiteSpace($target)) { continue }
+        $escaped = [regex]::Escape($target)
+
+        if (-not [string]::IsNullOrWhiteSpace($entryClean)) {
+            if ($entryClean -ieq $target) { return $true }
+            if ($entryClean -match "(?i)(^|[^A-Za-z0-9])$escaped([^A-Za-z0-9]|$)") { return $true }
+        }
+        foreach ($stem in $exeStems) {
+            if ($stem -ieq $target) { return $true }
+        }
+    }
+
     return $false
 }
 
@@ -295,8 +387,22 @@ function Stop-BlacklistedProcesses {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string[]]$ProcessNames
+        [AllowEmptyCollection()]
+        [string[]]$ProcessNames,
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [string[]]$ProtectedNames = @()
     )
+
+    $protectedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($pn in $ProtectedNames) {
+        if ([string]::IsNullOrWhiteSpace($pn)) { continue }
+        $pClean = ($pn.Trim() -replace '(?i)\.exe$', '')
+        if (-not [string]::IsNullOrWhiteSpace($pClean)) {
+            [void]$protectedSet.Add($pClean)
+        }
+    }
 
     $webViewCmdLines = $null
     foreach ($name in $ProcessNames) {
@@ -305,6 +411,9 @@ function Stop-BlacklistedProcesses {
         }
         $cleanName = ($name.Trim() -replace '(?i)\.exe$', '')
         if ($cleanName -notmatch '^[A-Za-z0-9_.\- ]{1,128}$' -or $cleanName -match '\.\.') {
+            continue
+        }
+        if ($protectedSet.Contains($cleanName)) {
             continue
         }
         if ($cleanName -ine 'msedgewebview2' -and (Test-IsProtectedProcess -ProcessName $cleanName)) {
@@ -461,13 +570,26 @@ function New-SystemStateBackup {
 
     $servicesList = [System.Collections.Generic.List[object]]::new()
     foreach ($item in $BlacklistConfig) {
-        $sName = $item.Name
-        if ($Whitelist -contains $sName) { continue }
+        $sName = if ($item -is [string]) { $item } else { $item.Name }
+        if ([string]::IsNullOrWhiteSpace($sName)) { continue }
+        $isWhitelisted = if (Get-Command Test-ServiceInList -ErrorAction SilentlyContinue) {
+            Test-ServiceInList -ServiceName $sName -List $Whitelist
+        } else {
+            ($Whitelist -contains $sName)
+        }
+        if ($isWhitelisted) { continue }
+
+        $sCanon = if (Get-Command Get-CanonicalServiceName -ErrorAction SilentlyContinue) {
+            Get-CanonicalServiceName -ServiceName $sName
+        } else { $sName }
 
         $wmiSvc = $serviceMap[$sName]
         if (-not $wmiSvc) {
             foreach ($cs in $cimServices) {
-                if ($cs.Name -like "$($sName)_*" -or $cs.Name -like "$($sName)[0-9]*") {
+                $csCanon = if (Get-Command Get-CanonicalServiceName -ErrorAction SilentlyContinue) {
+                    Get-CanonicalServiceName -ServiceName $cs.Name
+                } else { $cs.Name }
+                if ($csCanon -ieq $sCanon) {
                     $wmiSvc = $cs
                     break
                 }
@@ -476,11 +598,11 @@ function New-SystemStateBackup {
         if ($wmiSvc) {
             $startMode = $wmiSvc.StartMode
             # Standard Windows services should never be snapshotted as Disabled if taken while gaming mode was active
-            if ($startMode -eq "Disabled" -and $defaultServiceModes.ContainsKey($sName)) {
-                $startMode = $defaultServiceModes[$sName]
+            if ($startMode -eq "Disabled" -and $defaultServiceModes.ContainsKey($sCanon)) {
+                $startMode = $defaultServiceModes[$sCanon]
             }
             $servicesList.Add(@{
-                Name                = $sName
+                Name                = $sCanon
                 DisplayName         = $wmiSvc.DisplayName
                 OriginalStartupType = $startMode
                 OriginalStatus      = $wmiSvc.State
@@ -661,14 +783,39 @@ function Disable-UserStateAggressive {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
-        [PSCustomObject]$StartupConfig
+        [PSCustomObject]$StartupConfig,
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [array]$Blacklist = $null,
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyCollection()]
+        [string[]]$Whitelist = $null
     )
 
     Write-Host "`n[*] Suppressing user-level startup applications and visual bloat..." -ForegroundColor Cyan
 
-    $protectedStartup = $StartupConfig.ProtectedStartupNames
+    $protectedStartup = if ($StartupConfig.ProtectedStartupNames) { @($StartupConfig.ProtectedStartupNames) } else { @() }
+    $blacklistProcs   = if ($StartupConfig.BlacklistProcesses) { @($StartupConfig.BlacklistProcesses) } else { @() }
+    $allProtectedProcs = @($protectedStartup) + @($Script:CriticalProtectedProcesses)
 
-    # 1. Suppress HKCU / HKLM / HKLM-WOW64 Run items (preserving only protected items like ctfmon, AMDNoiseSuppression)
+    $effectiveWhitelist = $Whitelist
+    if ($null -eq $effectiveWhitelist) {
+        $wlFile = Join-Path $Script:ProjectRoot "Config\services_whitelist.json"
+        $effectiveWhitelist = if (Test-Path -LiteralPath $wlFile) {
+            @((Get-Content -LiteralPath $wlFile -Raw -Encoding UTF8 | ConvertFrom-Json).ProtectedServices)
+        } else { @() }
+    }
+    $effectiveBlacklist = $Blacklist
+    if ($null -eq $effectiveBlacklist) {
+        $blFile = Join-Path $Script:ProjectRoot "Config\services_blacklist.json"
+        $effectiveBlacklist = if (Test-Path -LiteralPath $blFile) {
+            @((Get-Content -LiteralPath $blFile -Raw -Encoding UTF8 | ConvertFrom-Json).TargetServices)
+        } else { @() }
+    }
+
+    # 1. Suppress HKCU / HKLM / HKLM-WOW64 Run items strictly matching BlacklistProcesses (retaining ProtectedStartupNames and "Normal" apps)
     foreach ($regPath in $Script:RunHives.Values) {
         if (-not (Test-Path $regPath)) { continue }
         $props = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
@@ -678,26 +825,28 @@ function Disable-UserStateAggressive {
             $_.Name -notmatch '^(PS(Path|ParentPath|ChildName|Drive|Provider))$'
         } | ForEach-Object {
             $propName = $_.Name
-            $isProtected = $false
-            foreach ($prot in $protectedStartup) {
-                if ($propName -like "*$prot*") { $isProtected = $true; break }
-            }
-            if (-not $isProtected) {
+            $propVal  = [string]$_.Value
+            $isProtected = ($propName -like "*Apple*") -or (Test-StartupEntryMatchesNames -EntryName $propName -CommandValue $propVal -Names $allProtectedProcs)
+            $isTargeted  = (-not $isProtected) -and (Test-StartupEntryMatchesNames -EntryName $propName -CommandValue $propVal -Names $blacklistProcs)
+            if ($isTargeted) {
                 Remove-ItemProperty -Path $regPath -Name $propName -ErrorAction SilentlyContinue
                 Write-Host "  [x] Removed startup entry: $propName" -ForegroundColor Yellow
             }
             else {
-                Write-Host "  [v] Retained protected startup entry: $propName" -ForegroundColor Green
+                Write-Host "  [v] Retained startup entry: $propName" -ForegroundColor Green
             }
         }
     }
 
-    # 2. Quarantine Startup folder shortcuts (Move completely out of Startup folder to eliminate "Open With .ugm" dialogs)
+    # 2. Quarantine Startup folder shortcuts strictly matching BlacklistProcesses
     $quarantineDir = Join-Path $Script:BackupDir "QuarantinedShortcuts"
     $userQuarantineDir = Join-Path $quarantineDir "User"
     $commonQuarantineDir = Join-Path $quarantineDir "ProgramData"
     if (-not (Test-Path -LiteralPath $userQuarantineDir)) { New-Item -ItemType Directory -Path $userQuarantineDir -Force | Out-Null }
     if (-not (Test-Path -LiteralPath $commonQuarantineDir)) { New-Item -ItemType Directory -Path $commonQuarantineDir -Force | Out-Null }
+
+    $wshShell = $null
+    try { $wshShell = New-Object -ComObject WScript.Shell } catch {}
 
     $startupDirs = @(
         @{ Dir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; Target = $userQuarantineDir },
@@ -710,15 +859,17 @@ function Disable-UserStateAggressive {
             Get-ChildItem -LiteralPath $sDir -File -Force | Where-Object { $_.Extension -in @(".lnk", ".url", ".ugm_backup") } | ForEach-Object {
                 $cleanName = $_.Name -replace '\.ugm_backup$', ''
                 $baseName = [System.IO.Path]::GetFileNameWithoutExtension($cleanName)
-                $isProtected = $false
-                if ($protectedStartup) {
-                    foreach ($prot in $protectedStartup) {
-                        if ([string]::IsNullOrWhiteSpace($prot)) { continue }
-                        if ($cleanName -like "*$prot*" -or $baseName -like "*$prot*") { $isProtected = $true; break }
-                    }
+                $targetCmd = ""
+                if ($wshShell -and $_.Extension -ieq ".lnk") {
+                    try {
+                        $sc = $wshShell.CreateShortcut($_.FullName)
+                        $targetCmd = "$($sc.TargetPath) $($sc.Arguments)".Trim()
+                    } catch {}
                 }
-                if ($isProtected) {
-                    Write-Host "  [v] Retained protected startup shortcut: $cleanName" -ForegroundColor Green
+                $isProtected = ($cleanName -like "*Apple*") -or (Test-StartupEntryMatchesNames -EntryName $baseName -CommandValue $targetCmd -Names $allProtectedProcs)
+                $isTargeted  = (-not $isProtected) -and (Test-StartupEntryMatchesNames -EntryName $baseName -CommandValue $targetCmd -Names $blacklistProcs)
+                if (-not $isTargeted) {
+                    Write-Host "  [v] Retained startup shortcut: $cleanName" -ForegroundColor Green
                     return
                 }
                 $destPath = Join-Path $qTarget $cleanName
@@ -728,19 +879,13 @@ function Disable-UserStateAggressive {
         }
     }
 
-    # 3. Suppress UWP AppModel Startup Tasks (TranslucentTB, etc.)
+    # 3. Suppress UWP AppModel Startup Tasks strictly matching BlacklistProcesses (e.g. TranslucentTB)
     $uwpRoot = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\SystemAppData"
     if (Test-Path $uwpRoot) {
         Get-ChildItem -Path $uwpRoot | ForEach-Object {
             $pkg = $_
             if ($pkg.PSChildName -like "*Apple*") { return }
-            $pkgProtected = $false
-            if ($protectedStartup) {
-                foreach ($prot in $protectedStartup) {
-                    if ([string]::IsNullOrWhiteSpace($prot)) { continue }
-                    if ($pkg.PSChildName -like "*$prot*") { $pkgProtected = $true; break }
-                }
-            }
+            $pkgProtected = Test-StartupEntryMatchesNames -EntryName $pkg.PSChildName -Names $allProtectedProcs
             if ($pkgProtected) {
                 Write-Host "  [v] Retained protected UWP package startup: $($pkg.PSChildName)" -ForegroundColor Green
                 return
@@ -749,15 +894,14 @@ function Disable-UserStateAggressive {
             Get-ChildItem -Path $pkg.PSPath -ErrorAction SilentlyContinue | ForEach-Object {
                 $task = $_
                 if ($task.PSChildName -like "*Apple*") { return }
-                $taskProtected = $false
-                if ($protectedStartup) {
-                    foreach ($prot in $protectedStartup) {
-                        if ([string]::IsNullOrWhiteSpace($prot)) { continue }
-                        if ($task.PSChildName -like "*$prot*") { $taskProtected = $true; break }
-                    }
-                }
+                $taskProtected = Test-StartupEntryMatchesNames -EntryName $task.PSChildName -Names $allProtectedProcs
                 if ($taskProtected) {
                     Write-Host "  [v] Retained protected UWP startup task: $($task.PSChildName)" -ForegroundColor Green
+                    return
+                }
+                $uwpTargeted = (Test-StartupEntryMatchesNames -EntryName $pkg.PSChildName -Names $blacklistProcs) -or
+                               (Test-StartupEntryMatchesNames -EntryName $task.PSChildName -Names $blacklistProcs)
+                if (-not $uwpTargeted) {
                     return
                 }
 
@@ -809,10 +953,19 @@ function Disable-UserStateAggressive {
         }
     }
 
-    # If HDD Profile is active, strictly terminate SysMain & WSearch immediately
+    # If HDD Profile is active, terminate SysMain & WSearch immediately only when configured for Gaming Mode
     if ($hw.HddProfile) {
-        Write-Host "  [*] HDD Profile Active: Enforcing disk thrash suppression..." -ForegroundColor Cyan
+        Write-Host "  [*] HDD Profile Active: Checking disk thrash suppression rules..." -ForegroundColor Cyan
         foreach ($sName in @("SysMain", "WSearch")) {
+            $shouldDisableSvc = if (Get-Command Test-ServiceShouldDisableInGaming -ErrorAction SilentlyContinue) {
+                Test-ServiceShouldDisableInGaming -ServiceName $sName -Blacklist $effectiveBlacklist -Whitelist $effectiveWhitelist
+            } else {
+                ($effectiveWhitelist -notcontains $sName)
+            }
+            if (-not $shouldDisableSvc) {
+                Write-Host "  [v] Retained '$sName' per user service setting." -ForegroundColor Green
+                continue
+            }
             $svc = Get-Service -Name $sName -ErrorAction SilentlyContinue
             if ($svc -and $svc.Status -eq "Running") {
                 try {
@@ -833,9 +986,14 @@ function Disable-UserStateAggressive {
         Optimize-SystemMemory -Aggressive | Out-Null
     }
 
-    # 6. Terminate Running Bloat Processes Immediately
+    # 6. Terminate Running Bloat Processes Immediately (strictly respecting ProtectedStartupNames priority)
     if ($StartupConfig.BlacklistProcesses) {
-        Stop-BlacklistedProcesses -ProcessNames $StartupConfig.BlacklistProcesses
+        $targetsToStop = @($StartupConfig.BlacklistProcesses | Where-Object {
+            Test-ProcessShouldCloseInGaming -ProcessName $_ -StartupConfig $StartupConfig
+        })
+        if ($targetsToStop.Count -gt 0) {
+            Stop-BlacklistedProcesses -ProcessNames $targetsToStop -ProtectedNames $protectedStartup
+        }
     }
 
     # Load user tuning preferences
@@ -865,9 +1023,10 @@ function Disable-UserStateAggressive {
         }
     }
 
-    # 8. Apply Defender, Widgets & Focus Assist optimizations
+    # 8. Apply Defender, Widgets & Focus Assist optimizations (Widgets strictly obeys process rule)
+    $disableWidgets = Test-ProcessShouldCloseInGaming -ProcessName "Widgets" -StartupConfig $StartupConfig
     Set-DefenderGamingState -Disable $true | Out-Null
-    Set-WindowsWidgetsAndSearchGamingState -Disable $true | Out-Null
+    Set-WindowsWidgetsAndSearchGamingState -Disable $true -DisableWidgets:$disableWidgets | Out-Null
     Set-FocusAssistAndSoundsGamingState -EnableFocusAssist $true | Out-Null
 
     # 9. Activate Ultimate Performance scheme and apply Adaptive CPU, GPU & NTFS Optimizations
@@ -1297,12 +1456,14 @@ function Restore-SystemState {
                 $restoredCount++
                 $shouldStart = ($svcEntry.OriginalStatus -eq "Running") -or ($origMode -eq "Automatic" -and $defaultServiceModes.ContainsKey($sName))
                 if ($shouldStart) {
-                    $targetSvcName = $sName
-                    if (-not (Get-Service -Name $targetSvcName -ErrorAction SilentlyContinue)) {
-                        $matching = @(Get-Service -Name "$($sName)_*", "$($sName)[0-9]*" -ErrorAction SilentlyContinue)
-                        if ($matching.Count -gt 0) { $targetSvcName = $matching[0].Name }
+                    $targetsToStart = if (Get-Command Find-MatchingLiveServices -ErrorAction SilentlyContinue) {
+                        @(Find-MatchingLiveServices -ServiceName $sName)
+                    } else {
+                        @(Get-Service -Name $sName -ErrorAction SilentlyContinue)
                     }
-                    Start-Service -Name $targetSvcName -ErrorAction SilentlyContinue
+                    foreach ($ts in $targetsToStart) {
+                        Start-Service -Name $ts.Name -ErrorAction SilentlyContinue
+                    }
                 }
             }
             else {
