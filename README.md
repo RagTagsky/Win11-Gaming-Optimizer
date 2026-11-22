@@ -4,7 +4,7 @@
 ### *Native Rust + Slint GUI · AAA Frame Pacing · Portable Universal Edition (v4.0.0)*
 
 **A zero-risk, snapshot-driven kernel latency, frame pacing, and hardware optimizer for Windows 10 & 11.**  
-Built on a **native Rust + Slint 1.19.0 GUI** (`960×680` frameless, Windows DWM Dark Mode, zero WebView2) and a **Win32 / PowerShell AAA Engine** — featuring an **8-theme design package (5 dark + 3 light)**, unified AAA-only controls, 2-mode Services & Processes management with hover safety tooltips, native `tray-icon` background mode, portable single-executable execution (`UltraGamingMode.exe`), automatic `0.500 ms` timer resolution, smart Standby RAM auto-purge, **Zapret / WinDivert / `winws`** protection, an offline **3D Architecture Teardown**, and a crash-proof `HKLM\RunOnce` failsafe watchdog.
+Built on a **native Rust + Slint 1.19.0 GUI** (`960×680` frameless, Windows DWM Dark Mode & rounded corners, `Segoe UI Variable Text` + `Cascadia Code`, zero WebView2) and a **Win32 / PowerShell AAA Engine** — featuring an **8-theme design package (5 dark + 3 light)**, a unified AAA gaming pipeline, 2-mode Services & Processes management with safety tooltips, native `tray-icon` background mode, portable single-executable execution (`UltraGamingMode.exe`), automatic `0.500 ms` timer resolution, smart Standby RAM auto-purge, **Zapret / WinDivert / `winws`** protection, and a crash-proof `HKLM\RunOnce` failsafe watchdog.
 
 [![Release](https://img.shields.io/badge/Release-v4.0.0-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
 [![Platform](https://img.shields.io/badge/Windows-11%20%7C%2010%20(x64)-2563EB?style=for-the-badge&logo=windows&logoColor=white&labelColor=0F172A)](https://www.microsoft.com/windows)
@@ -16,7 +16,7 @@ Built on a **native Rust + Slint 1.19.0 GUI** (`960×680` frameless, Windows DWM
 
 <br />
 
-[**🚀 Quick Start**](#quick-start-guide) · [**🧩 3D Architecture Teardown**](#interactive-3d-architecture-teardown) · [**📊 CS2 Benchmarks**](#real-world-benchmarks-engine-telemetry) · [**🛠️ Hardware Engine**](#universal-hardware-auto-detection-engine) · [**🛡️ Watchdog Lifecycle**](#core-architecture-lifecycle) · [**🔬 19 Technical Modules**](#deep-technical-features) · [**⌨️ CLI Reference**](#menu-overview-cli-reference)
+[**🚀 Quick Start**](#quick-start-guide) · [**📊 CS2 Benchmarks**](#real-world-benchmarks-engine-telemetry) · [**🛠️ Hardware Engine**](#universal-hardware-auto-detection-engine) · [**🛡️ Watchdog Lifecycle**](#core-architecture-lifecycle) · [**🔬 19 Technical Modules**](#deep-technical-features) · [**⌨️ CLI Reference**](#menu-overview-cli-reference)
 
 **Language:** [**🇺🇸 English**](README.md) · [**🇷🇺 Русский**](README.ru.md)
 
@@ -32,32 +32,14 @@ Built on a **native Rust + Slint 1.19.0 GUI** (`960×680` frameless, Windows DWM
 
 > [!TIP]
 > **What's New in v4.0.0:**
-> - **Native Rust + Slint 1.19.0 Desktop GUI (Zero WebView2):** Pure native Rust + Slint desktop application (`960×680` frameless, min `860×600`) with Windows DWM Dark Mode window frame synchronization (`DwmSetWindowAttribute`), native `tray-icon` + `muda` menu, zero browser runtimes, and portable-first `UltraGamingMode.exe` embedding all PowerShell/JSON/3D teardown assets (`EMBEDDED_RUNTIME_ASSETS`).
-> - **8-Theme Design Package (5 Dark + 3 Light):** Added `dark`, `oled-obsidian`, `emerald-ops`, `graphite-amber`, `midnight-violet`, `light`, `daylight-warm`, and `frost-slate` with an accessible 4×2 live preview grid in Settings and a smart header toggle remembering `ugm-last-dark-theme` and `ugm-last-light-theme`.
-> - **AAA-Only Mode & Intuitive Russian UX:** Unified single AAA optimization mode with automatic Flip Model + HDR/OBS + MPO-safe defaults and simplified `Config/tuning.json` automation (`AutoLockTimerInGaming`, `AutoPurgeRamInGaming`, `AutoPurgeRamThresholdMB`), while keeping full **Processes** (`181` descriptions), **Services** (`328` descriptions), and **Maintenance** controls.
-> - **Offline Interactive 3D Architecture Teardown & Zapret Protection:** Added `docs/teardown/index.html` (100% offline 3D exploded architecture view launchable directly from the app or browser), alongside strict protection for **Zapret** (`zapret`, `WinDivert`, `WinDivert14`, `winws`/`winws2`, and RFC 1323 `TCP timestamps=enabled`).
-
----
-
-## 🧩 Interactive 3D Architecture Teardown
-
-<div align="center">
-
-[![Ultra Gaming Mode v4.0.0 — Offline 3D Architecture Teardown](docs/teardown/preview.svg)](docs/teardown/index.html)
-
-**[▶ Open Interactive 3D Architecture Teardown (`docs/teardown/index.html`)](docs/teardown/index.html)** — *100% offline, zero external network requests, works directly via `file://` or the in-app Overview button.*
-
-</div>
-
-Explore all **7 architectural layers** of Ultra Gaming Mode v4.0.0 AAA for Windows 11 in an interactive axonometric 3D technical view:
-- **Exploded View & Cutaway Mode:** Smoothly separate all 7 layers (`0%` assembled → `100%` exploded) with vertical alignment trails, or toggle translucent cutaway shells to inspect internal registers (`active_state.json`, `HKLM\RunOnce`, CPU cores, Standby RAM bank, and Zapret shield).
-- **Camera & Inspector:** Drag to orbit, scroll or use `+`/`-` to zoom, switch presets (`Изометрия`, `Фронт`, `Сверху`, `Сброс`), toggle 1-elbow leader annotations, and click any layer to inspect its exact APIs, registry paths, and Normal vs. AAA behavior.
-- **Live Telemetry Simulator & Themes:** Toggle between `Штатный режим` and `AAA Gaming Mode` to watch live timer (`1.000 ms` → `0.500 ms`), animated Standby RAM purge (`4 280 MB` → `~320 MB`), CPU unparking, and service counters update in both Dark and Light modes.
+> - **Native Rust + Slint 1.19.0 Desktop GUI (Zero WebView2):** Pure native Rust + Slint desktop application (`960×680` frameless, min `860×600`) with Windows DWM Dark Mode & rounded-border frame synchronization (`DwmSetWindowAttribute`), crisp Windows typography (`Segoe UI Variable Text` + `Cascadia Code` with Windows 10 `Segoe UI` / `Consolas` fallbacks), native `tray-icon` + `muda` menu, zero browser runtimes, and portable-first `UltraGamingMode.exe` embedding all PowerShell and JSON runtime assets (`EMBEDDED_RUNTIME_ASSETS`).
+> - **8-Theme Design Package (5 Dark + 3 Light):** Added `dark`, `oled-obsidian`, `emerald-ops`, `graphite-amber`, `midnight-violet`, `light`, `daylight-warm`, and `frost-slate` with custom theme-matched inputs, scrollbars, switches, and radial ambient glow, an accessible 4×2 live preview grid in Settings, and a smart header toggle remembering `ugm-last-dark-theme` and `ugm-last-light-theme`.
+> - **Unified AAA Gaming Pipeline & Clean Russian UX:** Streamlined Overview focused on the unified AAA pipeline (Graphics/DWM, CPU/HID, Memory/Timer, Network/Zapret) with automatic Flip Model + HDR/OBS + MPO-safe defaults and simplified `Config/tuning.json` automation (`AutoLockTimerInGaming`, `AutoPurgeRamInGaming`, `AutoPurgeRamThresholdMB`), while keeping full **Processes** (`181` descriptions), **Services** (`328` descriptions), and **Maintenance** controls.
+> - **Strict Zapret / WinDivert DPI Protection:** Built-in safeguards protecting `zapret`, `WinDivert`, `WinDivert14`, `winws`/`winws2`, and preserving RFC 1323 `TCP timestamps=enabled` whenever DPI bypass is present.
 
 ---
 
 ## 📑 Table of Contents
-- [Interactive 3D Architecture Teardown](#interactive-3d-architecture-teardown)
 - [Why Ultra Gaming Mode?](#why-ultra-gaming-mode)
 - [Universal Hardware Auto-Detection Engine](#universal-hardware-auto-detection-engine)
   - [CPU Architecture Tuning (Intel & AMD)](#cpu-architecture-tuning-intel--amd)
@@ -411,12 +393,12 @@ The optimizer strictly checks every operation against an inviolable whitelist:
 
 ### Option A: Native Desktop GUI App (v4.0.0 - Recommended)
 
-Ultra Gaming Mode v4.0.0 ships as a portable-first native Windows 11 desktop application built in **Rust** and **Slint 1.19.0** (`960×680` frameless window, minimum `860×600`, Windows DWM Dark Mode sync, zero WebView2). All PowerShell modules, JSON configs, and the offline 3D architecture teardown are embedded inside **`UltraGamingMode.exe`** (`EMBEDDED_RUNTIME_ASSETS`) and automatically materialized alongside the executable (with fallback to `Program Files`, `ProgramData`, or `%LOCALAPPDATA%` when launched from a read-only folder) — **no mandatory installation required**.
+Ultra Gaming Mode v4.0.0 ships as a portable-first native Windows 11 desktop application built in **Rust** and **Slint 1.19.0** (`960×680` frameless window, minimum `860×600`, Windows DWM Dark Mode & rounded-corner sync, `Segoe UI Variable Text` + `Cascadia Code` typography, zero WebView2). All PowerShell modules and JSON configs are embedded inside **`UltraGamingMode.exe`** (`EMBEDDED_RUNTIME_ASSETS`) and automatically materialized alongside the executable (with fallback to `Program Files`, `ProgramData`, or `%LOCALAPPDATA%` when launched from a read-only folder) — **no mandatory installation required**.
 
 #### 📦 Release Packages
 | Package | Format | Best For |
 |:---|:---|:---|
-| **`UltraGamingMode.exe`** *(Primary)* | Standalone Portable EXE | Zero-install portable execution from any folder with embedded PS1/JSON/3D teardown runtime |
+| **`UltraGamingMode.exe`** *(Primary)* | Standalone Portable EXE | Zero-install portable execution from any folder with embedded PS1 & JSON runtime |
 | **`UltraGamingMode-Setup.exe`** *(Optional)* | NSIS Installer (`perMachine`) | Optional Start Menu / Desktop shortcuts & installer-managed deployment (zero WebView2) |
 | **`UltraGamingMode.msi`** *(Optional)* | Windows Installer (`MSI`) | Optional clean MSI deployment to `C:\Program Files\UltraGamingMode` (zero WebView2) |
 | **`SHA256SUMS.txt`** | Checksum Manifest | Cryptographic verification for all release binaries |
@@ -424,11 +406,11 @@ Ultra Gaming Mode v4.0.0 ships as a portable-first native Windows 11 desktop app
 #### 🧭 Desktop UI Tabs & Controls
 | Tab | Key Features & Controls |
 |:---|:---|
-| **1. Обзор (`Overview`)** | Live AAA mode status badge, intuitive **«Включить игровой режим (AAA)» / «Вернуть штатный режим»** toggle, 1-click **PC Reboot**, interrupted-restore recovery banner, on-demand `0.500 ms` timer lock/unlock, hardware telemetry cards, **«3D-архитектура»** offline teardown launcher button, and **SHA-256 verified GitHub Updater**. |
-| **2. Процессы (`Processes`)** | Single unified list of currently running processes (grouped by executable with memory usage & Windows Startup badges) plus configured offline rules, instant filter (`Все` / `Выкл. в Gaming Mode` / `Без утилки`), 2-choice toggle (**«Без утилки»** vs **«Выкл. в Gaming Mode»**), **Zapret** (`winws`/`winws2`/`zapret`) & OS/anti-cheat locks, and hover/focus safety tooltips backed by `181` curated `process_descriptions.json` entries & `.exe` metadata. |
-| **3. Службы (`Services`)** | Compact 1-click quick presets bar (`Wi-Fi` with live connection warning, `Bluetooth`, `FACEIT AC`, `Камера`, `Xbox / Store`, `VPN / PPPoE`, `Принтер`), single unified list of installed Windows services (running services on top), filter, 2-choice toggle, OS core & **Zapret** (`zapret`, `WinDivert`, `WinDivert14`) protection locks, and hover/focus safety tooltips backed by `328` curated `service_descriptions.json` entries & Windows SCM. |
-| **4. Настройки (`Settings`)** | **4×2 Theme Grid (8 themes: 5 dark + 3 light)** with live mini-previews, keyboard accessibility, instant application, and smart header toggle (`ugm-last-dark-theme` / `ugm-last-light-theme` + Windows DWM Dark Mode); **«Запуск и фоновый режим»** (elevated `--tray` Task Scheduler autostart with path-drift repair); and AAA automation (`AutoLockTimerInGaming`, `AutoPurgeRamInGaming`, `AutoPurgeRamThresholdMB` `512–16384 MB`). |
-| **5. Обслуживание (`Maintenance`)** | Instant **Standby RAM Purge (`Win32StandbyCleaner`)**, config integrity check, service state restore, confirmation-guarded **GPU Shader Cache Purge** (AMD / NVIDIA / Intel / DirectX), DisplayPort / DWM topology reset, reversible Windows 11 Debloat, and offline **3D Architecture Teardown** / collapsible **Log Console** access. |
+| **1. Обзор (`Overview`)** | Live AAA mode status banner, **«Включить игровой режим» / «Вернуть штатный режим»** toggle, 1-click **PC Reboot**, interrupted-restore recovery banner, clean **Unified AAA Gaming Pipeline** 2×2 summary (`Графика и DWM`, `Ядро и ввод HID`, `Память и таймер`, `Сеть и защита DPI`), on-demand `0.500 ms` timer lock/unlock, hardware telemetry cards, and **SHA-256 verified GitHub Updater**. |
+| **2. Процессы (`Processes`)** | Single unified list of currently running processes (grouped by executable with memory usage & Windows Startup badges) plus configured offline rules, instant filter (`Все` / `Выкл. в Gaming Mode` / `Без утилки`), 2-choice toggle (**«Без утилки»** vs **«Выкл. в Gaming Mode»**), **Zapret** (`winws`/`winws2`/`zapret`) & OS/anti-cheat locks, and safety tooltips backed by `181` curated `process_descriptions.json` entries & `.exe` metadata. |
+| **3. Службы (`Services`)** | Compact 1-click quick presets bar (`Wi-Fi` with live connection warning, `Bluetooth`, `FACEIT AC`, `Камера`, `Xbox / Store`, `VPN / PPPoE`, `Принтер`), single unified list of installed Windows services (running services on top), filter, 2-choice toggle, OS core & **Zapret** (`zapret`, `WinDivert`, `WinDivert14`) protection locks, and safety tooltips backed by `328` curated `service_descriptions.json` entries & Windows SCM. |
+| **4. Настройки (`Settings`)** | **4×2 Theme Grid (8 themes: 5 dark + 3 light)** with live mini-previews, keyboard accessibility, instant atomic switching, and smart header toggle (`ugm-last-dark-theme` / `ugm-last-light-theme` + Windows DWM chrome sync); **«Запуск вместе с Windows»** (elevated `--tray` Task Scheduler autostart with path-drift repair); and AAA automation (`AutoLockTimerInGaming`, `AutoPurgeRamInGaming`, `AutoPurgeRamThresholdMB` `512–16384 MB`). |
+| **5. Обслуживание (`Maintenance`)** | Instant **Standby RAM Purge (`Win32StandbyCleaner`)**, config integrity check, service state restore, confirmation-guarded **GPU Shader Cache Purge** (AMD / NVIDIA / Intel / DirectX), DisplayPort / DWM topology reset, reversible Windows 11 Debloat, and collapsible **Log Console** access. |
 
 > [!NOTE]
 > **Native Rust System Tray Mode:** Closing the window (`[×]`) unloads the Slint GUI window while keeping only the lightweight native Rust `tray-icon` + `muda` indicator active in the background:
@@ -584,20 +566,16 @@ Win11-Gaming-Optimizer/
 │   └── ui_bridge.rs                 # Slint property/callback/model bindings & background sync
 │
 ├── slint/                           # Native Slint 1.19 declarative UI modules (960x680 frameless)
-│   ├── main.slint                   # Root frameless Window + ConfirmDialog + ItemTooltip
-│   ├── theme.slint                  # ThemeTokens global & shared UI primitives
+│   ├── main.slint                   # Root frameless Window, ambient glow, tabs & collapsible log drawer
+│   ├── theme.slint                  # ThemeTokens global (43+2 color tokens + Windows font tokens)
+│   ├── components.slint             # Vector icons, SurfaceCard, ThemedScrollView, ThemedLineEdit & ThemedSwitch
 │   ├── titlebar.slint               # Frameless TitleBar (WindowMoveArea + smart dark/light toggle)
-│   ├── dashboard.slint              # Обзор (AAA toggle, telemetry, 0.500ms timer, updater, 3D button)
-│   ├── processes.slint              # Процессы (unified list, Zapret/OS guards, hover tooltips)
-│   ├── services.slint               # Службы (unified list, 7 presets, Wi-Fi banner, hover tooltips)
-│   ├── settings.slint               # Настройки (4x2 theme grid, autostart, AAA automation, about)
-│   ├── maintenance.slint            # Обслуживание (repair actions & maintenance status)
-│   └── log_console.slint            # Collapsible real-time event log console
-│
-├── docs/
-│   └── teardown/
-│       ├── index.html               # Offline 3D interactive architecture teardown (Canvas 2D)
-│       └── preview.svg              # Static isometric 7-layer vector preview
+│   ├── dashboard.slint              # Обзор (AAA toggle, unified pipeline, 0.500ms timer, telemetry, updater)
+│   ├── processes.slint              # Процессы (unified list, Zapret/OS guards, tooltips)
+│   ├── services.slint               # Службы (unified list, 7 presets, Wi-Fi banner, tooltips)
+│   ├── settings.slint               # Настройки (4x2 theme grid, autostart, AAA automation)
+│   ├── maintenance.slint            # Обслуживание (repair actions & confirmation-guarded tools)
+│   └── dialogs.slint                # LogConsole, ConfirmDialog & ItemTooltip modal overlays
 │
 ├── Config/
 │   ├── process_descriptions.json    # Localized Russian descriptions & safety verdicts for 181 Windows/app processes

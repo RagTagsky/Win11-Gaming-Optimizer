@@ -17,6 +17,10 @@ export global ThemeTokens {
     in-out property <string> active-theme-name: "Тёмная классика";
     in-out property <bool> is-dark: true;
 
+    // Typography tokens (Windows 11 Fluent default with runtime fallback for Windows 10)
+    in-out property <string> font-sans: "Segoe UI Variable Text";
+    in-out property <string> font-mono: "Cascadia Code";
+
     // 43 base tokens from the 8-theme design specification
     in-out property <color> bg-app: #0c0f14;
     in-out property <color> bg-surface: #131720;
@@ -71,6 +75,7 @@ export global ThemeTokens {
     // 2 optional enhancement tokens (themes 3, 4, 5, 8)
     in-out property <bool> has-bg-app-glow: false;
     in-out property <color> bg-app-glow-color: rgba(0, 0, 0, 0.0);
+    in-out property <float> bg-app-glow-cx: 0.5;
     in-out property <bool> has-surface-top-highlight: false;
     in-out property <color> surface-top-highlight: rgba(0, 0, 0, 0.0);
 }

@@ -1,5 +1,5 @@
-import { ScrollView, LineEdit } from "std-widgets.slint";
 import { ThemeTokens } from "theme.slint";
+import { SurfaceCard, ThemedScrollView, ThemedLineEdit, IconLock, IconCheck } from "components.slint";
 
 export struct ProcessRowItem {
     key: string,
@@ -43,15 +43,7 @@ export component ProcessesView inherits Rectangle {
         spacing: 12px;
 
         // Top Filter & Search Card
-        Rectangle {
-            border-radius: 14px;
-            background: ThemeTokens.bg-surface;
-            border-width: 1px;
-            border-color: ThemeTokens.border-subtle;
-            drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
-            drop-shadow-blur: ThemeTokens.shadow-card-blur;
-            drop-shadow-color: ThemeTokens.shadow-card-color;
-
+        SurfaceCard {
             VerticalLayout {
                 padding: 14px;
                 spacing: 10px;
@@ -65,85 +57,95 @@ export component ProcessesView inherits Rectangle {
 
                         Text {
                             text: "Процессы в Gaming Mode";
-                            font-size: 15px;
-                            font-weight: 700;
+                            font-size: 14.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
-                            text: "Выберите для каждого процесса: работает «Без утилки» (автозагрузка сохраняется) или «Выкл. в Gaming Mode». Нажмите (i) для подробного описания и вердикта безопасности.";
+                            text: "Выберите режим для каждого процесса: «Без утилки» или «Выкл. в Gaming Mode». Нажмите (i) для подробного описания.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
                             wrap: word-wrap;
                         }
                     }
 
-                    // Add Process inline input + button
-                    HorizontalLayout {
-                        spacing: 6px;
-                        alignment: end;
+                    // Add Process inline input + buttons
+                    VerticalLayout {
+                        alignment: center;
+                        HorizontalLayout {
+                            spacing: 6px;
+                            alignment: end;
 
-                        LineEdit {
-                            width: 170px;
-                            height: 32px;
-                            placeholder-text: "Имя .exe (Telegram)…";
-                            text <=> root.new-process-name;
-                            accepted(val) => {
-                                if (val != "") {
-                                    root.add-process(val);
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            width: 104px;
-                            height: 32px;
-                            border-radius: 8px;
-                            background: add-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid;
-
-                            add-ta := TouchArea {
-                                accessible-role: button;
-                                accessible-label: "Добавить процесс в список отключения";
-                                clicked => {
-                                    if (root.new-process-name != "") {
-                                        root.add-process(root.new-process-name);
+                            ThemedLineEdit {
+                                width: 184px;
+                                height: 32px;
+                                monospace: true;
+                                placeholder-text: "Имя .exe (Telegram)";
+                                text <=> root.new-process-name;
+                                accepted(val) => {
+                                    if (val != "") {
+                                        root.add-process(val);
                                     }
                                 }
                             }
 
-                            Text {
-                                text: "+ Добавить";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: ThemeTokens.text-on-solid;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                        }
+                            Rectangle {
+                                height: 32px;
+                                border-radius: 7px;
+                                background: add-ta.pressed ? ThemeTokens.accent-solid-active : (add-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid);
 
-                        Rectangle {
-                            width: 96px;
-                            height: 32px;
-                            border-radius: 8px;
-                            background: ref-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
-                            border-width: 1px;
-                            border-color: ThemeTokens.border-strong;
+                                add-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    accessible-role: button;
+                                    accessible-label: "Добавить процесс в список отключения";
+                                    clicked => {
+                                        if (root.new-process-name != "") {
+                                            root.add-process(root.new-process-name);
+                                        }
+                                    }
+                                }
 
-                            ref-ta := TouchArea {
-                                accessible-role: button;
-                                accessible-label: "Обновить список процессов";
-                                clicked => {
-                                    root.refresh-processes();
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    Text {
+                                        text: "+ Добавить";
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        color: ThemeTokens.text-on-solid;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
 
-                            Text {
-                                text: "Обновить";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: ThemeTokens.text-primary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            Rectangle {
+                                height: 32px;
+                                border-radius: 7px;
+                                background: ref-ta.pressed ? ThemeTokens.bg-active : (ref-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
+                                border-width: 1px;
+                                border-color: ref-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
+
+                                ref-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    accessible-role: button;
+                                    accessible-label: "Обновить список процессов";
+                                    clicked => {
+                                        root.refresh-processes();
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    Text {
+                                        text: "Обновить";
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        color: ThemeTokens.text-primary;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
                         }
                     }
@@ -153,83 +155,92 @@ export component ProcessesView inherits Rectangle {
                 HorizontalLayout {
                     spacing: 10px;
 
-                    // 3 Filter Pills
                     HorizontalLayout {
-                        spacing: 4px;
+                        spacing: 5px;
 
                         Rectangle {
-                            width: 92px;
                             height: 32px;
-                            border-radius: 8px;
-                            background: root.filter-mode == "all" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: root.filter-mode == "all" ? ThemeTokens.accent-solid : (f0-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.filter-mode == "all" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+                            border-color: root.filter-mode == "all" ? ThemeTokens.accent-solid : (f0-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+                            f0-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => { root.filter-changed("all"); }
                             }
 
-                            Text {
-                                text: "Все (" + root.total-count + ")";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: root.filter-mode == "all" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 11px;
+                                padding-right: 11px;
+                                Text {
+                                    text: "Все (" + root.total-count + ")";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.filter-mode == "all" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
 
                         Rectangle {
-                            width: 178px;
                             height: 32px;
-                            border-radius: 8px;
-                            background: root.filter-mode == "disable" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: root.filter-mode == "disable" ? ThemeTokens.accent-solid : (f1-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.filter-mode == "disable" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+                            border-color: root.filter-mode == "disable" ? ThemeTokens.accent-solid : (f1-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+                            f1-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => { root.filter-changed("disable"); }
                             }
 
-                            Text {
-                                text: "Выкл. в Gaming Mode (" + root.disabled-count + ")";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: root.filter-mode == "disable" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 11px;
+                                padding-right: 11px;
+                                Text {
+                                    text: "Выкл. в Gaming Mode (" + root.disabled-count + ")";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.filter-mode == "disable" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
 
                         Rectangle {
-                            width: 130px;
                             height: 32px;
-                            border-radius: 8px;
-                            background: root.filter-mode == "normal" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: root.filter-mode == "normal" ? ThemeTokens.accent-solid : (f2-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.filter-mode == "normal" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+                            border-color: root.filter-mode == "normal" ? ThemeTokens.accent-solid : (f2-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+                            f2-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => { root.filter-changed("normal"); }
                             }
 
-                            Text {
-                                text: "Без утилки (" + root.normal-count + ")";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: root.filter-mode == "normal" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 11px;
+                                padding-right: 11px;
+                                Text {
+                                    text: "Без утилки (" + root.normal-count + ")";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.filter-mode == "normal" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
                     }
 
-                    LineEdit {
+                    ThemedLineEdit {
                         horizontal-stretch: 1;
                         height: 32px;
+                        show-search-icon: true;
                         placeholder-text: "Найти процесс, .exe или описание…";
                         text <=> root.search-query;
                         edited(val) => {
@@ -240,83 +251,159 @@ export component ProcessesView inherits Rectangle {
 
                 // Legend + OS Core Toggle
                 HorizontalLayout {
-                    spacing: 14px;
+                    spacing: 12px;
 
                     HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-active-text; }
-                        Text { text: "Можно выключить"; font-size: 11px; color: ThemeTokens.text-muted; }
-                    }
+                        spacing: 14px;
+                        alignment: start;
 
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-warn-text; }
-                        Text { text: "По желанию"; font-size: 11px; color: ThemeTokens.text-muted; }
-                    }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: ThemeTokens.status-active-text; }
+                            }
+                            Text { text: "Можно выключить"; font-size: 11px; color: ThemeTokens.text-muted; vertical-alignment: center; }
+                        }
 
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-danger-text; }
-                        Text { text: "Нельзя выключать"; font-size: 11px; color: ThemeTokens.text-muted; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: ThemeTokens.status-warn-text; }
+                            }
+                            Text { text: "По желанию"; font-size: 11px; color: ThemeTokens.text-muted; vertical-alignment: center; }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: ThemeTokens.status-danger-text; }
+                            }
+                            Text { text: "Нельзя выключать"; font-size: 11px; color: ThemeTokens.text-muted; vertical-alignment: center; }
+                        }
                     }
 
                     Rectangle { horizontal-stretch: 1; }
 
                     Rectangle {
-                        width: 154px;
-                        height: 22px;
+                        horizontal-stretch: 0;
+                        height: 24px;
                         border-radius: 6px;
-                        background: root.show-os-core ? ThemeTokens.accent-soft : ThemeTokens.bg-elevated;
+                        background: root.show-os-core ? ThemeTokens.accent-soft : (core-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                         border-width: 1px;
                         border-color: root.show-os-core ? ThemeTokens.accent-border : ThemeTokens.border-subtle;
 
-                        TouchArea {
+                        core-ta := TouchArea {
+                            mouse-cursor: pointer;
                             accessible-role: checkbox;
+                            accessible-checked: root.show-os-core;
                             clicked => {
                                 root.show-os-core = !root.show-os-core;
                                 root.toggle-os-core(root.show-os-core);
                             }
                         }
 
-                        Text {
-                            text: (root.show-os-core ? "☑ " : "☐ ") + "Ядро Windows (" + root.os-core-count + ")";
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: root.show-os-core ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 9px;
+                            spacing: 6px;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 13px;
+                                    height: 13px;
+                                    border-radius: 3.5px;
+                                    background: root.show-os-core ? ThemeTokens.accent-solid : transparent;
+                                    border-width: 1px;
+                                    border-color: root.show-os-core ? ThemeTokens.accent-solid : ThemeTokens.border-input;
+
+                                    if root.show-os-core : IconCheck {
+                                        x: 1.5px;
+                                        y: 1.5px;
+                                        size: 10px;
+                                        stroke-width: 2.5px;
+                                        color: ThemeTokens.text-on-solid;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "Ядро Windows (" + root.os-core-count + ")";
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: root.show-os-core ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
+                                vertical-alignment: center;
+                            }
                         }
                     }
 
-                    Text {
-                        text: "Запущено: " + root.running-count;
-                        font-size: 11px;
-                        color: ThemeTokens.text-muted;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: "Запущено:";
+                            font-size: 11px;
+                            color: ThemeTokens.text-muted;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.running-count;
+                            font-family: ThemeTokens.font-mono;
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: ThemeTokens.text-secondary;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }
         }
 
         // Scrollable Processes List
-        Rectangle {
+        SurfaceCard {
             vertical-stretch: 1;
-            border-radius: 14px;
-            background: ThemeTokens.bg-surface;
-            border-width: 1px;
-            border-color: ThemeTokens.border-subtle;
 
-            ScrollView {
+            ThemedScrollView {
                 width: 100%;
                 height: 100%;
 
                 VerticalLayout {
-                    padding: 8px;
-                    spacing: 4px;
+                    padding-left: 8px;
+                    padding-right: 16px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 5px;
+
+                    if root.items.length == 0 : Rectangle {
+                        height: 96px;
+                        background: transparent;
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 4px;
+
+                            Text {
+                                text: "Процессы по текущему фильтру не найдены";
+                                font-size: 13px;
+                                font-weight: 600;
+                                color: ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                            }
+
+                            Text {
+                                text: "Очистите строку поиска или выберите другой режим фильтрации.";
+                                font-size: 11.5px;
+                                color: ThemeTokens.text-muted;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
 
                     for item in root.items : Rectangle {
-                        height: 54px;
-                        border-radius: 10px;
+                        height: 58px;
+                        border-radius: 8px;
                         background: ThemeTokens.bg-elevated;
                         border-width: 1px;
                         border-color: ThemeTokens.border-subtle;
@@ -327,195 +414,235 @@ export component ProcessesView inherits Rectangle {
                             spacing: 10px;
 
                             // Safety dot
-                            Rectangle {
-                                y: 22px;
-                                width: 8px;
-                                height: 8px;
-                                border-radius: 4px;
-                                background: item.safety-level == "safe" ? ThemeTokens.status-active-text : (item.safety-level == "protected" ? ThemeTokens.status-danger-text : ThemeTokens.status-warn-text);
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: item.safety-level == "safe" ? ThemeTokens.status-active-text : (item.safety-level == "protected" ? ThemeTokens.status-danger-text : ThemeTokens.status-warn-text);
+                                }
                             }
 
                             // Name + Summary
                             VerticalLayout {
                                 horizontal-stretch: 1;
                                 alignment: center;
-                                spacing: 2px;
+                                spacing: 3px;
 
                                 HorizontalLayout {
-                                    spacing: 8px;
+                                    spacing: 7px;
                                     alignment: start;
 
                                     Text {
                                         text: item.display-name;
                                         font-size: 13px;
-                                        font-weight: 700;
+                                        font-weight: 600;
                                         color: ThemeTokens.text-primary;
                                         vertical-alignment: center;
+                                        overflow: elide;
                                     }
 
                                     Text {
                                         text: item.name + ".exe";
+                                        font-family: ThemeTokens.font-mono;
                                         font-size: 11px;
                                         color: ThemeTokens.text-muted;
                                         vertical-alignment: center;
+                                        max-width: 190px;
+                                        overflow: elide;
                                     }
 
-                                    if item.is-running : Rectangle {
-                                        height: 18px;
-                                        width: 118px;
-                                        border-radius: 9px;
-                                        background: ThemeTokens.status-active-soft;
-                                        border-width: 1px;
-                                        border-color: ThemeTokens.status-active-border;
+                                    if item.is-running : VerticalLayout {
+                                        alignment: center;
+                                        Rectangle {
+                                            height: 19px;
+                                            border-radius: 9.5px;
+                                            background: ThemeTokens.status-active-soft;
+                                            border-width: 1px;
+                                            border-color: ThemeTokens.status-active-border;
 
-                                        Text {
-                                            text: item.memory-label;
-                                            font-size: 10px;
-                                            font-weight: 600;
-                                            color: ThemeTokens.status-active-text;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
+                                            HorizontalLayout {
+                                                padding-left: 7px;
+                                                padding-right: 7px;
+                                                Text {
+                                                    text: item.memory-label;
+                                                    font-family: ThemeTokens.font-mono;
+                                                    font-size: 10px;
+                                                    font-weight: 600;
+                                                    color: ThemeTokens.status-active-text;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
                                         }
                                     }
 
-                                    if item.in-startup : Rectangle {
-                                        height: 18px;
-                                        width: 88px;
-                                        border-radius: 9px;
-                                        background: ThemeTokens.accent-soft;
-                                        border-width: 1px;
-                                        border-color: ThemeTokens.accent-border;
+                                    if item.in-startup : VerticalLayout {
+                                        alignment: center;
+                                        Rectangle {
+                                            height: 19px;
+                                            border-radius: 9.5px;
+                                            background: ThemeTokens.accent-soft;
+                                            border-width: 1px;
+                                            border-color: ThemeTokens.accent-border;
 
-                                        Text {
-                                            text: "Автозагрузка";
-                                            font-size: 10px;
-                                            font-weight: 600;
-                                            color: ThemeTokens.accent-text;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
+                                            HorizontalLayout {
+                                                padding-left: 7px;
+                                                padding-right: 7px;
+                                                Text {
+                                                    text: "Автозагрузка";
+                                                    font-size: 10px;
+                                                    font-weight: 600;
+                                                    color: ThemeTokens.accent-text;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
                                         }
                                     }
                                 }
 
                                 Text {
                                     text: item.summary-ru;
-                                    font-size: 11px;
+                                    font-size: 11.5px;
                                     color: ThemeTokens.text-secondary;
                                     overflow: elide;
                                 }
                             }
 
                             // Tooltip (i) Button
-                            Rectangle {
-                                y: 13px;
-                                width: 28px;
-                                height: 28px;
-                                border-radius: 6px;
-                                background: info-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface;
-                                border-width: 1px;
-                                border-color: ThemeTokens.border-subtle;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 28px;
+                                    height: 28px;
+                                    border-radius: 6px;
+                                    background: info-ta.pressed ? ThemeTokens.bg-active : (info-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface);
+                                    border-width: 1px;
+                                    border-color: info-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-                                info-ta := TouchArea {
-                                    accessible-role: button;
-                                    accessible-label: "Описание процесса " + item.display-name;
-                                    clicked => {
-                                        root.show-process-tooltip(
-                                            item.display-name,
-                                            item.name + ".exe",
-                                            item.safety-level,
-                                            item.summary-ru,
-                                            item.can-disable-hint,
-                                            item.is-running ? ("Статус: " + item.memory-label) : "Статус: Не запущен (настроенное правило)"
-                                        );
+                                    info-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        accessible-role: button;
+                                        accessible-label: "Описание процесса " + item.display-name;
+                                        clicked => {
+                                            root.show-process-tooltip(
+                                                item.display-name,
+                                                item.name + ".exe",
+                                                item.safety-level,
+                                                item.summary-ru,
+                                                item.can-disable-hint,
+                                                item.is-running ? ("Статус: " + item.memory-label) : "Статус: Не запущен (настроенное правило)"
+                                            );
+                                        }
                                     }
-                                }
 
-                                Text {
-                                    text: "i";
-                                    font-size: 12px;
-                                    font-weight: 700;
-                                    color: ThemeTokens.accent-text;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
+                                    Text {
+                                        text: "i";
+                                        font-family: ThemeTokens.font-mono;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        color: ThemeTokens.accent-text;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
 
                             // 2-Mode Control or Protection Badge
-                            if item.is-protected : Rectangle {
-                                y: 12px;
-                                width: 156px;
-                                height: 30px;
-                                border-radius: 8px;
-                                background: ThemeTokens.bg-surface;
-                                border-width: 1px;
-                                border-color: ThemeTokens.border-subtle;
+                            if item.is-protected : VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 234px;
+                                    height: 30px;
+                                    border-radius: 7px;
+                                    background: ThemeTokens.bg-app;
+                                    border-width: 1px;
+                                    border-color: ThemeTokens.border-subtle;
 
-                                Text {
-                                    text: "🔒 " + item.protection-label;
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                    color: ThemeTokens.text-secondary;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 11px;
+                                        spacing: 6px;
+                                        alignment: center;
+
+                                        VerticalLayout {
+                                            alignment: center;
+                                            IconLock {
+                                                size: 12px;
+                                                color: ThemeTokens.text-muted;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: item.protection-label;
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            color: ThemeTokens.text-secondary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
                                 }
                             }
 
-                            if !item.is-protected : HorizontalLayout {
-                                spacing: 4px;
+                            if !item.is-protected : VerticalLayout {
+                                alignment: center;
+                                HorizontalLayout {
+                                    spacing: 4px;
 
-                                Rectangle {
-                                    y: 12px;
-                                    width: 96px;
-                                    height: 30px;
-                                    border-radius: 8px;
-                                    background: !item.disable-in-gaming ? ThemeTokens.bg-surface : transparent;
-                                    border-width: 1px;
-                                    border-color: !item.disable-in-gaming ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
+                                    Rectangle {
+                                        width: 92px;
+                                        height: 30px;
+                                        border-radius: 7px;
+                                        background: !item.disable-in-gaming ? ThemeTokens.bg-surface : (keep-ta.has-hover ? ThemeTokens.bg-hover : transparent);
+                                        border-width: 1px;
+                                        border-color: !item.disable-in-gaming ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-                                    TouchArea {
-                                        accessible-role: button;
-                                        clicked => {
-                                            if (item.disable-in-gaming) {
-                                                root.set-process-mode(item.name, false);
+                                        keep-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            accessible-role: button;
+                                            clicked => {
+                                                if (item.disable-in-gaming) {
+                                                    root.set-process-mode(item.name, false);
+                                                }
                                             }
+                                        }
+
+                                        Text {
+                                            text: "Без утилки";
+                                            font-size: 11px;
+                                            font-weight: !item.disable-in-gaming ? 600 : 500;
+                                            color: !item.disable-in-gaming ? ThemeTokens.text-primary : ThemeTokens.text-muted;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
                                         }
                                     }
 
-                                    Text {
-                                        text: "Без утилки";
-                                        font-size: 11px;
-                                        font-weight: !item.disable-in-gaming ? 700 : 500;
-                                        color: !item.disable-in-gaming ? ThemeTokens.text-primary : ThemeTokens.text-muted;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
+                                    Rectangle {
+                                        width: 138px;
+                                        height: 30px;
+                                        border-radius: 7px;
+                                        background: item.disable-in-gaming ? ThemeTokens.status-warn-soft : (dis-ta.has-hover ? ThemeTokens.bg-hover : transparent);
+                                        border-width: 1px;
+                                        border-color: item.disable-in-gaming ? ThemeTokens.status-warn-border : ThemeTokens.border-subtle;
 
-                                Rectangle {
-                                    y: 12px;
-                                    width: 142px;
-                                    height: 30px;
-                                    border-radius: 8px;
-                                    background: item.disable-in-gaming ? ThemeTokens.status-warn-soft : transparent;
-                                    border-width: 1px;
-                                    border-color: item.disable-in-gaming ? ThemeTokens.status-warn-border : ThemeTokens.border-subtle;
-
-                                    TouchArea {
-                                        accessible-role: button;
-                                        clicked => {
-                                            if (!item.disable-in-gaming) {
-                                                root.set-process-mode(item.name, true);
+                                        dis-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            accessible-role: button;
+                                            clicked => {
+                                                if (!item.disable-in-gaming) {
+                                                    root.set-process-mode(item.name, true);
+                                                }
                                             }
                                         }
-                                    }
 
-                                    Text {
-                                        text: "Выкл. в Gaming Mode";
-                                        font-size: 11px;
-                                        font-weight: item.disable-in-gaming ? 700 : 500;
-                                        color: item.disable-in-gaming ? ThemeTokens.status-warn-text : ThemeTokens.text-muted;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
+                                        Text {
+                                            text: "Выкл. в Gaming Mode";
+                                            font-size: 11px;
+                                            font-weight: item.disable-in-gaming ? 600 : 500;
+                                            color: item.disable-in-gaming ? ThemeTokens.status-warn-text : ThemeTokens.text-muted;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
                                     }
                                 }
                             }

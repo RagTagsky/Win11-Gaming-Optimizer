@@ -9,6 +9,67 @@ import { LogConsole, LogRowItem, TooltipOverlay, ConfirmDialogOverlay } from "di
 
 export { ThemeTokens, ThemeCardItem, ProcessRowItem, ServiceRowItem, FeaturePackItem, LogRowItem }
 
+component NavTabItem inherits Rectangle {
+    in property <string> label;
+    in property <int> badge-count: -1;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 32px;
+    border-radius: 7px;
+    background: root.active ? ThemeTokens.accent-soft : (tab-ta.pressed ? ThemeTokens.bg-active : (tab-ta.has-hover ? ThemeTokens.bg-hover : transparent));
+    border-width: 1px;
+    border-color: root.active ? ThemeTokens.accent-border : transparent;
+
+    tab-ta := TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: tab;
+        accessible-label: root.label;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: root.badge-count >= 0 ? 9px : 12px;
+        spacing: 6px;
+        alignment: center;
+
+        Text {
+            text: root.label;
+            font-size: 12.5px;
+            font-weight: root.active ? 600 : 500;
+            color: root.active ? ThemeTokens.accent-text : (tab-ta.has-hover ? ThemeTokens.text-primary : ThemeTokens.text-secondary);
+            vertical-alignment: center;
+        }
+
+        if root.badge-count >= 0 : VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 18px;
+                border-radius: 9px;
+                background: root.active ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                border-width: 1px;
+                border-color: root.active ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    Text {
+                        text: "" + root.badge-count;
+                        font-family: ThemeTokens.font-mono;
+                        font-size: 10px;
+                        font-weight: 600;
+                        color: root.active ? ThemeTokens.text-on-solid : ThemeTokens.text-muted;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "Ultra Gaming Mode v4.0.0";
     no-frame: true;
@@ -17,10 +78,13 @@ export component MainWindow inherits Window {
     min-width: 860px;
     min-height: 600px;
     background: ThemeTokens.bg-app;
+    default-font-family: ThemeTokens.font-sans;
+    default-font-size: 13px;
 
     // Navigation & Window State
     in-out property <int> active-tab: 0;
     in-out property <bool> is-maximized: false;
+    in-out property <bool> dwm-border-active: false;
     in-out property <string> app-version: "4.0.0";
 
     // Dashboard & Hardware State
@@ -92,6 +156,11 @@ export component MainWindow inherits Window {
     in-out property <bool> log-expanded: false;
 
     in-out property <bool> tooltip-visible: false;
+    changed tooltip-visible => {
+        if (self.tooltip-visible) {
+            root-fs.focus();
+        }
+    }
     in-out property <string> tooltip-title: "";
     in-out property <string> tooltip-subtitle: "";
     in-out property <string> tooltip-safety: "optional";
@@ -100,6 +169,11 @@ export component MainWindow inherits Window {
     in-out property <string> tooltip-meta: "";
 
     in-out property <bool> confirm-visible: false;
+    changed confirm-visible => {
+        if (self.confirm-visible) {
+            root-fs.focus();
+        }
+    }
     in-out property <string> confirm-title: "";
     in-out property <string> confirm-description: "";
     in-out property <string> confirm-ok-label: "Подтвердить";
@@ -126,7 +200,6 @@ export component MainWindow inherits Window {
     callback unlock-timer();
     callback check-updates();
     callback open-releases-page();
-    callback open-teardown();
 
     // Processes Callbacks
     callback process-filter-changed(string);
@@ -154,420 +227,371 @@ export component MainWindow inherits Window {
     callback confirm-action(string);
     callback clear-logs();
 
-    // Optional top surface glow for themes 3, 4, 5, 8
+    // Root keyboard scope for modal dismissal (Escape / Return)
+    root-fs := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                if (root.confirm-visible) {
+                    root.confirm-visible = false;
+                    root.pending-confirm-action = "";
+                    return accept;
+                }
+                if (root.tooltip-visible) {
+                    root.tooltip-visible = false;
+                    return accept;
+                }
+            }
+            if (event.text == Key.Return && root.tooltip-visible && !root.confirm-visible) {
+                root.tooltip-visible = false;
+                return accept;
+            }
+            return reject;
+        }
+
+        // Soft ambient radial glow for themes 3, 4, 5, 8 (smooth fade, zero hard cutoff)
     if ThemeTokens.has-bg-app-glow : Rectangle {
         x: 0px;
         y: 0px;
         width: 100%;
-        height: 220px;
-        background: ThemeTokens.bg-app-glow-color;
+        height: 100%;
+        clip: true;
+        background: transparent;
+
+        Rectangle {
+            width: 1120px;
+            height: 520px;
+            x: parent.width * ThemeTokens.bg-app-glow-cx - 560px;
+            y: -260px;
+            background: @radial-gradient(ellipse, ThemeTokens.bg-app-glow-color 0%, transparent 72%);
+        }
     }
 
-    // Outer 1px border for frameless window
-    Rectangle {
+    VerticalLayout {
         width: 100%;
         height: 100%;
-        background: transparent;
-        border-width: 1px;
-        border-color: ThemeTokens.border-subtle;
+        spacing: 0px;
 
-        VerticalLayout {
-            spacing: 0px;
+        // 1. Custom Frameless TitleBar
+        TitleBar {
+            app-version: "v" + root.app-version;
+            is-maximized: root.is-maximized;
+            drag-window => { root.drag-window(); }
+            toggle-theme-polarity => { root.toggle-theme-polarity(); }
+            minimize-window => { root.minimize-window(); }
+            toggle-maximize-window => { root.toggle-maximize-window(); }
+            close-to-tray => { root.close-to-tray(); }
+        }
 
-            // 1. Custom Frameless TitleBar
-            TitleBar {
-                app-version: "v" + root.app-version;
-                is-maximized: root.is-maximized;
-                drag-window => { root.drag-window(); }
-                toggle-theme-polarity => { root.toggle-theme-polarity(); }
-                minimize-window => { root.minimize-window(); }
-                toggle-maximize-window => { root.toggle-maximize-window(); }
-                close-to-tray => { root.close-to-tray(); }
-            }
+        // Optional top surface highlight sheen for themes 3, 4, 5, 8
+        if ThemeTokens.has-surface-top-highlight : Rectangle {
+            height: 1px;
+            width: 100%;
+            background: ThemeTokens.surface-top-highlight;
+        }
 
-            // Optional top highlight line for themes 3, 4, 5, 8
-            if ThemeTokens.has-surface-top-highlight : Rectangle {
+        // 2. Navigation Bar with 5 Russian Tabs
+        Rectangle {
+            height: 44px;
+            background: ThemeTokens.bg-surface;
+
+            Rectangle {
+                y: parent.height - 1px;
                 height: 1px;
                 width: 100%;
-                background: ThemeTokens.surface-top-highlight;
+                background: ThemeTokens.border-subtle;
             }
 
-            // 2. Navigation Bar with 5 Russian Tabs
-            Rectangle {
-                height: 46px;
-                background: ThemeTokens.bg-surface;
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 6px;
+                alignment: start;
 
-                Rectangle {
-                    y: parent.height - 1px;
-                    height: 1px;
-                    width: 100%;
-                    background: ThemeTokens.border-subtle;
+                VerticalLayout {
+                    alignment: center;
+                    NavTabItem {
+                        label: "Обзор";
+                        active: root.active-tab == 0;
+                        clicked => {
+                            root.active-tab = 0;
+                            root.tab-selected(0);
+                        }
+                    }
                 }
 
-                HorizontalLayout {
-                    padding-left: 16px;
-                    padding-right: 16px;
-                    spacing: 6px;
-                    alignment: start;
-
-                    // Tab 0: Обзор
-                    Rectangle {
-                        y: 6px;
-                        width: 108px;
-                        height: 34px;
-                        border-radius: 8px;
-                        background: root.active-tab == 0 ? ThemeTokens.accent-soft : (t0-ta.has-hover ? ThemeTokens.bg-hover : transparent);
-                        border-width: 1px;
-                        border-color: root.active-tab == 0 ? ThemeTokens.accent-border : transparent;
-
-                        t0-ta := TouchArea {
-                            accessible-role: tab;
-                            accessible-label: "Обзор";
-                            clicked => {
-                                root.active-tab = 0;
-                                root.tab-selected(0);
-                            }
-                        }
-
-                        Text {
-                            text: "Обзор";
-                            font-size: 13px;
-                            font-weight: root.active-tab == 0 ? 700 : 500;
-                            color: root.active-tab == 0 ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    NavTabItem {
+                        label: "Процессы";
+                        badge-count: root.disabled-processes-count;
+                        active: root.active-tab == 1;
+                        clicked => {
+                            root.active-tab = 1;
+                            root.tab-selected(1);
                         }
                     }
+                }
 
-                    // Tab 1: Процессы
-                    Rectangle {
-                        y: 6px;
-                        width: 146px;
-                        height: 34px;
-                        border-radius: 8px;
-                        background: root.active-tab == 1 ? ThemeTokens.accent-soft : (t1-ta.has-hover ? ThemeTokens.bg-hover : transparent);
-                        border-width: 1px;
-                        border-color: root.active-tab == 1 ? ThemeTokens.accent-border : transparent;
-
-                        t1-ta := TouchArea {
-                            accessible-role: tab;
-                            accessible-label: "Процессы";
-                            clicked => {
-                                root.active-tab = 1;
-                                root.tab-selected(1);
-                            }
-                        }
-
-                        Text {
-                            text: "Процессы (" + root.disabled-processes-count + ")";
-                            font-size: 13px;
-                            font-weight: root.active-tab == 1 ? 700 : 500;
-                            color: root.active-tab == 1 ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    NavTabItem {
+                        label: "Службы";
+                        badge-count: root.disabled-services-count;
+                        active: root.active-tab == 2;
+                        clicked => {
+                            root.active-tab = 2;
+                            root.tab-selected(2);
                         }
                     }
+                }
 
-                    // Tab 2: Службы
-                    Rectangle {
-                        y: 6px;
-                        width: 142px;
-                        height: 34px;
-                        border-radius: 8px;
-                        background: root.active-tab == 2 ? ThemeTokens.accent-soft : (t2-ta.has-hover ? ThemeTokens.bg-hover : transparent);
-                        border-width: 1px;
-                        border-color: root.active-tab == 2 ? ThemeTokens.accent-border : transparent;
-
-                        t2-ta := TouchArea {
-                            accessible-role: tab;
-                            accessible-label: "Службы";
-                            clicked => {
-                                root.active-tab = 2;
-                                root.tab-selected(2);
-                            }
-                        }
-
-                        Text {
-                            text: "Службы (" + root.disabled-services-count + ")";
-                            font-size: 13px;
-                            font-weight: root.active-tab == 2 ? 700 : 500;
-                            color: root.active-tab == 2 ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    NavTabItem {
+                        label: "Настройки";
+                        active: root.active-tab == 3;
+                        clicked => {
+                            root.active-tab = 3;
+                            root.tab-selected(3);
                         }
                     }
+                }
 
-                    // Tab 3: Настройки
-                    Rectangle {
-                        y: 6px;
-                        width: 124px;
-                        height: 34px;
-                        border-radius: 8px;
-                        background: root.active-tab == 3 ? ThemeTokens.accent-soft : (t3-ta.has-hover ? ThemeTokens.bg-hover : transparent);
-                        border-width: 1px;
-                        border-color: root.active-tab == 3 ? ThemeTokens.accent-border : transparent;
-
-                        t3-ta := TouchArea {
-                            accessible-role: tab;
-                            accessible-label: "Настройки";
-                            clicked => {
-                                root.active-tab = 3;
-                                root.tab-selected(3);
-                            }
-                        }
-
-                        Text {
-                            text: "Настройки";
-                            font-size: 13px;
-                            font-weight: root.active-tab == 3 ? 700 : 500;
-                            color: root.active-tab == 3 ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    // Tab 4: Обслуживание
-                    Rectangle {
-                        y: 6px;
-                        width: 144px;
-                        height: 34px;
-                        border-radius: 8px;
-                        background: root.active-tab == 4 ? ThemeTokens.accent-soft : (t4-ta.has-hover ? ThemeTokens.bg-hover : transparent);
-                        border-width: 1px;
-                        border-color: root.active-tab == 4 ? ThemeTokens.accent-border : transparent;
-
-                        t4-ta := TouchArea {
-                            accessible-role: tab;
-                            accessible-label: "Обслуживание";
-                            clicked => {
-                                root.active-tab = 4;
-                                root.tab-selected(4);
-                            }
-                        }
-
-                        Text {
-                            text: "Обслуживание";
-                            font-size: 13px;
-                            font-weight: root.active-tab == 4 ? 700 : 500;
-                            color: root.active-tab == 4 ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    NavTabItem {
+                        label: "Обслуживание";
+                        active: root.active-tab == 4;
+                        clicked => {
+                            root.active-tab = 4;
+                            root.tab-selected(4);
                         }
                     }
                 }
             }
+        }
 
-            // 3. Main View Area
-            Rectangle {
-                vertical-stretch: 1;
-                background: transparent;
+        // 3. Main View Area
+        Rectangle {
+            vertical-stretch: 1;
+            background: transparent;
 
-                if root.active-tab == 0 : DashboardView {
-                    width: 100%;
-                    height: 100%;
-                    mode: root.mode;
-                    active-since: root.active-since;
-                    is-busy: root.is-busy;
-                    timer-locked: root.timer-locked;
-                    cpu-name: root.cpu-name;
-                    gpu-name: root.gpu-name;
-                    ram-summary: root.ram-summary;
-                    display-summary: root.display-summary;
-                    dpc-latency: root.dpc-latency;
-                    mpo-status: root.mpo-status;
-                    timer-resolution: root.timer-resolution;
-                    app-version: root.app-version;
-                    latest-version: root.latest-version;
-                    has-update: root.has-update;
-                    update-status-text: root.update-status-text;
-                    disabled-services-count: root.disabled-services-count;
-                    disabled-processes-count: root.disabled-processes-count;
+            if root.active-tab == 0 : DashboardView {
+                width: 100%;
+                height: 100%;
+                mode: root.mode;
+                active-since: root.active-since;
+                is-busy: root.is-busy;
+                timer-locked: root.timer-locked;
+                cpu-name: root.cpu-name;
+                gpu-name: root.gpu-name;
+                ram-summary: root.ram-summary;
+                display-summary: root.display-summary;
+                dpc-latency: root.dpc-latency;
+                mpo-status: root.mpo-status;
+                timer-resolution: root.timer-resolution;
+                app-version: root.app-version;
+                latest-version: root.latest-version;
+                has-update: root.has-update;
+                update-status-text: root.update-status-text;
+                disabled-services-count: root.disabled-services-count;
+                disabled-processes-count: root.disabled-processes-count;
 
-                    toggle-mode => { root.toggle-mode(); }
-                    finish-pending-restore => { root.finish-pending-restore(); }
-                    reboot-pc => {
-                        root.confirm-title = "Перезагрузить компьютер?";
-                        root.confirm-description = "Система выполнит перезагрузку через 2 секунды. Все несохранённые данные в открытых программах будут потеряны.";
-                        root.confirm-ok-label = "Перезагрузить ПК";
-                        root.confirm-cancel-label = "Отмена";
+                toggle-mode => { root.toggle-mode(); }
+                finish-pending-restore => { root.finish-pending-restore(); }
+                reboot-pc => {
+                    root.confirm-title = "Перезагрузить компьютер?";
+                    root.confirm-description = "Система выполнит перезагрузку через 2 секунды. Все несохранённые данные в открытых программах будут потеряны.";
+                    root.confirm-ok-label = "Перезагрузить ПК";
+                    root.confirm-cancel-label = "Отмена";
+                    root.confirm-tone = "warn";
+                    root.pending-confirm-action = "reboot";
+                    root.confirm-visible = true;
+                }
+                toggle-timer-lock => { root.toggle-timer-lock(); }
+                unlock-timer => { root.unlock-timer(); }
+                check-updates => { root.check-updates(); }
+                open-releases-page => { root.open-releases-page(); }
+            }
+
+            if root.active-tab == 1 : ProcessesView {
+                width: 100%;
+                height: 100%;
+                items: root.process-items;
+                filter-mode: root.process-filter-mode;
+                search-query <=> root.process-search-query;
+                show-os-core <=> root.process-show-os-core;
+                total-count: root.process-total-count;
+                disabled-count: root.process-disabled-count;
+                normal-count: root.process-normal-count;
+                running-count: root.process-running-count;
+                os-core-count: root.process-os-core-count;
+                new-process-name <=> root.new-process-name;
+
+                filter-changed(m) => { root.process-filter-changed(m); }
+                search-changed(q) => { root.process-search-changed(q); }
+                toggle-os-core(show) => { root.process-toggle-os-core(show); }
+                refresh-processes => { root.refresh-processes(); }
+                set-process-mode(name, disable) => { root.set-process-mode(name, disable); }
+                add-process(name) => { root.add-process(name); }
+                show-process-tooltip(t, sub, safe, sum, imp, meta) => {
+                    root.tooltip-title = t;
+                    root.tooltip-subtitle = sub;
+                    root.tooltip-safety = safe;
+                    root.tooltip-summary = sum;
+                    root.tooltip-impact = imp;
+                    root.tooltip-meta = meta;
+                    root.tooltip-visible = true;
+                }
+            }
+
+            if root.active-tab == 2 : ServicesView {
+                width: 100%;
+                height: 100%;
+                items: root.service-items;
+                feature-packs: root.feature-packs;
+                filter-mode: root.service-filter-mode;
+                search-query <=> root.service-search-query;
+                show-wifi-warning: root.show-wifi-warning;
+                total-count: root.service-total-count;
+                disabled-count: root.service-disabled-count;
+                normal-count: root.service-normal-count;
+                running-count: root.service-running-count;
+
+                filter-changed(m) => { root.service-filter-changed(m); }
+                search-changed(q) => { root.service-search-changed(q); }
+                refresh-services => { root.refresh-services(); }
+                toggle-feature-pack(id, keep) => { root.toggle-feature-pack(id, keep); }
+                set-service-mode(name, disable) => { root.set-service-mode(name, disable); }
+                show-service-tooltip(t, sub, safe, sum, imp, meta) => {
+                    root.tooltip-title = t;
+                    root.tooltip-subtitle = sub;
+                    root.tooltip-safety = safe;
+                    root.tooltip-summary = sum;
+                    root.tooltip-impact = imp;
+                    root.tooltip-meta = meta;
+                    root.tooltip-visible = true;
+                }
+            }
+
+            if root.active-tab == 3 : SettingsView {
+                width: 100%;
+                height: 100%;
+                theme-card-0: root.theme-card-0;
+                theme-card-1: root.theme-card-1;
+                theme-card-2: root.theme-card-2;
+                theme-card-3: root.theme-card-3;
+                theme-card-4: root.theme-card-4;
+                theme-card-5: root.theme-card-5;
+                theme-card-6: root.theme-card-6;
+                theme-card-7: root.theme-card-7;
+                autostart-enabled: root.autostart-enabled;
+                autostart-start-in-tray: root.autostart-start-in-tray;
+                autostart-path-mismatch: root.autostart-path-mismatch;
+                autostart-warning: root.autostart-warning;
+                auto-lock-timer-in-gaming: root.auto-lock-timer-in-gaming;
+                auto-purge-ram-in-gaming: root.auto-purge-ram-in-gaming;
+                auto-purge-ram-threshold-mb: root.auto-purge-ram-threshold-mb;
+
+                select-theme(id) => { root.select-theme(id); }
+                toggle-autostart(en, tray) => { root.toggle-autostart(en, tray); }
+                toggle-auto-lock-timer => { root.toggle-auto-lock-timer(); }
+                toggle-auto-purge-ram => { root.toggle-auto-purge-ram(); }
+                set-ram-threshold(mb) => { root.set-ram-threshold(mb); }
+            }
+
+            if root.active-tab == 4 : MaintenanceView {
+                width: 100%;
+                height: 100%;
+                running-repair: root.running-repair;
+                status-text: root.repair-status-text;
+                status-is-error: root.repair-status-is-error;
+
+                run-safe-repair(kind) => { root.run-repair(kind); }
+                dismiss-status => { root.repair-status-text = ""; }
+                request-critical-repair(kind) => {
+                    if (kind == "shaders") {
+                        root.confirm-title = "Очистить кэш шейдеров GPU?";
+                        root.confirm-description = "Будут удалены временные файлы кэша DirectX, NVIDIA, AMD и Intel. При первом запуске игр возможна повторная компиляция шейдеров.";
+                        root.confirm-ok-label = "Очистить шейдеры";
                         root.confirm-tone = "warn";
-                        root.pending-confirm-action = "reboot";
-                        root.confirm-visible = true;
+                    } else if (kind == "display") {
+                        root.confirm-title = "Сбросить графическую подсистему Windows?";
+                        root.confirm-description = "Экран кратковременно погаснет на 1–2 секунды во время перезапуска DWM. Активные полноэкранные игры могут свернуться.";
+                        root.confirm-ok-label = "Сбросить дисплей";
+                        root.confirm-tone = "warn";
+                    } else if (kind == "debloat") {
+                        root.confirm-title = "Применить Win11 Debloat?";
+                        root.confirm-description = "Внесёт изменения в политику телеметрии, фоновые виджеты Windows 11 и планировщик задач. Исходные значения сохраняются для отката.";
+                        root.confirm-ok-label = "Применить Debloat";
+                        root.confirm-tone = "danger";
+                    } else {
+                        root.confirm-title = "Вернуть стандартные параметры Windows 11?";
+                        root.confirm-description = "Отменит применённые ранее твики Win11 Debloat и восстановит системные компоненты ОС по умолчанию.";
+                        root.confirm-ok-label = "Вернуть параметры ОС";
+                        root.confirm-tone = "warn";
                     }
-                    toggle-timer-lock => { root.toggle-timer-lock(); }
-                    unlock-timer => { root.unlock-timer(); }
-                    check-updates => { root.check-updates(); }
-                    open-releases-page => { root.open-releases-page(); }
-                    open-teardown => { root.open-teardown(); }
+                    root.confirm-cancel-label = "Отмена";
+                    root.pending-confirm-action = kind;
+                    root.confirm-visible = true;
                 }
-
-                if root.active-tab == 1 : ProcessesView {
-                    width: 100%;
-                    height: 100%;
-                    items: root.process-items;
-                    filter-mode: root.process-filter-mode;
-                    search-query <=> root.process-search-query;
-                    show-os-core <=> root.process-show-os-core;
-                    total-count: root.process-total-count;
-                    disabled-count: root.process-disabled-count;
-                    normal-count: root.process-normal-count;
-                    running-count: root.process-running-count;
-                    os-core-count: root.process-os-core-count;
-                    new-process-name <=> root.new-process-name;
-
-                    filter-changed(m) => { root.process-filter-changed(m); }
-                    search-changed(q) => { root.process-search-changed(q); }
-                    toggle-os-core(show) => { root.process-toggle-os-core(show); }
-                    refresh-processes => { root.refresh-processes(); }
-                    set-process-mode(name, disable) => { root.set-process-mode(name, disable); }
-                    add-process(name) => { root.add-process(name); }
-                    show-process-tooltip(t, sub, safe, sum, imp, meta) => {
-                        root.tooltip-title = t;
-                        root.tooltip-subtitle = sub;
-                        root.tooltip-safety = safe;
-                        root.tooltip-summary = sum;
-                        root.tooltip-impact = imp;
-                        root.tooltip-meta = meta;
-                        root.tooltip-visible = true;
-                    }
-                }
-
-                if root.active-tab == 2 : ServicesView {
-                    width: 100%;
-                    height: 100%;
-                    items: root.service-items;
-                    feature-packs: root.feature-packs;
-                    filter-mode: root.service-filter-mode;
-                    search-query <=> root.service-search-query;
-                    show-wifi-warning: root.show-wifi-warning;
-                    total-count: root.service-total-count;
-                    disabled-count: root.service-disabled-count;
-                    normal-count: root.service-normal-count;
-                    running-count: root.service-running-count;
-
-                    filter-changed(m) => { root.service-filter-changed(m); }
-                    search-changed(q) => { root.service-search-changed(q); }
-                    refresh-services => { root.refresh-services(); }
-                    toggle-feature-pack(id, keep) => { root.toggle-feature-pack(id, keep); }
-                    set-service-mode(name, disable) => { root.set-service-mode(name, disable); }
-                    show-service-tooltip(t, sub, safe, sum, imp, meta) => {
-                        root.tooltip-title = t;
-                        root.tooltip-subtitle = sub;
-                        root.tooltip-safety = safe;
-                        root.tooltip-summary = sum;
-                        root.tooltip-impact = imp;
-                        root.tooltip-meta = meta;
-                        root.tooltip-visible = true;
-                    }
-                }
-
-                if root.active-tab == 3 : SettingsView {
-                    width: 100%;
-                    height: 100%;
-                    theme-card-0: root.theme-card-0;
-                    theme-card-1: root.theme-card-1;
-                    theme-card-2: root.theme-card-2;
-                    theme-card-3: root.theme-card-3;
-                    theme-card-4: root.theme-card-4;
-                    theme-card-5: root.theme-card-5;
-                    theme-card-6: root.theme-card-6;
-                    theme-card-7: root.theme-card-7;
-                    autostart-enabled: root.autostart-enabled;
-                    autostart-start-in-tray: root.autostart-start-in-tray;
-                    autostart-path-mismatch: root.autostart-path-mismatch;
-                    autostart-warning: root.autostart-warning;
-                    auto-lock-timer-in-gaming: root.auto-lock-timer-in-gaming;
-                    auto-purge-ram-in-gaming: root.auto-purge-ram-in-gaming;
-                    auto-purge-ram-threshold-mb: root.auto-purge-ram-threshold-mb;
-
-                    select-theme(id) => { root.select-theme(id); }
-                    toggle-autostart(en, tray) => { root.toggle-autostart(en, tray); }
-                    toggle-auto-lock-timer => { root.toggle-auto-lock-timer(); }
-                    toggle-auto-purge-ram => { root.toggle-auto-purge-ram(); }
-                    set-ram-threshold(mb) => { root.set-ram-threshold(mb); }
-                    open-teardown => { root.open-teardown(); }
-                }
-
-                if root.active-tab == 4 : MaintenanceView {
-                    width: 100%;
-                    height: 100%;
-                    running-repair: root.running-repair;
-                    status-text: root.repair-status-text;
-                    status-is-error: root.repair-status-is-error;
-
-                    run-safe-repair(kind) => { root.run-repair(kind); }
-                    dismiss-status => { root.repair-status-text = ""; }
-                    request-critical-repair(kind) => {
-                        if (kind == "shaders") {
-                            root.confirm-title = "Очистить кэш шейдеров GPU?";
-                            root.confirm-description = "Будут удалены временные файлы кэша DirectX, NVIDIA, AMD и Intel. При первом запуске игр возможна повторная компиляция шейдеров.";
-                            root.confirm-ok-label = "Очистить шейдеры";
-                            root.confirm-tone = "warn";
-                        } else if (kind == "display") {
-                            root.confirm-title = "Сбросить графическую подсистему Windows?";
-                            root.confirm-description = "Экран кратковременно погаснет на 1–2 секунды во время перезапуска DWM. Активные полноэкранные игры могут свернуться.";
-                            root.confirm-ok-label = "Сбросить дисплей";
-                            root.confirm-tone = "warn";
-                        } else if (kind == "debloat") {
-                            root.confirm-title = "Применить Win11 Debloat?";
-                            root.confirm-description = "Внесёт изменения в политику телеметрии, фоновые виджеты Windows 11 и планировщик задач. Исходные значения сохраняются для отката.";
-                            root.confirm-ok-label = "Применить Debloat";
-                            root.confirm-tone = "danger";
-                        } else {
-                            root.confirm-title = "Вернуть стандартные параметры Windows 11?";
-                            root.confirm-description = "Отменит применённые ранее твики Win11 Debloat и восстановит системные компоненты ОС по умолчанию.";
-                            root.confirm-ok-label = "Вернуть параметры ОС";
-                            root.confirm-tone = "warn";
-                        }
-                        root.confirm-cancel-label = "Отмена";
-                        root.pending-confirm-action = kind;
-                        root.confirm-visible = true;
-                    }
-                }
-            }
-
-            // 4. Collapsible Event Log Console
-            LogConsole {
-                logs: root.logs;
-                log-count: root.log-count;
-                expanded <=> root.log-expanded;
-                clear-logs => { root.clear-logs(); }
             }
         }
 
-        // 5. Tooltip Modal Overlay
-        TooltipOverlay {
-            width: 100%;
-            height: 100%;
-            visible-tooltip: root.tooltip-visible;
-            title: root.tooltip-title;
-            subtitle: root.tooltip-subtitle;
-            safety-level: root.tooltip-safety;
-            summary: root.tooltip-summary;
-            impact: root.tooltip-impact;
-            meta-note: root.tooltip-meta;
-            close-tooltip => { root.tooltip-visible = false; }
+        // 4. Collapsible Event Log Console
+        LogConsole {
+            logs: root.logs;
+            log-count: root.log-count;
+            expanded <=> root.log-expanded;
+            clear-logs => { root.clear-logs(); }
         }
+    }
 
-        // 6. Confirmation Dialog Modal Overlay
-        ConfirmDialogOverlay {
+    // 5. Tooltip Modal Overlay
+    TooltipOverlay {
+        width: 100%;
+        height: 100%;
+        visible-tooltip: root.tooltip-visible;
+        title: root.tooltip-title;
+        subtitle: root.tooltip-subtitle;
+        safety-level: root.tooltip-safety;
+        summary: root.tooltip-summary;
+        impact: root.tooltip-impact;
+        meta-note: root.tooltip-meta;
+        close-tooltip => { root.tooltip-visible = false; }
+    }
+
+    // 6. Confirmation Dialog Modal Overlay
+    ConfirmDialogOverlay {
+        width: 100%;
+        height: 100%;
+        visible-confirm: root.confirm-visible;
+        title: root.confirm-title;
+        description: root.confirm-description;
+        confirm-label: root.confirm-ok-label;
+        cancel-label: root.confirm-cancel-label;
+        tone: root.confirm-tone;
+        confirm-cancelled => {
+            root.confirm-visible = false;
+            root.pending-confirm-action = "";
+        }
+        confirm-accepted => {
+            root.confirm-visible = false;
+            root.confirm-action(root.pending-confirm-action);
+            root.pending-confirm-action = "";
+        }
+    }
+
+        // Crisp 1px frameless window border (shown on Win10 / offscreen; hidden when Win11 DWM border or maximized)
+        Rectangle {
+            visible: !root.is-maximized && !root.dwm-border-active;
             width: 100%;
             height: 100%;
-            visible-confirm: root.confirm-visible;
-            title: root.confirm-title;
-            description: root.confirm-description;
-            confirm-label: root.confirm-ok-label;
-            cancel-label: root.confirm-cancel-label;
-            tone: root.confirm-tone;
-            confirm-cancelled => {
-                root.confirm-visible = false;
-                root.pending-confirm-action = "";
-            }
-            confirm-accepted => {
-                root.confirm-visible = false;
-                root.confirm-action(root.pending-confirm-action);
-                root.pending-confirm-action = "";
-            }
+            background: transparent;
+            border-width: 1px;
+            border-color: ThemeTokens.border-subtle;
         }
     }
 }

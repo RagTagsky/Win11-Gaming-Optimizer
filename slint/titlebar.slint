@@ -1,4 +1,5 @@
 import { ThemeTokens } from "theme.slint";
+import { IconBolt, IconSun, IconMoon, IconMinimize, IconMaximize, IconClose } from "components.slint";
 
 export component TitleBar inherits Rectangle {
     in property <string> app-version: "v4.0.0";
@@ -9,10 +10,10 @@ export component TitleBar inherits Rectangle {
     callback toggle-maximize-window();
     callback close-to-tray();
 
-    height: 44px;
+    height: 42px;
     background: ThemeTokens.bg-titlebar;
 
-    // Bottom subtle border
+    // Bottom hairline divider
     Rectangle {
         y: parent.height - 1px;
         height: 1px;
@@ -20,14 +21,14 @@ export component TitleBar inherits Rectangle {
         background: ThemeTokens.border-subtle;
     }
 
-    // Drag region covering the non-button titlebar area
+    // Full-width drag region behind right-hand interactive controls (4px threshold preserves double-click maximize)
     TouchArea {
         x: 0px;
         y: 0px;
-        width: parent.width - 260px;
+        width: parent.width;
         height: parent.height;
         moved => {
-            if (self.pressed) {
+            if (self.pressed && (abs(self.mouse-x - self.pressed-x) > 4px || abs(self.mouse-y - self.pressed-y) > 4px)) {
                 root.drag-window();
             }
         }
@@ -37,75 +38,61 @@ export component TitleBar inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: 12px;
+        padding-left: 14px;
         padding-right: 0px;
         spacing: 10px;
 
-        // Left: App brand + version pill
+        // Left: Brand emblem + title + subtle monospace version
         HorizontalLayout {
-            spacing: 10px;
+            spacing: 9px;
             alignment: start;
 
-            Rectangle {
-                y: 8px;
-                width: 28px;
-                height: 28px;
-                border-radius: 8px;
-                background: ThemeTokens.accent-solid;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 6px;
+                    background: ThemeTokens.accent-solid;
 
-                Text {
-                    text: "⚡";
-                    font-size: 14px;
-                    font-weight: 700;
-                    color: ThemeTokens.text-on-solid;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    IconBolt {
+                        x: 5.5px;
+                        y: 5.5px;
+                        size: 13px;
+                        color: ThemeTokens.text-on-solid;
+                    }
                 }
             }
 
             Text {
                 text: "Ultra Gaming Mode";
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 600;
                 color: ThemeTokens.text-primary;
                 vertical-alignment: center;
             }
 
-            Rectangle {
-                y: 11px;
-                height: 22px;
-                width: 56px;
-                border-radius: 6px;
-                background: ThemeTokens.accent-soft;
-                border-width: 1px;
-                border-color: ThemeTokens.accent-border;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 20px;
+                    border-radius: 5px;
+                    background: ThemeTokens.bg-elevated;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
 
-                Text {
-                    text: root.app-version;
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: ThemeTokens.accent-text;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
-
-            Rectangle {
-                y: 11px;
-                height: 22px;
-                width: 96px;
-                border-radius: 6px;
-                background: ThemeTokens.bg-elevated;
-                border-width: 1px;
-                border-color: ThemeTokens.border-subtle;
-
-                Text {
-                    text: "Профиль AAA";
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: ThemeTokens.text-secondary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        Text {
+                            text: root.app-version;
+                            font-family: ThemeTokens.font-mono;
+                            font-size: 10.5px;
+                            font-weight: 500;
+                            color: ThemeTokens.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
             }
         }
@@ -114,68 +101,90 @@ export component TitleBar inherits Rectangle {
             horizontal-stretch: 1;
         }
 
-        // Right: Smart Theme Polarity Toggle + Window Controls
+        // Right: Smart Theme Polarity Toggle + Native-style Caption Controls
         HorizontalLayout {
             spacing: 0px;
             alignment: end;
 
-            Rectangle {
-                y: 5px;
-                width: 116px;
-                height: 34px;
-                border-radius: 8px;
-                background: theme-ta.has-hover ? ThemeTokens.bg-hover : transparent;
-                border-width: 1px;
-                border-color: theme-ta.has-hover ? ThemeTokens.border-subtle : transparent;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 28px;
+                    border-radius: 7px;
+                    background: theme-ta.pressed ? ThemeTokens.bg-active : (theme-ta.has-hover ? ThemeTokens.bg-hover : transparent);
+                    border-width: 1px;
+                    border-color: theme-fs.has-focus ? ThemeTokens.focus-ring : (theme-ta.has-hover ? ThemeTokens.border-subtle : transparent);
 
-                theme-ta := TouchArea {
-                    accessible-role: button;
-                    accessible-label: ThemeTokens.is-dark ? "Переключить на светлую тему" : "Переключить на тёмную тему";
-                    clicked => {
-                        root.toggle-theme-polarity();
+                    theme-fs := FocusScope {
+                        key-pressed(event) => {
+                            if (event.text == " " || event.text == "\n") {
+                                root.toggle-theme-polarity();
+                                return accept;
+                            }
+                            return reject;
+                        }
+
+                        theme-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            accessible-role: button;
+                            accessible-label: ThemeTokens.is-dark ? "Переключить на светлую тему" : "Переключить на тёмную тему";
+                            clicked => {
+                                theme-fs.focus();
+                                root.toggle-theme-polarity();
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 9px;
+                        padding-right: 10px;
+                        spacing: 6px;
+                        alignment: center;
+
+                        VerticalLayout {
+                            alignment: center;
+                            if ThemeTokens.is-dark : IconSun {
+                                size: 14px;
+                                color: ThemeTokens.accent-text;
+                            }
+                            if !ThemeTokens.is-dark : IconMoon {
+                                size: 14px;
+                                color: ThemeTokens.accent-text;
+                            }
+                        }
+
+                        Text {
+                            text: ThemeTokens.is-dark ? "Светлая" : "Тёмная";
+                            font-size: 12px;
+                            font-weight: 500;
+                            color: ThemeTokens.text-primary;
+                            vertical-alignment: center;
+                        }
                     }
                 }
+            }
 
-                HorizontalLayout {
-                    padding-left: 10px;
-                    padding-right: 10px;
-                    spacing: 6px;
-                    alignment: center;
+            Rectangle { width: 8px; }
 
-                    Text {
-                        text: ThemeTokens.is-dark ? "☀" : "☾";
-                        font-size: 14px;
-                        color: ThemeTokens.accent-text;
-                        vertical-alignment: center;
-                    }
-
-                    Text {
-                        text: ThemeTokens.is-dark ? "Светлая" : "Тёмная";
-                        font-size: 12px;
-                        font-weight: 600;
-                        color: ThemeTokens.text-primary;
-                        vertical-alignment: center;
-                    }
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 1px;
+                    height: 18px;
+                    background: ThemeTokens.border-subtle;
                 }
             }
 
-            Rectangle {
-                width: 6px;
-            }
-
-            Rectangle {
-                width: 1px;
-                height: 44px;
-                background: ThemeTokens.border-subtle;
-            }
+            Rectangle { width: 4px; }
 
             // Minimize
             Rectangle {
                 width: 44px;
-                height: 44px;
+                height: 42px;
                 background: min-ta.pressed ? ThemeTokens.bg-active : (min-ta.has-hover ? ThemeTokens.bg-hover : transparent);
 
                 min-ta := TouchArea {
+                    mouse-cursor: pointer;
                     accessible-role: button;
                     accessible-label: "Свернуть окно";
                     clicked => {
@@ -183,22 +192,21 @@ export component TitleBar inherits Rectangle {
                     }
                 }
 
-                Text {
-                    text: "─";
-                    font-size: 13px;
-                    color: ThemeTokens.text-secondary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                IconMinimize {
+                    x: 16px;
+                    y: 15px;
+                    color: min-ta.has-hover ? ThemeTokens.text-primary : ThemeTokens.text-secondary;
                 }
             }
 
             // Maximize / Restore
             Rectangle {
                 width: 44px;
-                height: 44px;
+                height: 42px;
                 background: max-ta.pressed ? ThemeTokens.bg-active : (max-ta.has-hover ? ThemeTokens.bg-hover : transparent);
 
                 max-ta := TouchArea {
+                    mouse-cursor: pointer;
                     accessible-role: button;
                     accessible-label: root.is-maximized ? "Восстановить размер окна" : "Развернуть окно";
                     clicked => {
@@ -206,22 +214,22 @@ export component TitleBar inherits Rectangle {
                     }
                 }
 
-                Text {
-                    text: root.is-maximized ? "❐" : "□";
-                    font-size: 13px;
-                    color: ThemeTokens.text-secondary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                IconMaximize {
+                    x: 16px;
+                    y: 15px;
+                    is-maximized: root.is-maximized;
+                    color: max-ta.has-hover ? ThemeTokens.text-primary : ThemeTokens.text-secondary;
                 }
             }
 
             // Close to System Tray
             Rectangle {
                 width: 44px;
-                height: 44px;
+                height: 42px;
                 background: close-ta.pressed ? ThemeTokens.close-active-bg : (close-ta.has-hover ? ThemeTokens.close-hover-bg : transparent);
 
                 close-ta := TouchArea {
+                    mouse-cursor: pointer;
                     accessible-role: button;
                     accessible-label: "Свернуть окно в системный трей";
                     clicked => {
@@ -229,12 +237,11 @@ export component TitleBar inherits Rectangle {
                     }
                 }
 
-                Text {
-                    text: "✕";
-                    font-size: 14px;
-                    color: close-ta.has-hover ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                IconClose {
+                    x: 16px;
+                    y: 15px;
+                    size: 12px;
+                    color: (close-ta.has-hover || close-ta.pressed) ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
                 }
             }
         }

@@ -1,4 +1,4 @@
-# Tier3.Pairwise.ps1 — 14 Cross-Feature Pairwise Combinatorial Cases
+# Tier3.Pairwise.ps1 -- 14 Cross-Feature Pairwise Combinatorial Cases
 
 Set-StrictMode -Version Latest
 
@@ -22,7 +22,7 @@ function Register-Tier3Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "src/tray.rs not yet created (M3 pending)" -Artifact "src/tray.rs"
         }
         $raw = Get-Content -LiteralPath $trayRs -Raw -Encoding UTF8
-        Assert-E2ENotMatch $raw 'Профиль оптимизации|competitive|custom' "Tray must remain AAA-only"
+        Assert-E2ENotMatch $raw '\u041f\u0440\u043e\u0444\u0438\u043b\u044c \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438|competitive|custom' "Tray must remain AAA-only"
         $ct = Invoke-CachedCargoTest -Context $ctx
         Assert-E2EEqual 0 $ct.ExitCode "cargo test must pass tray state transitions"
     }
@@ -114,10 +114,11 @@ Write-Output 'PAIR_PROC_GUARD_OK'
         Assert-E2EMatch ($out -join "`n") 'PAIR_PROC_GUARD_OK' "Marker missing"
     }
 
-    Register-E2ETest -Id "T3-07" -Tier 3 -Feature "F1xF7" -Name "Portable UltraGamingMode.exe extracts byte-identical docs/teardown/index.html" -Artifact ".bin/UltraGamingMode.exe" -Body {
+    Register-E2ETest -Id "T3-07" -Tier 3 -Feature "F1xF7" -Name "Portable UltraGamingMode.exe extracts byte-identical PS1/JSON assets and never creates docs/" -Artifact ".bin/UltraGamingMode.exe" -Body {
         param($ctx)
         $exePath = Join-Path $ctx.RepoRoot ".bin\UltraGamingMode.exe"
-        $repoHtml = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
+        $repoPs1 = Join-Path $ctx.RepoRoot "UltraGamingMode.ps1"
+        $repoTuning = Join-Path $ctx.RepoRoot "Config\tuning.json"
         if (-not (Test-Path -LiteralPath $exePath)) {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
@@ -127,7 +128,7 @@ Write-Output 'PAIR_PROC_GUARD_OK'
         }
         Assert-E2EEqual 0 (Get-E2EPreExistingUgmPids).Count "No pre-existing UltraGamingMode.exe allowed"
 
-        $portDir = Join-Path $ctx.Sandbox.Root ("port_td_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
+        $portDir = Join-Path $ctx.Sandbox.Root ("port_rt_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
         New-Item -ItemType Directory -Path $portDir -Force | Out-Null
         $portExe = Join-Path $portDir "UltraGamingMode.exe"
         Copy-Item -LiteralPath $exePath -Destination $portExe -Force
@@ -135,26 +136,31 @@ Write-Output 'PAIR_PROC_GUARD_OK'
         $proc = Start-E2EHostedProcess -StartInfo $psi
         try {
             Start-Sleep -Milliseconds 3000
-            $extracted = Join-Path $portDir "docs\teardown\index.html"
-            if (-not (Test-Path -LiteralPath $extracted)) {
-                $extracted = Get-ChildItem -LiteralPath $ctx.Sandbox.EnvRw -Filter "index.html" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-            }
-            Assert-E2ETrue (-not [string]::IsNullOrWhiteSpace($extracted) -and (Test-Path -LiteralPath $extracted)) "Extracted docs/teardown/index.html missing"
-            Assert-E2EEqual (Get-FileSha256Lower $repoHtml) (Get-FileSha256Lower $extracted) "Extracted teardown HTML must match repo docs/teardown/index.html"
+            $candidates = @($portDir, (Join-Path $ctx.Sandbox.EnvRw "ProgramFiles\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "ProgramData\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "LocalAppData\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "LocalAppData\UltraGamingMode\Runtime"))
+            $foundRoot = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ "UltraGamingMode.ps1") } | Select-Object -First 1
+            Assert-E2ETrue ($null -ne $foundRoot) "Extracted UltraGamingMode.ps1 missing in sandbox runtime candidates"
+            $extractedPs1 = Join-Path $foundRoot "UltraGamingMode.ps1"
+            $extractedTuning = Join-Path $foundRoot "Config\tuning.json"
+            Assert-E2ETrue (Test-Path -LiteralPath $extractedTuning) "Extracted Config/tuning.json missing"
+            Assert-E2EEqual (Get-FileSha256Lower $repoPs1) (Get-FileSha256Lower $extractedPs1) "Extracted UltraGamingMode.ps1 must match repo"
+            Assert-E2EEqual (Get-FileSha256Lower $repoTuning) (Get-FileSha256Lower $extractedTuning) "Extracted Config/tuning.json must match repo"
+            Assert-E2ETrue (-not (Test-Path -LiteralPath (Join-Path $foundRoot "docs"))) "Removed docs/ folder must not be extracted in runtime root"
+            Assert-E2ETrue (-not (Test-Path -LiteralPath (Join-Path $portDir "docs"))) "Removed docs/ folder must not be extracted in portable dir"
         } finally {
             Stop-E2EProcessTree -RootPid $proc.Id
         }
     }
 
-    Register-E2ETest -Id "T3-08" -Tier 3 -Feature "F3xF7" -Name "3D Teardown dark and light themes both render visibly with zero JS errors" -Artifact "docs/teardown/index.html" -Body {
+    Register-E2ETest -Id "T3-08" -Tier 3 -Feature "F3xF7" -Name "All 8 dark and light Slint themes render with custom primitives and DWM chrome wiring" -Artifact "src/ui_bridge.rs" -Body {
         param($ctx)
-        $htmlPath = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
-        if (-not $ctx.Cache.ContainsKey("TeardownCdp")) {
-            $ctx.Cache["TeardownCdp"] = Invoke-TeardownCdpVerification -HtmlPath $htmlPath -UserDataDir $ctx.Sandbox.BrowserProfile
-        }
-        $cdp = $ctx.Cache["TeardownCdp"]
-        Assert-E2ETrue $cdp.Result.interactive.themeChanged "Teardown theme must toggle cleanly"
-        Assert-E2EEqual 0 @($cdp.Result.consoleErrors).Count "Zero console errors across themes"
+        $slintAll = (Get-ChildItem -LiteralPath (Join-Path $ctx.RepoRoot "slint") -Filter "*.slint" -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        $bridgeRs = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "src\ui_bridge.rs") -Raw -Encoding UTF8
+        Assert-E2ENotMatch $slintAll 'std-widgets\.slint' "Zero un-themed std-widgets imports allowed"
+        Assert-E2EMatch $bridgeRs 'set_bg_app_glow_cx' "ui_bridge.rs must apply theme glow coordinate"
+        Assert-E2EMatch $bridgeRs 'set_surface_top_highlight' "ui_bridge.rs must apply theme surface highlight"
+        $ct = Invoke-CachedCargoTest -Context $ctx
+        Assert-E2EEqual 0 $ct.ExitCode "cargo test must pass theme & offscreen rendering tests"
+        Assert-E2EMatch $ct.Output 'test_render_all_8_themes_and_views_offscreen\s*\.\.\.\s*ok' "Offscreen 8-theme rendering test must pass"
     }
 
     Register-E2ETest -Id "T3-09" -Tier 3 -Feature "F2xF6" -Name "Tray timer menu item and backend 0.500ms timer/Standby RAM automation stay aligned" -Artifact "src/tray.rs" -Body {
@@ -178,12 +184,12 @@ Write-Output 'PAIR_PROC_GUARD_OK'
         $pd = (Get-Content -LiteralPath (Join-Path $cfgDir "process_descriptions.json") -Raw -Encoding UTF8 | ConvertFrom-Json).Descriptions
         Assert-E2EEqual 328 @($sd.PSObject.Properties).Count "Staged service_descriptions count must be 328"
         Assert-E2EEqual 181 @($pd.PSObject.Properties).Count "Staged process_descriptions count must be 181"
-        Assert-E2EMatch ($sd.zapret.summaryRu) '[А-Яа-яЁё]' "Cyrillic UTF-8 text must remain intact for zapret"
+        Assert-E2EMatch ($sd.zapret.summaryRu) '[\u0410-\u042f\u0430-\u044f\u0401\u0451]' "Cyrillic UTF-8 text must remain intact for zapret"
     }
 
-    Register-E2ETest -Id "T3-11" -Tier 3 -Feature "F4xF8" -Name "Zero prohibited attribution mentions across Rust, Slint, PS1, JSON, HTML, Markdown, and E2E tests" -Artifact "." -Body {
+    Register-E2ETest -Id "T3-11" -Tier 3 -Feature "F4xF8" -Name "Zero prohibited attribution mentions across Rust, Slint, PS1, JSON, Markdown, and E2E tests" -Artifact "." -Body {
         param($ctx)
-        $targets = @((Join-Path $ctx.RepoRoot "docs"), (Join-Path $ctx.RepoRoot "Core"), (Join-Path $ctx.RepoRoot "Config"), (Join-Path $ctx.RepoRoot "Tests\E2E"))
+        $targets = @((Join-Path $ctx.RepoRoot "Core"), (Join-Path $ctx.RepoRoot "Config"), (Join-Path $ctx.RepoRoot "Tests\E2E"))
         foreach ($opt in @("src", "slint", "README.md", "README.ru.md", "Build-Release.ps1", "UltraGamingMode.ps1")) {
             $p = Join-Path $ctx.RepoRoot $opt
             if (Test-Path -LiteralPath $p) { $targets += $p }
@@ -230,14 +236,21 @@ Write-Output 'PAIR_MATRIX_OK'
         Assert-E2EMatch ($out -join "`n") 'PAIR_MATRIX_OK' "Marker missing"
     }
 
-    Register-E2ETest -Id "T3-14" -Tier 3 -Feature "F5xF7" -Name "3D Teardown Network/Services layer reflects 328/205/95/27 and Zapret RFC 1323 invariants" -Artifact "docs/teardown/index.html" -Body {
+    Register-E2ETest -Id "T3-14" -Tier 3 -Feature "F5xF7" -Name "README docs and Dashboard pipeline reflect 328/205/95/181 counts and Zapret RFC 1323 invariants" -Artifact "slint/dashboard.slint" -Body {
         param($ctx)
-        $raw = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "docs\teardown\index.html") -Raw -Encoding UTF8
-        Assert-E2EMatch $raw '328' "Teardown must document 328 services"
-        Assert-E2EMatch $raw '205' "Teardown must document 205 blacklisted services"
-        Assert-E2EMatch $raw '95' "Teardown must document 95 whitelisted services"
-        Assert-E2EMatch $raw '181' "Teardown must document 181 processes"
-        Assert-E2EMatch $raw 'Zapret|WinDivert' "Teardown must document Zapret/WinDivert protection"
-        Assert-E2EMatch $raw 'RFC 1323|Timestamps' "Teardown must document RFC 1323 TCP timestamps"
+        $dash = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "slint\dashboard.slint") -Raw -Encoding UTF8
+        Assert-E2EMatch $dash 'Zapret' "Dashboard pipeline must mention Zapret"
+        Assert-E2EMatch $dash 'WinDivert' "Dashboard pipeline must mention WinDivert"
+        Assert-E2EMatch $dash 'RFC 1323' "Dashboard pipeline must mention RFC 1323 Timestamps"
+
+        foreach ($md in @("README.md", "README.ru.md")) {
+            $raw = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot $md) -Raw -Encoding UTF8
+            Assert-E2EMatch $raw '328' "$md must document 328 services"
+            Assert-E2EMatch $raw '205' "$md must document 205 blacklisted services"
+            Assert-E2EMatch $raw '95' "$md must document 95 whitelisted services"
+            Assert-E2EMatch $raw '181' "$md must document 181 processes"
+            Assert-E2EMatch $raw 'Zapret|WinDivert' "$md must document Zapret/WinDivert protection"
+            Assert-E2EMatch $raw 'RFC 1323' "$md must document RFC 1323 TCP timestamps"
+        }
     }
 }

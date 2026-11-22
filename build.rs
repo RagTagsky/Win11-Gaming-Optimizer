@@ -1,12 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn main() {
-    println!("cargo::rustc-check-cfg=cfg(has_teardown_html)");
-    println!("cargo:rerun-if-changed=docs/teardown/index.html");
-    if Path::new("docs/teardown/index.html").exists() {
-        println!("cargo:rustc-cfg=has_teardown_html");
-    }
-
     println!("cargo:rerun-if-changed=assets/icons/icon.ico");
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {

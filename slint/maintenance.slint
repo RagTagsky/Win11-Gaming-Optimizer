@@ -1,5 +1,5 @@
-import { ScrollView } from "std-widgets.slint";
 import { ThemeTokens } from "theme.slint";
+import { SurfaceCard, ThemedScrollView, IconClose } from "components.slint";
 
 export component MaintenanceView inherits Rectangle {
     in property <string> running-repair: "";
@@ -12,32 +12,24 @@ export component MaintenanceView inherits Rectangle {
 
     background: transparent;
 
-    ScrollView {
+    ThemedScrollView {
         width: 100%;
         height: 100%;
 
         VerticalLayout {
             padding: 16px;
-            spacing: 14px;
+            spacing: 12px;
 
             // Header Card
-            Rectangle {
-                border-radius: 14px;
-                background: ThemeTokens.bg-surface;
-                border-width: 1px;
-                border-color: ThemeTokens.border-subtle;
-                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
-                drop-shadow-blur: ThemeTokens.shadow-card-blur;
-                drop-shadow-color: ThemeTokens.shadow-card-color;
-
+            SurfaceCard {
                 VerticalLayout {
                     padding: 16px;
-                    spacing: 4px;
+                    spacing: 3px;
 
                     Text {
-                        text: "Обслуживание и аварийное восстановление";
-                        font-size: 15px;
-                        font-weight: 700;
+                        text: "Обслуживание и восстановление";
+                        font-size: 14.5px;
+                        font-weight: 600;
                         color: ThemeTokens.text-primary;
                     }
 
@@ -52,13 +44,16 @@ export component MaintenanceView inherits Rectangle {
 
             // Status Banner
             if root.status-text != "" : Rectangle {
-                border-radius: 12px;
+                border-radius: 10px;
                 background: root.status-is-error ? ThemeTokens.status-danger-soft : ThemeTokens.status-active-soft;
                 border-width: 1px;
                 border-color: root.status-is-error ? ThemeTokens.status-danger-border : ThemeTokens.status-active-border;
 
                 HorizontalLayout {
-                    padding: 12px;
+                    padding-left: 14px;
+                    padding-right: 10px;
+                    padding-top: 10px;
+                    padding-bottom: 10px;
                     spacing: 10px;
 
                     Text {
@@ -71,24 +66,27 @@ export component MaintenanceView inherits Rectangle {
                         wrap: word-wrap;
                     }
 
-                    Rectangle {
-                        width: 28px;
-                        height: 28px;
-                        border-radius: 6px;
-                        background: ThemeTokens.bg-surface;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 26px;
+                            height: 26px;
+                            border-radius: 6px;
+                            background: cls-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface;
 
-                        TouchArea {
-                            accessible-role: button;
-                            accessible-label: "Скрыть результат операции";
-                            clicked => { root.dismiss-status(); }
-                        }
+                            cls-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                accessible-role: button;
+                                accessible-label: "Скрыть результат операции";
+                                clicked => { root.dismiss-status(); }
+                            }
 
-                        Text {
-                            text: "✕";
-                            font-size: 12px;
-                            color: ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                            IconClose {
+                                x: 8px;
+                                y: 8px;
+                                size: 10px;
+                                color: ThemeTokens.text-secondary;
+                            }
                         }
                     }
                 }
@@ -97,21 +95,17 @@ export component MaintenanceView inherits Rectangle {
             // Everyday Safe Actions (3 cards)
             Text {
                 text: "Быстрое обслуживание и диагностика";
-                font-size: 13px;
-                font-weight: 700;
-                color: ThemeTokens.text-primary;
+                font-size: 12.5px;
+                font-weight: 600;
+                color: ThemeTokens.text-muted;
             }
 
             HorizontalLayout {
                 spacing: 12px;
 
                 // 1. Clean Standby RAM
-                Rectangle {
+                SurfaceCard {
                     horizontal-stretch: 1;
-                    border-radius: 14px;
-                    background: ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
 
                     VerticalLayout {
                         padding: 14px;
@@ -119,28 +113,30 @@ export component MaintenanceView inherits Rectangle {
 
                         Text {
                             text: "Очистить кэш ОЗУ";
-                            font-size: 14px;
-                            font-weight: 700;
+                            font-size: 13.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
                             vertical-stretch: 1;
-                            text: "Освобождает резервную память (Standby List) в Windows через NtSetSystemInformation, помогая убрать подтормаживания при длительных сессиях.";
+                            text: "Освобождает резервную память (Standby List) через NtSetSystemInformation, убирая подтормаживания при длительных сессиях.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
                             wrap: word-wrap;
                         }
 
                         Rectangle {
-                            height: 36px;
-                            border-radius: 9px;
-                            background: mem-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                            height: 34px;
+                            border-radius: 8px;
+                            opacity: (root.running-repair == "" || root.running-repair == "memory") ? 1.0 : 0.55;
+                            background: mem-ta.pressed ? ThemeTokens.bg-active : (mem-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: ThemeTokens.border-strong;
+                            border-color: mem-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
                             mem-ta := TouchArea {
                                 enabled: root.running-repair == "";
+                                mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
                                 clicked => { root.run-safe-repair("memory"); }
                             }
@@ -158,41 +154,39 @@ export component MaintenanceView inherits Rectangle {
                 }
 
                 // 2. Verify Configs
-                Rectangle {
+                SurfaceCard {
                     horizontal-stretch: 1;
-                    border-radius: 14px;
-                    background: ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
 
                     VerticalLayout {
                         padding: 14px;
                         spacing: 10px;
 
                         Text {
-                            text: "Проверить целостность конфигурации";
-                            font-size: 14px;
-                            font-weight: 700;
+                            text: "Проверить конфиги";
+                            font-size: 13.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
                             vertical-stretch: 1;
-                            text: "Запускает автоматическую диагностику Verify-UniversalEngine.ps1 для проверки JSON-конфигов, кодировки UTF-8 и инвариантов движка.";
+                            text: "Запускает автоматическую диагностику Verify-UniversalEngine.ps1 для проверки JSON-конфигов, UTF-8 и инвариантов движка.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
                             wrap: word-wrap;
                         }
 
                         Rectangle {
-                            height: 36px;
-                            border-radius: 9px;
-                            background: ver-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                            height: 34px;
+                            border-radius: 8px;
+                            opacity: (root.running-repair == "" || root.running-repair == "verify") ? 1.0 : 0.55;
+                            background: ver-ta.pressed ? ThemeTokens.bg-active : (ver-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: ThemeTokens.border-strong;
+                            border-color: ver-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
                             ver-ta := TouchArea {
                                 enabled: root.running-repair == "";
+                                mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
                                 clicked => { root.run-safe-repair("verify"); }
                             }
@@ -210,21 +204,17 @@ export component MaintenanceView inherits Rectangle {
                 }
 
                 // 3. Repair Services
-                Rectangle {
+                SurfaceCard {
                     horizontal-stretch: 1;
-                    border-radius: 14px;
-                    background: ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
 
                     VerticalLayout {
                         padding: 14px;
                         spacing: 10px;
 
                         Text {
-                            text: "Восстановить службы Windows";
-                            font-size: 14px;
-                            font-weight: 700;
+                            text: "Восстановить службы";
+                            font-size: 13.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
@@ -237,14 +227,16 @@ export component MaintenanceView inherits Rectangle {
                         }
 
                         Rectangle {
-                            height: 36px;
-                            border-radius: 9px;
-                            background: svc-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                            height: 34px;
+                            border-radius: 8px;
+                            opacity: (root.running-repair == "" || root.running-repair == "services") ? 1.0 : 0.55;
+                            background: svc-ta.pressed ? ThemeTokens.bg-active : (svc-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: ThemeTokens.border-strong;
+                            border-color: svc-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
                             svc-ta := TouchArea {
                                 enabled: root.running-repair == "";
+                                mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
                                 clicked => { root.run-safe-repair("services"); }
                             }
@@ -265,36 +257,33 @@ export component MaintenanceView inherits Rectangle {
             // Deep Reset & Windows 11 Components (2x2 Grid with Confirmation Dialog)
             Text {
                 text: "Глубокий сброс и компоненты Windows 11 (с подтверждением)";
-                font-size: 13px;
-                font-weight: 700;
-                color: ThemeTokens.text-primary;
+                font-size: 12.5px;
+                font-weight: 600;
+                color: ThemeTokens.text-muted;
             }
 
             GridLayout {
                 spacing: 12px;
 
                 // 1. Flush GPU Shader Cache
-                Rectangle {
+                SurfaceCard {
                     row: 0;
                     col: 0;
-                    border-radius: 14px;
-                    background: ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
 
                     VerticalLayout {
                         padding: 14px;
-                        spacing: 8px;
+                        spacing: 10px;
 
                         Text {
                             text: "Очистить кэш шейдеров GPU";
-                            font-size: 14px;
-                            font-weight: 700;
+                            font-size: 13.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
-                            text: "Удаляет накопленные скомпилированные шейдеры DirectX, NVIDIA, AMD и Intel для устранения статтеров и графических артефактов.";
+                            vertical-stretch: 1;
+                            text: "Удаляет накопленные скомпилированные шейдеры DirectX, NVIDIA, AMD и Intel для устранения статтеров и артефактов.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
                             wrap: word-wrap;
@@ -303,12 +292,14 @@ export component MaintenanceView inherits Rectangle {
                         Rectangle {
                             height: 34px;
                             border-radius: 8px;
-                            background: ThemeTokens.status-warn-soft;
+                            opacity: (root.running-repair == "" || root.running-repair == "shaders") ? 1.0 : 0.55;
+                            background: sh-ta.pressed ? ThemeTokens.bg-active : (sh-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.status-warn-soft);
                             border-width: 1px;
                             border-color: ThemeTokens.status-warn-border;
 
-                            TouchArea {
+                            sh-ta := TouchArea {
                                 enabled: root.running-repair == "";
+                                mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
                                 clicked => { root.request-critical-repair("shaders"); }
                             }
@@ -316,7 +307,7 @@ export component MaintenanceView inherits Rectangle {
                             Text {
                                 text: root.running-repair == "shaders" ? "Выполняется…" : "Очистить шейдеры…";
                                 font-size: 12px;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: ThemeTokens.status-warn-text;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
@@ -326,26 +317,23 @@ export component MaintenanceView inherits Rectangle {
                 }
 
                 // 2. Reset DWM Display Stack
-                Rectangle {
+                SurfaceCard {
                     row: 0;
                     col: 1;
-                    border-radius: 14px;
-                    background: ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
 
                     VerticalLayout {
                         padding: 14px;
-                        spacing: 8px;
+                        spacing: 10px;
 
                         Text {
                             text: "Сбросить графический стек (DWM)";
-                            font-size: 14px;
-                            font-weight: 700;
+                            font-size: 13.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
+                            vertical-stretch: 1;
                             text: "Перезапускает композитор рабочего стола и переинициализирует вывод дисплея при зависании картинки или сбое HDR.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
@@ -355,12 +343,14 @@ export component MaintenanceView inherits Rectangle {
                         Rectangle {
                             height: 34px;
                             border-radius: 8px;
-                            background: ThemeTokens.status-warn-soft;
+                            opacity: (root.running-repair == "" || root.running-repair == "display") ? 1.0 : 0.55;
+                            background: dp-ta.pressed ? ThemeTokens.bg-active : (dp-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.status-warn-soft);
                             border-width: 1px;
                             border-color: ThemeTokens.status-warn-border;
 
-                            TouchArea {
+                            dp-ta := TouchArea {
                                 enabled: root.running-repair == "";
+                                mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
                                 clicked => { root.request-critical-repair("display"); }
                             }
@@ -368,7 +358,7 @@ export component MaintenanceView inherits Rectangle {
                             Text {
                                 text: root.running-repair == "display" ? "Выполняется…" : "Сбросить дисплей…";
                                 font-size: 12px;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: ThemeTokens.status-warn-text;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
@@ -378,26 +368,23 @@ export component MaintenanceView inherits Rectangle {
                 }
 
                 // 3. Apply Win11 Debloat
-                Rectangle {
+                SurfaceCard {
                     row: 1;
                     col: 0;
-                    border-radius: 14px;
-                    background: ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
 
                     VerticalLayout {
                         padding: 14px;
-                        spacing: 8px;
+                        spacing: 10px;
 
                         Text {
                             text: "Оптимизация Windows 11 (Debloat)";
-                            font-size: 14px;
-                            font-weight: 700;
+                            font-size: 13.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
+                            vertical-stretch: 1;
                             text: "Отключает избыточную телеметрию и фоновые виджеты Windows 11 с сохранением резервной копии для полного отката.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
@@ -407,12 +394,14 @@ export component MaintenanceView inherits Rectangle {
                         Rectangle {
                             height: 34px;
                             border-radius: 8px;
-                            background: ThemeTokens.status-danger-soft;
+                            opacity: (root.running-repair == "" || root.running-repair == "debloat") ? 1.0 : 0.55;
+                            background: db-ta.pressed ? ThemeTokens.bg-active : (db-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.status-danger-soft);
                             border-width: 1px;
                             border-color: ThemeTokens.status-danger-border;
 
-                            TouchArea {
+                            db-ta := TouchArea {
                                 enabled: root.running-repair == "";
+                                mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
                                 clicked => { root.request-critical-repair("debloat"); }
                             }
@@ -420,7 +409,7 @@ export component MaintenanceView inherits Rectangle {
                             Text {
                                 text: root.running-repair == "debloat" ? "Выполняется…" : "Применить Win11 Debloat…";
                                 font-size: 12px;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: ThemeTokens.status-danger-text;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
@@ -430,26 +419,23 @@ export component MaintenanceView inherits Rectangle {
                 }
 
                 // 4. Restore Win11 Debloat
-                Rectangle {
+                SurfaceCard {
                     row: 1;
                     col: 1;
-                    border-radius: 14px;
-                    background: ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
 
                     VerticalLayout {
                         padding: 14px;
-                        spacing: 8px;
+                        spacing: 10px;
 
                         Text {
                             text: "Откат Win11 Debloat";
-                            font-size: 14px;
-                            font-weight: 700;
+                            font-size: 13.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
+                            vertical-stretch: 1;
                             text: "Возвращает стандартные настройки Windows 11 для телеметрии, виджетов и вспомогательных системных компонентов.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
@@ -459,12 +445,14 @@ export component MaintenanceView inherits Rectangle {
                         Rectangle {
                             height: 34px;
                             border-radius: 8px;
-                            background: ThemeTokens.status-warn-soft;
+                            opacity: (root.running-repair == "" || root.running-repair == "restore_debloat") ? 1.0 : 0.55;
+                            background: rd-ta.pressed ? ThemeTokens.bg-active : (rd-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.status-warn-soft);
                             border-width: 1px;
                             border-color: ThemeTokens.status-warn-border;
 
-                            TouchArea {
+                            rd-ta := TouchArea {
                                 enabled: root.running-repair == "";
+                                mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
                                 clicked => { root.request-critical-repair("restore_debloat"); }
                             }
@@ -472,7 +460,7 @@ export component MaintenanceView inherits Rectangle {
                             Text {
                                 text: root.running-repair == "restore_debloat" ? "Выполняется…" : "Откатить Win11 Debloat…";
                                 font-size: 12px;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: ThemeTokens.status-warn-text;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;

@@ -1,5 +1,5 @@
-import { ScrollView } from "std-widgets.slint";
 import { ThemeTokens } from "theme.slint";
+import { ThemedScrollView, IconChevron } from "components.slint";
 
 export struct LogRowItem {
     timestamp: string,
@@ -14,74 +14,90 @@ export component LogConsole inherits Rectangle {
 
     callback clear-logs();
 
-    height: root.expanded ? 176px : 38px;
+    height: root.expanded ? 176px : 36px;
     background: ThemeTokens.bg-elevated;
-
-    Rectangle {
-        y: 0px;
-        width: 100%;
-        height: 1px;
-        background: ThemeTokens.border-subtle;
-    }
 
     VerticalLayout {
         spacing: 0px;
 
+        // Crisp 1px top divider (never overpainted by top bar)
+        Rectangle {
+            height: 1px;
+            width: 100%;
+            background: ThemeTokens.border-subtle;
+        }
+
         // Top Bar
         Rectangle {
-            height: 38px;
+            height: 35px;
             background: ThemeTokens.bg-elevated;
 
             HorizontalLayout {
-                padding-left: 14px;
-                padding-right: 14px;
+                padding-left: 12px;
+                padding-right: 12px;
                 spacing: 10px;
 
-                Rectangle {
-                    width: 210px;
-                    height: 30px;
-                    y: 4px;
-                    border-radius: 6px;
-                    background: exp-ta.has-hover ? ThemeTokens.bg-hover : transparent;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: 26px;
+                        border-radius: 6px;
+                        background: exp-ta.pressed ? ThemeTokens.bg-active : (exp-ta.has-hover ? ThemeTokens.bg-hover : transparent);
 
-                    exp-ta := TouchArea {
-                        accessible-role: button;
-                        accessible-label: "Журнал событий";
-                        clicked => {
-                            root.expanded = !root.expanded;
-                        }
-                    }
-
-                    HorizontalLayout {
-                        padding-left: 8px;
-                        padding-right: 8px;
-                        spacing: 8px;
-                        alignment: start;
-
-                        Text {
-                            text: root.expanded ? "▼ Журнал событий" : "▲ Журнал событий";
-                            font-size: 12px;
-                            font-weight: 700;
-                            color: ThemeTokens.text-primary;
-                            vertical-alignment: center;
+                        exp-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            accessible-role: button;
+                            accessible-label: "Журнал событий";
+                            clicked => {
+                                root.expanded = !root.expanded;
+                            }
                         }
 
-                        Rectangle {
-                            y: 5px;
-                            width: 34px;
-                            height: 20px;
-                            border-radius: 10px;
-                            background: ThemeTokens.bg-surface;
-                            border-width: 1px;
-                            border-color: ThemeTokens.border-subtle;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 7px;
+                            alignment: start;
+
+                            VerticalLayout {
+                                alignment: center;
+                                IconChevron {
+                                    size: 12px;
+                                    down: root.expanded;
+                                    color: ThemeTokens.text-secondary;
+                                }
+                            }
 
                             Text {
-                                text: "" + root.log-count;
-                                font-size: 11px;
+                                text: "Журнал событий";
+                                font-size: 12px;
                                 font-weight: 600;
-                                color: ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
+                                color: ThemeTokens.text-primary;
                                 vertical-alignment: center;
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    height: 18px;
+                                    border-radius: 9px;
+                                    background: ThemeTokens.bg-surface;
+                                    border-width: 1px;
+                                    border-color: ThemeTokens.border-subtle;
+
+                                    HorizontalLayout {
+                                        padding-left: 7px;
+                                        padding-right: 7px;
+                                        Text {
+                                            text: "" + root.log-count;
+                                            font-family: ThemeTokens.font-mono;
+                                            font-size: 10.5px;
+                                            font-weight: 600;
+                                            color: ThemeTokens.text-secondary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -89,68 +105,84 @@ export component LogConsole inherits Rectangle {
 
                 Rectangle { horizontal-stretch: 1; }
 
-                Rectangle {
-                    y: 5px;
-                    width: 84px;
-                    height: 28px;
-                    border-radius: 6px;
-                    background: clr-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-subtle;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: 24px;
+                        border-radius: 6px;
+                        opacity: root.log-count > 0 ? 1.0 : 0.5;
+                        background: clr-ta.pressed ? ThemeTokens.bg-active : (clr-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface);
+                        border-width: 1px;
+                        border-color: clr-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-                    clr-ta := TouchArea {
-                        enabled: root.log-count > 0;
-                        accessible-role: button;
-                        accessible-label: "Очистить журнал";
-                        clicked => {
-                            root.clear-logs();
+                        clr-ta := TouchArea {
+                            enabled: root.log-count > 0;
+                            mouse-cursor: root.log-count > 0 ? pointer : default;
+                            accessible-role: button;
+                            accessible-label: "Очистить журнал";
+                            clicked => {
+                                root.clear-logs();
+                            }
                         }
-                    }
 
-                    Text {
-                        text: "Очистить";
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: root.log-count > 0 ? ThemeTokens.text-secondary : ThemeTokens.text-muted;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            Text {
+                                text: "Очистить";
+                                font-size: 11px;
+                                font-weight: 500;
+                                color: root.log-count > 0 ? ThemeTokens.text-secondary : ThemeTokens.text-muted;
+                                vertical-alignment: center;
+                            }
+                        }
                     }
                 }
             }
         }
 
         if root.expanded : Rectangle {
+            height: 1px;
+            width: 100%;
+            background: ThemeTokens.border-subtle;
+        }
+
+        if root.expanded : Rectangle {
             vertical-stretch: 1;
             background: ThemeTokens.bg-surface;
 
-            Rectangle {
-                y: 0px;
-                width: 100%;
-                height: 1px;
-                background: ThemeTokens.border-subtle;
-            }
-
-            ScrollView {
+            ThemedScrollView {
                 width: 100%;
                 height: 100%;
 
                 VerticalLayout {
-                    padding: 10px;
+                    padding-left: 12px;
+                    padding-right: 16px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
                     spacing: 4px;
+
+                    if root.log-count == 0 : Text {
+                        text: "Журнал событий пуст.";
+                        font-size: 11.5px;
+                        color: ThemeTokens.text-muted;
+                    }
 
                     for entry in root.logs : HorizontalLayout {
                         spacing: 8px;
 
                         Text {
-                            width: 68px;
+                            width: 72px;
                             text: "[" + entry.timestamp + "]";
+                            font-family: ThemeTokens.font-mono;
                             font-size: 11px;
                             color: ThemeTokens.text-muted;
                         }
 
                         Text {
-                            width: 44px;
+                            width: 38px;
                             text: entry.level == "success" ? "OK" : (entry.level == "warn" ? "WARN" : (entry.level == "error" ? "ERR" : "INFO"));
+                            font-family: ThemeTokens.font-mono;
                             font-size: 11px;
                             font-weight: 700;
                             color: entry.level == "success" ? ThemeTokens.status-active-text : (entry.level == "warn" ? ThemeTokens.status-warn-text : (entry.level == "error" ? ThemeTokens.status-danger-text : ThemeTokens.accent-text));
@@ -159,7 +191,7 @@ export component LogConsole inherits Rectangle {
                         Text {
                             horizontal-stretch: 1;
                             text: entry.message;
-                            font-size: 11px;
+                            font-size: 11.5px;
                             color: ThemeTokens.text-primary;
                             wrap: word-wrap;
                         }
@@ -190,130 +222,155 @@ export component TooltipOverlay inherits Rectangle {
         }
     }
 
-    Rectangle {
-        width: 460px;
-        height: 236px;
-        border-radius: 14px;
-        background: ThemeTokens.bg-surface;
-        border-width: 1px;
-        border-color: ThemeTokens.border-strong;
-        drop-shadow-offset-y: ThemeTokens.shadow-dialog-offset-y;
-        drop-shadow-blur: ThemeTokens.shadow-dialog-blur;
-        drop-shadow-color: ThemeTokens.shadow-dialog-color;
-
-        TouchArea {}
-
-        VerticalLayout {
-            padding: 18px;
-            spacing: 10px;
-
-            HorizontalLayout {
-                spacing: 10px;
-
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 2px;
-
-                    Text {
-                        text: root.title;
-                        font-size: 15px;
-                        font-weight: 700;
-                        color: ThemeTokens.text-primary;
-                        overflow: elide;
-                    }
-
-                    Text {
-                        text: root.subtitle;
-                        font-size: 11px;
-                        color: ThemeTokens.text-muted;
-                    }
-                }
-
-                // Safety Verdict Badge
-                Rectangle {
-                    width: 138px;
-                    height: 24px;
-                    border-radius: 12px;
-                    background: root.safety-level == "safe" ? ThemeTokens.status-active-soft : (root.safety-level == "protected" ? ThemeTokens.status-danger-soft : ThemeTokens.status-warn-soft);
-                    border-width: 1px;
-                    border-color: root.safety-level == "safe" ? ThemeTokens.status-active-border : (root.safety-level == "protected" ? ThemeTokens.status-danger-border : ThemeTokens.status-warn-border);
-
-                    Text {
-                        text: root.safety-level == "safe" ? "Можно выключить" : (root.safety-level == "protected" ? "Нельзя выключать" : "По желанию");
-                        font-size: 11px;
-                        font-weight: 700;
-                        color: root.safety-level == "safe" ? ThemeTokens.status-active-text : (root.safety-level == "protected" ? ThemeTokens.status-danger-text : ThemeTokens.status-warn-text);
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-
-            Text {
-                text: root.summary;
-                font-size: 12px;
-                color: ThemeTokens.text-secondary;
-                wrap: word-wrap;
-            }
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
 
             Rectangle {
-                border-radius: 8px;
-                background: ThemeTokens.bg-elevated;
+                width: 472px;
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
                 border-width: 1px;
-                border-color: ThemeTokens.border-subtle;
+                border-color: ThemeTokens.border-strong;
+                drop-shadow-offset-y: ThemeTokens.shadow-dialog-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-dialog-blur;
+                drop-shadow-color: ThemeTokens.shadow-dialog-color;
+
+                if ThemeTokens.has-surface-top-highlight : Rectangle {
+                    x: 14px;
+                    y: 1px;
+                    width: max(0px, parent.width - 28px);
+                    height: 1px;
+                    background: ThemeTokens.surface-top-highlight;
+                }
+
+                TouchArea {}
 
                 VerticalLayout {
-                    padding: 10px;
-                    spacing: 2px;
+                    padding: 18px;
+                    spacing: 12px;
 
-                    Text {
-                        text: "Влияние отключения в Gaming Mode:";
-                        font-size: 11px;
-                        font-weight: 700;
-                        color: ThemeTokens.text-primary;
-                    }
+                    HorizontalLayout {
+                        spacing: 10px;
 
-                    Text {
-                        text: root.impact;
-                        font-size: 11px;
-                        color: ThemeTokens.text-secondary;
-                        wrap: word-wrap;
-                    }
-                }
-            }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
 
-            HorizontalLayout {
-                spacing: 10px;
+                            Text {
+                                text: root.title;
+                                font-size: 15px;
+                                font-weight: 600;
+                                color: ThemeTokens.text-primary;
+                                overflow: elide;
+                            }
 
-                Text {
-                    horizontal-stretch: 1;
-                    text: root.meta-note;
-                    font-size: 11px;
-                    color: ThemeTokens.text-muted;
-                    vertical-alignment: center;
-                }
+                            Text {
+                                text: root.subtitle;
+                                font-family: ThemeTokens.font-mono;
+                                font-size: 11px;
+                                color: ThemeTokens.text-muted;
+                            }
+                        }
 
-                Rectangle {
-                    width: 96px;
-                    height: 30px;
-                    border-radius: 8px;
-                    background: ThemeTokens.accent-solid;
+                        // Safety Verdict Badge
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 24px;
+                                border-radius: 12px;
+                                background: root.safety-level == "safe" ? ThemeTokens.status-active-soft : (root.safety-level == "protected" ? ThemeTokens.status-danger-soft : ThemeTokens.status-warn-soft);
+                                border-width: 1px;
+                                border-color: root.safety-level == "safe" ? ThemeTokens.status-active-border : (root.safety-level == "protected" ? ThemeTokens.status-danger-border : ThemeTokens.status-warn-border);
 
-                    TouchArea {
-                        accessible-role: button;
-                        accessible-label: "Закрыть описание";
-                        clicked => {
-                            root.close-tooltip();
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    Text {
+                                        text: root.safety-level == "safe" ? "Можно выключить" : (root.safety-level == "protected" ? "Нельзя выключать" : "По желанию");
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: root.safety-level == "safe" ? ThemeTokens.status-active-text : (root.safety-level == "protected" ? ThemeTokens.status-danger-text : ThemeTokens.status-warn-text);
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
                         }
                     }
 
                     Text {
-                        text: "Понятно";
-                        font-size: 12px;
-                        font-weight: 600;
-                        color: ThemeTokens.text-on-solid;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                        text: root.summary;
+                        font-size: 12.5px;
+                        color: ThemeTokens.text-secondary;
+                        wrap: word-wrap;
+                    }
+
+                    Rectangle {
+                        border-radius: 8px;
+                        background: ThemeTokens.bg-elevated;
+                        border-width: 1px;
+                        border-color: ThemeTokens.border-subtle;
+
+                        VerticalLayout {
+                            padding: 11px;
+                            spacing: 3px;
+
+                            Text {
+                                text: "Влияние отключения в Gaming Mode";
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: ThemeTokens.text-primary;
+                            }
+
+                            Text {
+                                text: root.impact;
+                                font-size: 11.5px;
+                                color: ThemeTokens.text-secondary;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Text {
+                            horizontal-stretch: 1;
+                            text: root.meta-note;
+                            font-family: ThemeTokens.font-mono;
+                            font-size: 11px;
+                            color: ThemeTokens.text-muted;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        Rectangle {
+                            height: 32px;
+                            border-radius: 7px;
+                            background: ok-ta.pressed ? ThemeTokens.accent-solid-active : (ok-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid);
+
+                            ok-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                accessible-role: button;
+                                accessible-label: "Закрыть описание";
+                                clicked => {
+                                    root.close-tooltip();
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                Text {
+                                    text: "Понятно";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-on-solid;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -341,88 +398,109 @@ export component ConfirmDialogOverlay inherits Rectangle {
         }
     }
 
-    Rectangle {
-        width: 440px;
-        height: 210px;
-        border-radius: 14px;
-        background: ThemeTokens.bg-surface;
-        border-width: 1px;
-        border-color: ThemeTokens.border-strong;
-        drop-shadow-offset-y: ThemeTokens.shadow-dialog-offset-y;
-        drop-shadow-blur: ThemeTokens.shadow-dialog-blur;
-        drop-shadow-color: ThemeTokens.shadow-dialog-color;
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
 
-        TouchArea {}
+            Rectangle {
+                width: 448px;
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-strong;
+                drop-shadow-offset-y: ThemeTokens.shadow-dialog-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-dialog-blur;
+                drop-shadow-color: ThemeTokens.shadow-dialog-color;
 
-        VerticalLayout {
-            padding: 20px;
-            spacing: 12px;
-
-            Text {
-                text: root.title;
-                font-size: 16px;
-                font-weight: 700;
-                color: ThemeTokens.text-primary;
-                wrap: word-wrap;
-            }
-
-            Text {
-                vertical-stretch: 1;
-                text: root.description;
-                font-size: 13px;
-                color: ThemeTokens.text-secondary;
-                wrap: word-wrap;
-            }
-
-            HorizontalLayout {
-                spacing: 10px;
-                alignment: end;
-
-                Rectangle {
-                    width: 110px;
-                    height: 36px;
-                    border-radius: 8px;
-                    background: ThemeTokens.bg-elevated;
-                    border-width: 1px;
-                    border-color: ThemeTokens.border-strong;
-
-                    TouchArea {
-                        accessible-role: button;
-                        clicked => {
-                            root.confirm-cancelled();
-                        }
-                    }
-
-                    Text {
-                        text: root.cancel-label;
-                        font-size: 12px;
-                        font-weight: 600;
-                        color: ThemeTokens.text-primary;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                if ThemeTokens.has-surface-top-highlight : Rectangle {
+                    x: 14px;
+                    y: 1px;
+                    width: max(0px, parent.width - 28px);
+                    height: 1px;
+                    background: ThemeTokens.surface-top-highlight;
                 }
 
-                Rectangle {
-                    width: 170px;
-                    height: 36px;
-                    border-radius: 8px;
-                    background: root.tone == "danger" ? ThemeTokens.status-danger-solid : ThemeTokens.accent-solid;
+                TouchArea {}
 
-                    TouchArea {
-                        accessible-role: button;
-                        clicked => {
-                            root.confirm-accepted();
-                        }
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+
+                    Text {
+                        text: root.title;
+                        font-size: 15.5px;
+                        font-weight: 600;
+                        color: ThemeTokens.text-primary;
+                        wrap: word-wrap;
                     }
 
                     Text {
-                        text: root.confirm-label;
-                        font-size: 12px;
-                        font-weight: 700;
-                        color: ThemeTokens.text-on-solid;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                        text: root.description;
+                        font-size: 12.5px;
+                        color: ThemeTokens.text-secondary;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        padding-top: 4px;
+                        spacing: 8px;
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        Rectangle {
+                            height: 34px;
+                            border-radius: 8px;
+                            background: cnl-ta.pressed ? ThemeTokens.bg-active : (cnl-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
+                            border-width: 1px;
+                            border-color: cnl-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
+
+                            cnl-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                accessible-role: button;
+                                clicked => {
+                                    root.confirm-cancelled();
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                Text {
+                                    text: root.cancel-label;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            height: 34px;
+                            border-radius: 8px;
+                            background: root.tone == "danger" ? (acc-ta.has-hover ? ThemeTokens.status-danger-solid-hover : ThemeTokens.status-danger-solid) : (acc-ta.pressed ? ThemeTokens.accent-solid-active : (acc-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid));
+
+                            acc-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                accessible-role: button;
+                                clicked => {
+                                    root.confirm-accepted();
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                Text {
+                                    text: root.confirm-label;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-on-solid;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
                     }
                 }
             }

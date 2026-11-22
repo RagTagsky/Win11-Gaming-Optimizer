@@ -1,5 +1,5 @@
-import { ScrollView, LineEdit } from "std-widgets.slint";
 import { ThemeTokens } from "theme.slint";
+import { SurfaceCard, ThemedScrollView, ThemedLineEdit, IconLock } from "components.slint";
 
 export struct ServiceRowItem {
     name: string,
@@ -46,15 +46,7 @@ export component ServicesView inherits Rectangle {
         spacing: 12px;
 
         // Top Filter & Feature Packs Card
-        Rectangle {
-            border-radius: 14px;
-            background: ThemeTokens.bg-surface;
-            border-width: 1px;
-            border-color: ThemeTokens.border-subtle;
-            drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
-            drop-shadow-blur: ThemeTokens.shadow-card-blur;
-            drop-shadow-color: ThemeTokens.shadow-card-color;
-
+        SurfaceCard {
             VerticalLayout {
                 padding: 14px;
                 spacing: 10px;
@@ -68,97 +60,110 @@ export component ServicesView inherits Rectangle {
 
                         Text {
                             text: "Службы Windows";
-                            font-size: 15px;
-                            font-weight: 700;
+                            font-size: 14.5px;
+                            font-weight: 600;
                             color: ThemeTokens.text-primary;
                         }
 
                         Text {
-                            text: "Выберите для каждой службы: работает «Без утилки» или временно «Выкл. в Gaming Mode». Нажмите (i), чтобы открыть описание из справочника.";
+                            text: "Выберите режим для каждой службы: работает «Без утилки» или временно «Выкл. в Gaming Mode». Нажмите (i) для описания.";
                             font-size: 12px;
                             color: ThemeTokens.text-secondary;
                             wrap: word-wrap;
                         }
                     }
 
-                    Rectangle {
-                        width: 96px;
-                        height: 32px;
-                        border-radius: 8px;
-                        background: ref-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
-                        border-width: 1px;
-                        border-color: ThemeTokens.border-strong;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            height: 32px;
+                            border-radius: 7px;
+                            background: ref-ta.pressed ? ThemeTokens.bg-active : (ref-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
+                            border-width: 1px;
+                            border-color: ref-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-                        ref-ta := TouchArea {
-                            accessible-role: button;
-                            accessible-label: "Обновить список служб";
-                            clicked => {
-                                root.refresh-services();
+                            ref-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                accessible-role: button;
+                                accessible-label: "Обновить список служб";
+                                clicked => {
+                                    root.refresh-services();
+                                }
                             }
-                        }
 
-                        Text {
-                            text: "Обновить";
-                            font-size: 12px;
-                            font-weight: 600;
-                            color: ThemeTokens.text-primary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: "Обновить";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-primary;
+                                    vertical-alignment: center;
+                                }
+                            }
                         }
                     }
                 }
 
                 // Active Wi-Fi Warning Banner
                 if root.show-wifi-warning : Rectangle {
-                    height: 44px;
-                    border-radius: 10px;
+                    border-radius: 8px;
                     background: ThemeTokens.status-warn-soft;
                     border-width: 1px;
                     border-color: ThemeTokens.status-warn-border;
 
                     HorizontalLayout {
                         padding-left: 12px;
-                        padding-right: 12px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
                         spacing: 10px;
 
                         Text {
                             horizontal-stretch: 1;
                             text: "Сейчас ПК подключён по Wi-Fi, но служба Wi-Fi отмечена как «Выкл. в Gaming Mode».";
                             font-size: 12px;
-                            font-weight: 600;
+                            font-weight: 500;
                             color: ThemeTokens.status-warn-text;
                             vertical-alignment: center;
+                            wrap: word-wrap;
                         }
 
-                        Rectangle {
-                            y: 7px;
-                            width: 176px;
-                            height: 30px;
-                            border-radius: 8px;
-                            background: ThemeTokens.bg-surface;
-                            border-width: 1px;
-                            border-color: ThemeTokens.status-warn-border;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 28px;
+                                border-radius: 7px;
+                                background: wifi-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface;
+                                border-width: 1px;
+                                border-color: ThemeTokens.status-warn-border;
 
-                            TouchArea {
-                                accessible-role: button;
-                                clicked => {
-                                    root.toggle-feature-pack("wifi", true);
+                                wifi-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    accessible-role: button;
+                                    clicked => {
+                                        root.toggle-feature-pack("wifi", true);
+                                    }
                                 }
-                            }
 
-                            Text {
-                                text: "Оставить Wi-Fi включённым";
-                                font-size: 11px;
-                                font-weight: 700;
-                                color: ThemeTokens.status-warn-text;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    Text {
+                                        text: "Оставить Wi-Fi включённым";
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: ThemeTokens.status-warn-text;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
-                // Feature Packs Bar
+                // Feature Packs Bar (clean dot-status chips that never truncate at 860px)
                 HorizontalLayout {
                     spacing: 6px;
 
@@ -174,11 +179,12 @@ export component ServicesView inherits Rectangle {
                         horizontal-stretch: 1;
                         height: 28px;
                         border-radius: 7px;
-                        background: pack.keep-enabled-in-game ? ThemeTokens.status-active-soft : ThemeTokens.bg-elevated;
+                        background: pack.keep-enabled-in-game ? ThemeTokens.status-active-soft : (pk-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                         border-width: 1px;
-                        border-color: pack.keep-enabled-in-game ? ThemeTokens.status-active-border : ThemeTokens.border-subtle;
+                        border-color: pack.keep-enabled-in-game ? ThemeTokens.status-active-border : (pk-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                        TouchArea {
+                        pk-ta := TouchArea {
+                            mouse-cursor: pointer;
                             accessible-role: button;
                             accessible-label: pack.title;
                             clicked => {
@@ -186,14 +192,30 @@ export component ServicesView inherits Rectangle {
                             }
                         }
 
-                        Text {
-                            text: pack.short-title + (pack.keep-enabled-in-game ? " · Вкл" : " · Выкл");
-                            font-size: 11px;
-                            font-weight: 600;
-                            color: pack.keep-enabled-in-game ? ThemeTokens.status-active-text : ThemeTokens.text-secondary;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            overflow: elide;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 5px;
+                            alignment: center;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 6px;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: pack.keep-enabled-in-game ? ThemeTokens.status-active-text : ThemeTokens.text-muted;
+                                }
+                            }
+
+                            Text {
+                                text: pack.short-title;
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: pack.keep-enabled-in-game ? ThemeTokens.status-active-text : ThemeTokens.text-secondary;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
                         }
                     }
                 }
@@ -203,81 +225,91 @@ export component ServicesView inherits Rectangle {
                     spacing: 10px;
 
                     HorizontalLayout {
-                        spacing: 4px;
+                        spacing: 5px;
 
                         Rectangle {
-                            width: 92px;
                             height: 32px;
-                            border-radius: 8px;
-                            background: root.filter-mode == "all" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: root.filter-mode == "all" ? ThemeTokens.accent-solid : (sf0-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.filter-mode == "all" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+                            border-color: root.filter-mode == "all" ? ThemeTokens.accent-solid : (sf0-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+                            sf0-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => { root.filter-changed("all"); }
                             }
 
-                            Text {
-                                text: "Все (" + root.total-count + ")";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: root.filter-mode == "all" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 11px;
+                                padding-right: 11px;
+                                Text {
+                                    text: "Все (" + root.total-count + ")";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.filter-mode == "all" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
 
                         Rectangle {
-                            width: 178px;
                             height: 32px;
-                            border-radius: 8px;
-                            background: root.filter-mode == "disable" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: root.filter-mode == "disable" ? ThemeTokens.accent-solid : (sf1-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.filter-mode == "disable" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+                            border-color: root.filter-mode == "disable" ? ThemeTokens.accent-solid : (sf1-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+                            sf1-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => { root.filter-changed("disable"); }
                             }
 
-                            Text {
-                                text: "Выкл. в Gaming Mode (" + root.disabled-count + ")";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: root.filter-mode == "disable" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 11px;
+                                padding-right: 11px;
+                                Text {
+                                    text: "Выкл. в Gaming Mode (" + root.disabled-count + ")";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.filter-mode == "disable" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
 
                         Rectangle {
-                            width: 130px;
                             height: 32px;
-                            border-radius: 8px;
-                            background: root.filter-mode == "normal" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: root.filter-mode == "normal" ? ThemeTokens.accent-solid : (sf2-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.filter-mode == "normal" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+                            border-color: root.filter-mode == "normal" ? ThemeTokens.accent-solid : (sf2-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+                            sf2-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => { root.filter-changed("normal"); }
                             }
 
-                            Text {
-                                text: "Без утилки (" + root.normal-count + ")";
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: root.filter-mode == "normal" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 11px;
+                                padding-right: 11px;
+                                Text {
+                                    text: "Без утилки (" + root.normal-count + ")";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.filter-mode == "normal" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
                     }
 
-                    LineEdit {
+                    ThemedLineEdit {
                         horizontal-stretch: 1;
                         height: 32px;
+                        show-search-icon: true;
                         placeholder-text: "Найти службу по названию, системному имени или описанию…";
                         text <=> root.search-query;
                         edited(val) => {
@@ -288,57 +320,106 @@ export component ServicesView inherits Rectangle {
 
                 // Legend + Running Counter
                 HorizontalLayout {
-                    spacing: 14px;
+                    spacing: 12px;
 
                     HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-active-text; }
-                        Text { text: "Можно выключить"; font-size: 11px; color: ThemeTokens.text-muted; }
-                    }
+                        spacing: 14px;
+                        alignment: start;
 
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-warn-text; }
-                        Text { text: "По желанию"; font-size: 11px; color: ThemeTokens.text-muted; }
-                    }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: ThemeTokens.status-active-text; }
+                            }
+                            Text { text: "Можно выключить"; font-size: 11px; color: ThemeTokens.text-muted; vertical-alignment: center; }
+                        }
 
-                    HorizontalLayout {
-                        spacing: 6px;
-                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-danger-text; }
-                        Text { text: "Нельзя выключать"; font-size: 11px; color: ThemeTokens.text-muted; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: ThemeTokens.status-warn-text; }
+                            }
+                            Text { text: "По желанию"; font-size: 11px; color: ThemeTokens.text-muted; vertical-alignment: center; }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 7px; height: 7px; border-radius: 3.5px; background: ThemeTokens.status-danger-text; }
+                            }
+                            Text { text: "Нельзя выключать"; font-size: 11px; color: ThemeTokens.text-muted; vertical-alignment: center; }
+                        }
                     }
 
                     Rectangle { horizontal-stretch: 1; }
 
-                    Text {
-                        text: "Работает в фоне: " + root.running-count;
-                        font-size: 11px;
-                        color: ThemeTokens.text-muted;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: "Работает в фоне:";
+                            font-size: 11px;
+                            color: ThemeTokens.text-muted;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.running-count;
+                            font-family: ThemeTokens.font-mono;
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: ThemeTokens.text-secondary;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }
         }
 
         // Scrollable Services List
-        Rectangle {
+        SurfaceCard {
             vertical-stretch: 1;
-            border-radius: 14px;
-            background: ThemeTokens.bg-surface;
-            border-width: 1px;
-            border-color: ThemeTokens.border-subtle;
 
-            ScrollView {
+            ThemedScrollView {
                 width: 100%;
                 height: 100%;
 
                 VerticalLayout {
-                    padding: 8px;
-                    spacing: 4px;
+                    padding-left: 8px;
+                    padding-right: 16px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 5px;
+
+                    if root.items.length == 0 : Rectangle {
+                        height: 96px;
+                        background: transparent;
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 4px;
+
+                            Text {
+                                text: "Службы по текущему фильтру не найдены";
+                                font-size: 13px;
+                                font-weight: 600;
+                                color: ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                            }
+
+                            Text {
+                                text: "Очистите строку поиска или переключите фильтр списка.";
+                                font-size: 11.5px;
+                                color: ThemeTokens.text-muted;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
 
                     for svc in root.items : Rectangle {
-                        height: 54px;
-                        border-radius: 10px;
+                        height: 58px;
+                        border-radius: 8px;
                         background: ThemeTokens.bg-elevated;
                         border-width: 1px;
                         border-color: ThemeTokens.border-subtle;
@@ -349,177 +430,211 @@ export component ServicesView inherits Rectangle {
                             spacing: 10px;
 
                             // Safety dot
-                            Rectangle {
-                                y: 22px;
-                                width: 8px;
-                                height: 8px;
-                                border-radius: 4px;
-                                background: svc.safety-level == "safe" ? ThemeTokens.status-active-text : (svc.safety-level == "protected" ? ThemeTokens.status-danger-text : ThemeTokens.status-warn-text);
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: svc.safety-level == "safe" ? ThemeTokens.status-active-text : (svc.safety-level == "protected" ? ThemeTokens.status-danger-text : ThemeTokens.status-warn-text);
+                                }
                             }
 
                             // Name + Summary
                             VerticalLayout {
                                 horizontal-stretch: 1;
                                 alignment: center;
-                                spacing: 2px;
+                                spacing: 3px;
 
                                 HorizontalLayout {
-                                    spacing: 8px;
+                                    spacing: 7px;
                                     alignment: start;
 
                                     Text {
                                         text: svc.display-name;
                                         font-size: 13px;
-                                        font-weight: 700;
+                                        font-weight: 600;
                                         color: ThemeTokens.text-primary;
                                         vertical-alignment: center;
+                                        overflow: elide;
                                     }
 
                                     Text {
                                         text: svc.name;
+                                        font-family: ThemeTokens.font-mono;
                                         font-size: 11px;
                                         color: ThemeTokens.text-muted;
                                         vertical-alignment: center;
+                                        max-width: 190px;
+                                        overflow: elide;
                                     }
 
-                                    if svc.status-label != "" : Rectangle {
-                                        height: 18px;
-                                        width: 86px;
-                                        border-radius: 9px;
-                                        background: svc.is-running ? ThemeTokens.status-active-soft : ThemeTokens.bg-surface;
-                                        border-width: 1px;
-                                        border-color: svc.is-running ? ThemeTokens.status-active-border : ThemeTokens.border-subtle;
+                                    if svc.status-label != "" : VerticalLayout {
+                                        alignment: center;
+                                        Rectangle {
+                                            height: 19px;
+                                            border-radius: 9.5px;
+                                            background: svc.is-running ? ThemeTokens.status-active-soft : ThemeTokens.bg-surface;
+                                            border-width: 1px;
+                                            border-color: svc.is-running ? ThemeTokens.status-active-border : ThemeTokens.border-subtle;
 
-                                        Text {
-                                            text: svc.status-label;
-                                            font-size: 10px;
-                                            font-weight: 600;
-                                            color: svc.is-running ? ThemeTokens.status-active-text : ThemeTokens.text-muted;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
+                                            HorizontalLayout {
+                                                padding-left: 7px;
+                                                padding-right: 7px;
+                                                Text {
+                                                    text: svc.status-label;
+                                                    font-size: 10px;
+                                                    font-weight: 600;
+                                                    color: svc.is-running ? ThemeTokens.status-active-text : ThemeTokens.text-muted;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
                                         }
                                     }
                                 }
 
                                 Text {
                                     text: svc.summary-ru;
-                                    font-size: 11px;
+                                    font-size: 11.5px;
                                     color: ThemeTokens.text-secondary;
                                     overflow: elide;
                                 }
                             }
 
                             // Tooltip (i) Button
-                            Rectangle {
-                                y: 13px;
-                                width: 28px;
-                                height: 28px;
-                                border-radius: 6px;
-                                background: info-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface;
-                                border-width: 1px;
-                                border-color: ThemeTokens.border-subtle;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 28px;
+                                    height: 28px;
+                                    border-radius: 6px;
+                                    background: info-ta.pressed ? ThemeTokens.bg-active : (info-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface);
+                                    border-width: 1px;
+                                    border-color: info-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-                                info-ta := TouchArea {
-                                    accessible-role: button;
-                                    accessible-label: "Описание службы " + svc.display-name;
-                                    clicked => {
-                                        root.show-service-tooltip(
-                                            svc.display-name,
-                                            svc.name,
-                                            svc.safety-level,
-                                            svc.summary-ru,
-                                            svc.can-disable-hint,
-                                            svc.status-label != "" ? ("Статус: " + svc.status-label) : "Служба Windows"
-                                        );
+                                    info-ta := TouchArea {
+                                        mouse-cursor: pointer;
+                                        accessible-role: button;
+                                        accessible-label: "Описание службы " + svc.display-name;
+                                        clicked => {
+                                            root.show-service-tooltip(
+                                                svc.display-name,
+                                                svc.name,
+                                                svc.safety-level,
+                                                svc.summary-ru,
+                                                svc.can-disable-hint,
+                                                svc.status-label != "" ? ("Статус: " + svc.status-label) : "Служба Windows"
+                                            );
+                                        }
                                     }
-                                }
 
-                                Text {
-                                    text: "i";
-                                    font-size: 12px;
-                                    font-weight: 700;
-                                    color: ThemeTokens.accent-text;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
+                                    Text {
+                                        text: "i";
+                                        font-family: ThemeTokens.font-mono;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        color: ThemeTokens.accent-text;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
 
                             // 2-Mode Control or Core Lock Badge
-                            if svc.is-core-locked : Rectangle {
-                                y: 12px;
-                                width: 136px;
-                                height: 30px;
-                                border-radius: 8px;
-                                background: ThemeTokens.bg-surface;
-                                border-width: 1px;
-                                border-color: ThemeTokens.border-subtle;
+                            if svc.is-core-locked : VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 234px;
+                                    height: 30px;
+                                    border-radius: 7px;
+                                    background: ThemeTokens.bg-app;
+                                    border-width: 1px;
+                                    border-color: ThemeTokens.border-subtle;
 
-                                Text {
-                                    text: "🔒 Защищено ОС";
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                    color: ThemeTokens.text-secondary;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 11px;
+                                        spacing: 6px;
+                                        alignment: center;
+
+                                        VerticalLayout {
+                                            alignment: center;
+                                            IconLock {
+                                                size: 12px;
+                                                color: ThemeTokens.text-muted;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "Защищено ОС";
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            color: ThemeTokens.text-secondary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
                                 }
                             }
 
-                            if !svc.is-core-locked : HorizontalLayout {
-                                spacing: 4px;
+                            if !svc.is-core-locked : VerticalLayout {
+                                alignment: center;
+                                HorizontalLayout {
+                                    spacing: 4px;
 
-                                Rectangle {
-                                    y: 12px;
-                                    width: 96px;
-                                    height: 30px;
-                                    border-radius: 8px;
-                                    background: !svc.disable-in-gaming ? ThemeTokens.bg-surface : transparent;
-                                    border-width: 1px;
-                                    border-color: !svc.disable-in-gaming ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
+                                    Rectangle {
+                                        width: 92px;
+                                        height: 30px;
+                                        border-radius: 7px;
+                                        background: !svc.disable-in-gaming ? ThemeTokens.bg-surface : (skeep-ta.has-hover ? ThemeTokens.bg-hover : transparent);
+                                        border-width: 1px;
+                                        border-color: !svc.disable-in-gaming ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-                                    TouchArea {
-                                        accessible-role: button;
-                                        clicked => {
-                                            if (svc.disable-in-gaming) {
-                                                root.set-service-mode(svc.name, false);
+                                        skeep-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            accessible-role: button;
+                                            clicked => {
+                                                if (svc.disable-in-gaming) {
+                                                    root.set-service-mode(svc.name, false);
+                                                }
                                             }
+                                        }
+
+                                        Text {
+                                            text: "Без утилки";
+                                            font-size: 11px;
+                                            font-weight: !svc.disable-in-gaming ? 600 : 500;
+                                            color: !svc.disable-in-gaming ? ThemeTokens.text-primary : ThemeTokens.text-muted;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
                                         }
                                     }
 
-                                    Text {
-                                        text: "Без утилки";
-                                        font-size: 11px;
-                                        font-weight: !svc.disable-in-gaming ? 700 : 500;
-                                        color: !svc.disable-in-gaming ? ThemeTokens.text-primary : ThemeTokens.text-muted;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                    }
-                                }
+                                    Rectangle {
+                                        width: 138px;
+                                        height: 30px;
+                                        border-radius: 7px;
+                                        background: svc.disable-in-gaming ? ThemeTokens.status-warn-soft : (sdis-ta.has-hover ? ThemeTokens.bg-hover : transparent);
+                                        border-width: 1px;
+                                        border-color: svc.disable-in-gaming ? ThemeTokens.status-warn-border : ThemeTokens.border-subtle;
 
-                                Rectangle {
-                                    y: 12px;
-                                    width: 142px;
-                                    height: 30px;
-                                    border-radius: 8px;
-                                    background: svc.disable-in-gaming ? ThemeTokens.status-warn-soft : transparent;
-                                    border-width: 1px;
-                                    border-color: svc.disable-in-gaming ? ThemeTokens.status-warn-border : ThemeTokens.border-subtle;
-
-                                    TouchArea {
-                                        accessible-role: button;
-                                        clicked => {
-                                            if (!svc.disable-in-gaming) {
-                                                root.set-service-mode(svc.name, true);
+                                        sdis-ta := TouchArea {
+                                            mouse-cursor: pointer;
+                                            accessible-role: button;
+                                            clicked => {
+                                                if (!svc.disable-in-gaming) {
+                                                    root.set-service-mode(svc.name, true);
+                                                }
                                             }
                                         }
-                                    }
 
-                                    Text {
-                                        text: "Выкл. в Gaming Mode";
-                                        font-size: 11px;
-                                        font-weight: svc.disable-in-gaming ? 700 : 500;
-                                        color: svc.disable-in-gaming ? ThemeTokens.status-warn-text : ThemeTokens.text-muted;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
+                                        Text {
+                                            text: "Выкл. в Gaming Mode";
+                                            font-size: 11px;
+                                            font-weight: svc.disable-in-gaming ? 600 : 500;
+                                            color: svc.disable-in-gaming ? ThemeTokens.status-warn-text : ThemeTokens.text-muted;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
                                     }
                                 }
                             }

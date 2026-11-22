@@ -40,7 +40,8 @@ function Register-Tier4Tests {
             $candidates = @($usbDir, (Join-Path $ctx.Sandbox.EnvRw "ProgramFiles\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "ProgramData\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "LocalAppData\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "LocalAppData\UltraGamingMode\Runtime"))
             $rtRoot = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ "UltraGamingMode.ps1") } | Select-Object -First 1
             Assert-E2ETrue ($null -ne $rtRoot) "Runtime assets must materialize in sandbox"
-            Assert-E2ETrue (Test-Path -LiteralPath (Join-Path $rtRoot "docs\teardown\index.html")) "Teardown HTML must materialize"
+            Assert-E2ETrue (Test-Path -LiteralPath (Join-Path $rtRoot "Core\SystemOptimizer.ps1")) "Core/SystemOptimizer.ps1 must materialize"
+            Assert-E2ETrue (-not (Test-Path -LiteralPath (Join-Path $rtRoot "docs"))) "Removed docs/ directory must not materialize"
 
             $boms = Find-Utf8BomFiles -RootDir $rtRoot -Extensions @(".ps1", ".json")
             Assert-E2EEqual 0 $boms.Count "Materialized .ps1/.json must be UTF-8 without BOM"
@@ -194,18 +195,51 @@ Write-Output 'WORKLOAD_RESTORE_OK'
         }
     }
 
-    Register-E2ETest -Id "T4-05" -Tier 4 -Feature "F7" -Name "Standalone 3D teardown HTML copied into empty folder runs offline walkthrough via CDP" -Artifact "docs/teardown/index.html" -Body {
+    Register-E2ETest -Id "T4-05" -Tier 4 -Feature "F7" -Name "Offscreen Slint render walkthrough dumps distinct frames across all 8 themes, 5 tabs, and 860x600 viewport" -Artifact "src/ui_bridge.rs" -Body {
         param($ctx)
-        $srcHtml = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
-        Assert-E2ETrue (Test-Path -LiteralPath $srcHtml) "docs/teardown/index.html must exist"
-        $isoDir = Join-Path $ctx.Sandbox.Root ("teardown_isolated_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
-        New-Item -ItemType Directory -Path $isoDir -Force | Out-Null
-        $isoHtml = Join-Path $isoDir "index.html"
-        Copy-Item -LiteralPath $srcHtml -Destination $isoHtml -Force
+        $dumpDir = Join-Path $ctx.Sandbox.Root ("ui_render_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
+        New-Item -ItemType Directory -Path $dumpDir -Force | Out-Null
 
-        $cdp = Invoke-TeardownCdpVerification -HtmlPath $isoHtml -UserDataDir $ctx.Sandbox.BrowserProfile
-        Assert-E2EEqual 0 $cdp.ExitCode "Standalone isolated CDP walkthrough must pass"
-        Assert-E2ETrue $cdp.Result.ok "All interactive & offline assertions must pass on standalone file copy"
+        $cargoExe = (Get-Command cargo.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+        if ([string]::IsNullOrWhiteSpace($cargoExe)) {
+            $fallback = Join-Path $env:USERPROFILE ".cargo\bin\cargo.exe"
+            if (Test-Path -LiteralPath $fallback) { $cargoExe = $fallback }
+        }
+        Assert-E2ETrue (-not [string]::IsNullOrWhiteSpace($cargoExe)) "cargo.exe must be available"
+
+        $prevDump = $env:UGM_DUMP_SCREENSHOTS
+        Push-Location $ctx.RepoRoot
+        try {
+            $env:UGM_DUMP_SCREENSHOTS = $dumpDir
+            $out = & $cargoExe test --color never ui_bridge::tests::test_render_all_8_themes_and_views_offscreen -- --exact 2>&1
+            Assert-E2EEqual 0 $LASTEXITCODE ("Offscreen render walkthrough failed: " + ($out -join "`n"))
+            Assert-E2EMatch ($out -join "`n") 'test result: ok\. 1 passed' "Offscreen render test must actually execute 1 test"
+        } finally {
+            if ($null -eq $prevDump) {
+                Remove-Item Env:UGM_DUMP_SCREENSHOTS -ErrorAction SilentlyContinue
+            } else {
+                $env:UGM_DUMP_SCREENSHOTS = $prevDump
+            }
+            Pop-Location
+        }
+
+        $bmps = @(Get-ChildItem -LiteralPath $dumpDir -Filter "*.bmp")
+        Assert-E2EEqual 25 $bmps.Count "Expected 25 rendered BMP frames (8 dash + 8 settings + 9 tab/viewport checks)"
+        foreach ($f in $bmps) {
+            Assert-E2ETrue ($f.Length -gt 1000000) "Rendered BMP $($f.Name) looks truncated ($($f.Length) bytes)"
+        }
+
+        $themeHashes = @{}
+        foreach ($tid in @("dark", "oled-obsidian", "emerald-ops", "graphite-amber", "midnight-violet", "light", "daylight-warm", "frost-slate")) {
+            $p = Join-Path $dumpDir ("dash_{0}.bmp" -f $tid)
+            Assert-E2ETrue (Test-Path -LiteralPath $p) "Missing rendered dashboard frame for theme $tid"
+            $h = Get-FileSha256Lower $p
+            Assert-E2ETrue (-not $themeHashes.ContainsKey($h)) "Theme '$tid' rendered identical frame to '$($themeHashes[$h])'"
+            $themeHashes[$h] = $tid
+        }
+        $hTab0 = Get-FileSha256Lower (Join-Path $dumpDir "tab0_dark_960.bmp")
+        $hTab3 = Get-FileSha256Lower (Join-Path $dumpDir "tab3_dark_960.bmp")
+        Assert-E2ETrue ($hTab0 -ne $hTab3) "Dashboard and Settings tabs must render distinct frames"
     }
 
     Register-E2ETest -Id "T4-06" -Tier 4 -Feature "F8" -Name "Full release verification: Verify-UniversalEngine, cargo test, checksums, BOM, and hygiene" -Artifact ".bin/SHA256SUMS.txt" -Body {

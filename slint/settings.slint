@@ -1,15 +1,29 @@
-import { ScrollView } from "std-widgets.slint";
 import { ThemeTokens, ThemeCardItem } from "theme.slint";
+import { SurfaceCard, ThemedScrollView, ThemedSwitch, IconCheck } from "components.slint";
 
 component ThemePreviewCard inherits Rectangle {
     in property <ThemeCardItem> card;
     callback clicked-theme(string);
 
-    height: 112px;
-    border-radius: 12px;
-    background: card.is-active ? ThemeTokens.accent-card-tint : ThemeTokens.bg-elevated;
-    border-width: card.is-active ? 2px : 1px;
-    border-color: card.is-active ? ThemeTokens.accent-solid : (ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
+    height: 114px;
+    border-radius: 10px;
+    background: ta.pressed ? ThemeTokens.bg-active : (ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
+    border-width: (card.is-active || fs.has-focus) ? 2px : 1px;
+    border-color: fs.has-focus ? ThemeTokens.focus-ring : (card.is-active ? ThemeTokens.accent-solid : (ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle));
+    drop-shadow-offset-y: ta.has-hover ? ThemeTokens.shadow-card-hover-offset-y : 0px;
+    drop-shadow-blur: ta.has-hover ? ThemeTokens.shadow-card-hover-blur : 0px;
+    drop-shadow-color: ta.has-hover ? ThemeTokens.shadow-card-hover-color : transparent;
+
+
+    // Subtle accent tint layered properly over bg-elevated when active
+    if card.is-active : Rectangle {
+        x: 2px;
+        y: 2px;
+        width: parent.width - 4px;
+        height: parent.height - 4px;
+        border-radius: 8px;
+        background: ThemeTokens.accent-card-tint;
+    }
 
     fs := FocusScope {
         key-pressed(event) => {
@@ -21,6 +35,7 @@ component ThemePreviewCard inherits Rectangle {
         }
 
         ta := TouchArea {
+            mouse-cursor: pointer;
             accessible-role: button;
             accessible-label: root.card.name-ru;
             clicked => {
@@ -31,42 +46,51 @@ component ThemePreviewCard inherits Rectangle {
     }
 
     VerticalLayout {
-        padding: 10px;
+        padding: 9px;
         spacing: 8px;
 
-        // Mini-Preview Window Canvas (bg / surface / elevated / border / accent / text)
+        // Mini-Preview Window Canvas (exact preview-* tokens)
         Rectangle {
-            height: 52px;
-            border-radius: 8px;
+            height: 56px;
+            border-radius: 6px;
             background: card.preview-bg;
             border-width: 1px;
             border-color: card.preview-border;
+            clip: true;
 
             VerticalLayout {
-                padding: 6px;
-                spacing: 5px;
+                padding: 7px;
+                spacing: 6px;
 
                 // Mini Header Bar
                 HorizontalLayout {
                     spacing: 5px;
+                    alignment: start;
+
                     Rectangle {
-                        width: 12px;
+                        width: 10px;
                         height: 8px;
-                        border-radius: 3px;
+                        border-radius: 2.5px;
                         background: card.preview-accent;
                     }
-                    Rectangle {
-                        width: 44px;
-                        height: 6px;
-                        border-radius: 3px;
-                        background: card.preview-text;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 44px;
+                            height: 5px;
+                            border-radius: 2.5px;
+                            background: card.preview-text.with-alpha(0.75);
+                        }
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    Rectangle {
-                        width: 18px;
-                        height: 6px;
-                        border-radius: 3px;
-                        background: card.preview-accent-text;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 16px;
+                            height: 5px;
+                            border-radius: 2.5px;
+                            background: card.preview-accent-text;
+                        }
                     }
                 }
 
@@ -76,80 +100,94 @@ component ThemePreviewCard inherits Rectangle {
 
                     Rectangle {
                         horizontal-stretch: 2;
-                        height: 24px;
-                        border-radius: 5px;
+                        height: 26px;
+                        border-radius: 4px;
                         background: card.preview-surface;
                         border-width: 1px;
                         border-color: card.preview-border;
 
                         HorizontalLayout {
-                            padding: 5px;
-                            spacing: 4px;
-                            Rectangle {
-                                width: 10px;
-                                height: 10px;
-                                border-radius: 3px;
-                                background: card.preview-accent;
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            spacing: 5px;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 12px;
+                                    height: 10px;
+                                    border-radius: 3px;
+                                    background: card.preview-accent;
+                                }
                             }
-                            Rectangle {
+
+                            VerticalLayout {
                                 horizontal-stretch: 1;
-                                height: 6px;
-                                border-radius: 3px;
-                                background: card.preview-text;
+                                alignment: center;
+                                spacing: 3px;
+
+                                Rectangle {
+                                    width: 85%;
+                                    height: 4px;
+                                    border-radius: 2px;
+                                    background: card.preview-text.with-alpha(0.8);
+                                }
+                                Rectangle {
+                                    width: 55%;
+                                    height: 3.5px;
+                                    border-radius: 1.75px;
+                                    background: card.preview-text.with-alpha(0.35);
+                                }
                             }
                         }
                     }
 
                     Rectangle {
                         horizontal-stretch: 1;
-                        height: 24px;
-                        border-radius: 5px;
+                        height: 26px;
+                        border-radius: 4px;
                         background: card.preview-elevated;
                         border-width: 1px;
                         border-color: card.preview-border;
                     }
                 }
             }
-        }
 
-        // Theme Title + Polarity + Active Badge
-        HorizontalLayout {
-            spacing: 6px;
-
-            VerticalLayout {
-                horizontal-stretch: 1;
-                spacing: 1px;
-
-                Text {
-                    text: card.name-ru;
-                    font-size: 12px;
-                    font-weight: 700;
-                    color: ThemeTokens.text-primary;
-                    overflow: elide;
-                }
-
-                Text {
-                    text: card.is-dark ? "Тёмная палитра" : "Светлая палитра";
-                    font-size: 10px;
-                    color: ThemeTokens.text-muted;
-                }
-            }
-
+            // Compact active checkmark emblem in top-right corner of preview
             if card.is-active : Rectangle {
+                x: parent.width - 22px;
                 y: 4px;
-                width: 58px;
-                height: 20px;
-                border-radius: 10px;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
                 background: ThemeTokens.accent-solid;
 
-                Text {
-                    text: "✓ Активна";
-                    font-size: 10px;
-                    font-weight: 700;
+                IconCheck {
+                    x: 3.5px;
+                    y: 3.5px;
+                    size: 11px;
+                    stroke-width: 2.6px;
                     color: ThemeTokens.text-on-solid;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
                 }
+            }
+        }
+
+        // Theme Title + Polarity
+        VerticalLayout {
+            spacing: 1px;
+
+            Text {
+                text: card.name-ru;
+                font-size: 12px;
+                font-weight: 600;
+                color: card.is-active ? ThemeTokens.accent-text : ThemeTokens.text-primary;
+                overflow: elide;
+            }
+
+            Text {
+                text: card.is-dark ? "Тёмная тема" : "Светлая тема";
+                font-size: 10.5px;
+                color: ThemeTokens.text-muted;
             }
         }
     }
@@ -179,69 +217,65 @@ export component SettingsView inherits Rectangle {
     callback toggle-auto-lock-timer();
     callback toggle-auto-purge-ram();
     callback set-ram-threshold(int);
-    callback open-teardown();
 
     background: transparent;
 
-    ScrollView {
+    ThemedScrollView {
         width: 100%;
         height: 100%;
 
         VerticalLayout {
             padding: 16px;
-            spacing: 14px;
+            spacing: 12px;
 
             // 1. 4x2 Theme Selector Grid Card
-            Rectangle {
-                border-radius: 14px;
-                background: ThemeTokens.bg-surface;
-                border-width: 1px;
-                border-color: ThemeTokens.border-subtle;
-                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
-                drop-shadow-blur: ThemeTokens.shadow-card-blur;
-                drop-shadow-color: ThemeTokens.shadow-card-color;
-
+            SurfaceCard {
                 VerticalLayout {
                     padding: 16px;
                     spacing: 12px;
 
                     HorizontalLayout {
-                        spacing: 10px;
+                        spacing: 12px;
 
                         VerticalLayout {
                             horizontal-stretch: 1;
                             spacing: 2px;
 
                             Text {
-                                text: "Тема оформления (8 палитр · 5 тёмных и 3 светлых)";
-                                font-size: 15px;
-                                font-weight: 700;
+                                text: "Тема оформления";
+                                font-size: 14.5px;
+                                font-weight: 600;
                                 color: ThemeTokens.text-primary;
                             }
 
                             Text {
-                                text: "Мгновенное переключение всех 43 дизайн-токенов и синхронизация рамки окна Windows DWM. Умный тумблер в шапке запоминает последнюю выбранную тёмную и светлую тему.";
+                                text: "Мгновенная смена палитры и рамки Windows. Тумблер в шапке переключает тёмную и светлую темы.";
                                 font-size: 12px;
                                 color: ThemeTokens.text-secondary;
                                 wrap: word-wrap;
                             }
                         }
 
-                        Rectangle {
-                            width: 154px;
-                            height: 28px;
-                            border-radius: 14px;
-                            background: ThemeTokens.accent-soft;
-                            border-width: 1px;
-                            border-color: ThemeTokens.accent-border;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 26px;
+                                border-radius: 13px;
+                                background: ThemeTokens.accent-soft;
+                                border-width: 1px;
+                                border-color: ThemeTokens.accent-border;
 
-                            Text {
-                                text: ThemeTokens.active-theme-name;
-                                font-size: 11px;
-                                font-weight: 700;
-                                color: ThemeTokens.accent-text;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                                HorizontalLayout {
+                                    padding-left: 11px;
+                                    padding-right: 11px;
+                                    Text {
+                                        text: ThemeTokens.active-theme-name;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: ThemeTokens.accent-text;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
                         }
                     }
@@ -310,15 +344,7 @@ export component SettingsView inherits Rectangle {
             }
 
             // 2. Autostart & Background Mode Card
-            Rectangle {
-                border-radius: 14px;
-                background: ThemeTokens.bg-surface;
-                border-width: 1px;
-                border-color: ThemeTokens.border-subtle;
-                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
-                drop-shadow-blur: ThemeTokens.shadow-card-blur;
-                drop-shadow-color: ThemeTokens.shadow-card-color;
-
+            SurfaceCard {
                 VerticalLayout {
                     padding: 16px;
                     spacing: 12px;
@@ -331,9 +357,9 @@ export component SettingsView inherits Rectangle {
                             spacing: 2px;
 
                             Text {
-                                text: "Запускать вместе с Windows (Планировщик задач)";
+                                text: "Запуск вместе с Windows";
                                 font-size: 14px;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: ThemeTokens.text-primary;
                             }
 
@@ -345,31 +371,14 @@ export component SettingsView inherits Rectangle {
                             }
                         }
 
-                        // Switch
-                        Rectangle {
-                            y: 6px;
-                            width: 48px;
-                            height: 26px;
-                            border-radius: 13px;
-                            background: root.autostart-enabled ? ThemeTokens.accent-solid : ThemeTokens.switch-off-bg;
-                            border-width: 1px;
-                            border-color: root.autostart-enabled ? ThemeTokens.accent-solid : ThemeTokens.switch-off-border;
-
-                            TouchArea {
-                                accessible-role: checkbox;
-                                accessible-label: "Запускать вместе с Windows";
-                                clicked => {
+                        VerticalLayout {
+                            alignment: center;
+                            ThemedSwitch {
+                                checked: root.autostart-enabled;
+                                accessible-name: "Запускать вместе с Windows";
+                                toggled => {
                                     root.toggle-autostart(!root.autostart-enabled, root.autostart-start-in-tray);
                                 }
-                            }
-
-                            Rectangle {
-                                x: root.autostart-enabled ? 24px : 3px;
-                                y: 3px;
-                                width: 20px;
-                                height: 20px;
-                                border-radius: 10px;
-                                background: root.autostart-enabled ? ThemeTokens.text-on-solid : ThemeTokens.switch-off-thumb;
                             }
                         }
                     }
@@ -379,91 +388,102 @@ export component SettingsView inherits Rectangle {
                         alignment: start;
 
                         Text {
-                            text: "При входе в Windows:";
+                            text: "При входе в систему:";
                             font-size: 12px;
                             color: ThemeTokens.text-muted;
                             vertical-alignment: center;
                         }
 
                         Rectangle {
-                            width: 184px;
                             height: 30px;
-                            border-radius: 8px;
-                            background: root.autostart-start-in-tray ? ThemeTokens.accent-soft : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: root.autostart-start-in-tray ? ThemeTokens.accent-soft : (tray-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.autostart-start-in-tray ? ThemeTokens.accent-border : ThemeTokens.border-input;
+                            border-color: root.autostart-start-in-tray ? ThemeTokens.accent-border : (tray-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+
+                            tray-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => {
                                     root.toggle-autostart(root.autostart-enabled, true);
                                 }
                             }
 
-                            Text {
-                                text: "Сразу в трей (фоновый режим)";
-                                font-size: 11px;
-                                font-weight: 600;
-                                color: root.autostart-start-in-tray ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: "Сразу в трей";
+                                    font-size: 11.5px;
+                                    font-weight: 600;
+                                    color: root.autostart-start-in-tray ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
 
                         Rectangle {
-                            width: 132px;
                             height: 30px;
-                            border-radius: 8px;
-                            background: !root.autostart-start-in-tray ? ThemeTokens.accent-soft : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            background: !root.autostart-start-in-tray ? ThemeTokens.accent-soft : (win-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: !root.autostart-start-in-tray ? ThemeTokens.accent-border : ThemeTokens.border-input;
+                            border-color: !root.autostart-start-in-tray ? ThemeTokens.accent-border : (win-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+
+                            win-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => {
                                     root.toggle-autostart(root.autostart-enabled, false);
                                 }
                             }
 
-                            Text {
-                                text: "Открывать окно";
-                                font-size: 11px;
-                                font-weight: 600;
-                                color: !root.autostart-start-in-tray ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: "Открывать окно";
+                                    font-size: 11.5px;
+                                    font-weight: 600;
+                                    color: !root.autostart-start-in-tray ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
 
                         if root.autostart-path-mismatch : Rectangle {
-                            width: 128px;
                             height: 30px;
-                            border-radius: 8px;
-                            background: ThemeTokens.status-warn-soft;
+                            border-radius: 7px;
+                            background: fix-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.status-warn-soft;
                             border-width: 1px;
                             border-color: ThemeTokens.status-warn-border;
 
-                            TouchArea {
+                            fix-ta := TouchArea {
+                                mouse-cursor: pointer;
                                 accessible-role: button;
                                 clicked => {
                                     root.toggle-autostart(true, root.autostart-start-in-tray);
                                 }
                             }
 
-                            Text {
-                                text: "Исправить путь";
-                                font-size: 11px;
-                                font-weight: 700;
-                                color: ThemeTokens.status-warn-text;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                Text {
+                                    text: "Исправить путь";
+                                    font-size: 11.5px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.status-warn-text;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
                     }
 
                     if root.autostart-warning != "" : Text {
                         text: root.autostart-warning;
-                        font-size: 11px;
+                        font-size: 11.5px;
                         color: ThemeTokens.status-warn-text;
                         wrap: word-wrap;
                     }
@@ -471,23 +491,15 @@ export component SettingsView inherits Rectangle {
             }
 
             // 3. AAA Background Automation (0.500ms Timer + Standby RAM Auto-Purge)
-            Rectangle {
-                border-radius: 14px;
-                background: ThemeTokens.bg-surface;
-                border-width: 1px;
-                border-color: ThemeTokens.border-subtle;
-                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
-                drop-shadow-blur: ThemeTokens.shadow-card-blur;
-                drop-shadow-color: ThemeTokens.shadow-card-color;
-
+            SurfaceCard {
                 VerticalLayout {
                     padding: 16px;
                     spacing: 14px;
 
                     Text {
-                        text: "Фоновая автоматика игрового режима AAA (Config/tuning.json)";
-                        font-size: 15px;
-                        font-weight: 700;
+                        text: "Фоновая автоматика AAA";
+                        font-size: 14.5px;
+                        font-weight: 600;
                         color: ThemeTokens.text-primary;
                     }
 
@@ -500,44 +512,28 @@ export component SettingsView inherits Rectangle {
                             spacing: 2px;
 
                             Text {
-                                text: "Автоматически фиксировать таймер 0.500 мс в игровом режиме";
+                                text: "Автофиксация системного таймера 0.500 мс";
                                 font-size: 13px;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: ThemeTokens.text-primary;
                             }
 
                             Text {
-                                text: "При запуске в активном режиме AAA автоматически удерживает системный таймер NtSetTimerResolution(0.500 мс) и снимает фиксацию при выходе в штатный режим.";
+                                text: "В активном игровом режиме автоматически удерживает системный таймер NtSetTimerResolution(0.500 мс) и снимает фиксацию при возврате в штатный режим.";
                                 font-size: 12px;
                                 color: ThemeTokens.text-secondary;
                                 wrap: word-wrap;
                             }
                         }
 
-                        Rectangle {
-                            y: 6px;
-                            width: 48px;
-                            height: 26px;
-                            border-radius: 13px;
-                            background: root.auto-lock-timer-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-bg;
-                            border-width: 1px;
-                            border-color: root.auto-lock-timer-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-border;
-
-                            TouchArea {
-                                accessible-role: checkbox;
-                                accessible-label: "Автоматически фиксировать таймер 0.500 мс";
-                                clicked => {
+                        VerticalLayout {
+                            alignment: center;
+                            ThemedSwitch {
+                                checked: root.auto-lock-timer-in-gaming;
+                                accessible-name: "Автоматически фиксировать таймер 0.500 мс";
+                                toggled => {
                                     root.toggle-auto-lock-timer();
                                 }
-                            }
-
-                            Rectangle {
-                                x: root.auto-lock-timer-in-gaming ? 24px : 3px;
-                                y: 3px;
-                                width: 20px;
-                                height: 20px;
-                                border-radius: 10px;
-                                background: root.auto-lock-timer-in-gaming ? ThemeTokens.text-on-solid : ThemeTokens.switch-off-thumb;
                             }
                         }
                     }
@@ -556,44 +552,28 @@ export component SettingsView inherits Rectangle {
                             spacing: 2px;
 
                             Text {
-                                text: "Умная фоновая автоочистка Standby-кэша ОЗУ в игровом режиме";
+                                text: "Умная фоновая автоочистка Standby-кэша ОЗУ";
                                 font-size: 13px;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: ThemeTokens.text-primary;
                             }
 
                             Text {
-                                text: "Раз в 60 секунд в активном игровом режиме проверяет свободную физическую память и автоматически очищает Standby List, если доступно меньше выбранного порога (пауза между очистками — 180 сек).";
+                                text: "Каждые 60 секунд в активном игровом режиме проверяет свободную ОЗУ и очищает Standby List, если доступно меньше порога (пауза — 180 сек).";
                                 font-size: 12px;
                                 color: ThemeTokens.text-secondary;
                                 wrap: word-wrap;
                             }
                         }
 
-                        Rectangle {
-                            y: 6px;
-                            width: 48px;
-                            height: 26px;
-                            border-radius: 13px;
-                            background: root.auto-purge-ram-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-bg;
-                            border-width: 1px;
-                            border-color: root.auto-purge-ram-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-border;
-
-                            TouchArea {
-                                accessible-role: checkbox;
-                                accessible-label: "Умная фоновая автоочистка Standby-кэша ОЗУ";
-                                clicked => {
+                        VerticalLayout {
+                            alignment: center;
+                            ThemedSwitch {
+                                checked: root.auto-purge-ram-in-gaming;
+                                accessible-name: "Умная фоновая автоочистка Standby-кэша ОЗУ";
+                                toggled => {
                                     root.toggle-auto-purge-ram();
                                 }
-                            }
-
-                            Rectangle {
-                                x: root.auto-purge-ram-in-gaming ? 24px : 3px;
-                                y: 3px;
-                                width: 20px;
-                                height: 20px;
-                                border-radius: 10px;
-                                background: root.auto-purge-ram-in-gaming ? ThemeTokens.text-on-solid : ThemeTokens.switch-off-thumb;
                             }
                         }
                     }
@@ -611,90 +591,40 @@ export component SettingsView inherits Rectangle {
                         }
 
                         for thresh in [
-                            { val: 1024, label: "1 ГБ (1024 МБ)" },
-                            { val: 2048, label: "2 ГБ (2048 МБ)" },
-                            { val: 3072, label: "3 ГБ (3072 МБ)" },
-                            { val: 4096, label: "4 ГБ (4096 МБ)" },
+                            { val: 1024, label: "1 ГБ" },
+                            { val: 2048, label: "2 ГБ" },
+                            { val: 3072, label: "3 ГБ" },
+                            { val: 4096, label: "4 ГБ" },
                         ] : Rectangle {
-                            width: 126px;
                             height: 30px;
-                            border-radius: 8px;
-                            background: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-soft : ThemeTokens.bg-elevated;
+                            border-radius: 7px;
+                            opacity: root.auto-purge-ram-in-gaming ? 1.0 : 0.45;
+                            background: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-soft : (th-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                             border-width: 1px;
-                            border-color: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-border : ThemeTokens.border-input;
+                            border-color: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-border : (th-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            TouchArea {
+
+                            th-ta := TouchArea {
                                 enabled: root.auto-purge-ram-in-gaming;
+                                mouse-cursor: root.auto-purge-ram-in-gaming ? pointer : default;
                                 accessible-role: button;
                                 clicked => {
                                     root.set-ram-threshold(thresh.val);
                                 }
                             }
 
-                            Text {
-                                text: thresh.label;
-                                font-size: 11px;
-                                font-weight: 600;
-                                color: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                Text {
+                                    text: thresh.label;
+                                    font-family: ThemeTokens.font-mono;
+                                    font-size: 11.5px;
+                                    font-weight: 600;
+                                    color: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
-                        }
-                    }
-                }
-            }
-
-            // 4. Interactive 3D Architecture Teardown Reference Card
-            Rectangle {
-                border-radius: 14px;
-                background: ThemeTokens.bg-surface;
-                border-width: 1px;
-                border-color: ThemeTokens.border-subtle;
-
-                HorizontalLayout {
-                    padding: 16px;
-                    spacing: 12px;
-
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: 2px;
-
-                        Text {
-                            text: "Интерактивная 3D-разборка архитектуры Ultra Gaming Mode v4.0.0";
-                            font-size: 14px;
-                            font-weight: 700;
-                            color: ThemeTokens.text-primary;
-                        }
-
-                        Text {
-                            text: "Послойная автономная 3D-сцена конвейера оптимизации: GUI/Трей → PowerShell-движок → Ядро/CPU → GPU/DWM → ОЗУ → Сеть и защита Zapret/WinDivert → Службы.";
-                            font-size: 12px;
-                            color: ThemeTokens.text-secondary;
-                            wrap: word-wrap;
-                        }
-                    }
-
-                    Rectangle {
-                        width: 244px;
-                        height: 36px;
-                        border-radius: 8px;
-                        background: td2-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid;
-
-                        td2-ta := TouchArea {
-                            accessible-role: button;
-                            accessible-label: "Открыть 3D-разборку архитектуры";
-                            clicked => {
-                                root.open-teardown();
-                            }
-                        }
-
-                        Text {
-                            text: "◈ Открыть 3D-разборку архитектуры";
-                            font-size: 12px;
-                            font-weight: 700;
-                            color: ThemeTokens.text-on-solid;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
                         }
                     }
                 }

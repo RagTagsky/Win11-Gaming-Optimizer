@@ -23,7 +23,6 @@ $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $e2eRoot "..\.."))
 . (Join-Path $e2eRoot "Lib\E2E.Assertions.ps1")
 . (Join-Path $e2eRoot "Lib\E2E.ProcessHost.ps1")
 . (Join-Path $e2eRoot "Lib\E2E.Sandbox.ps1")
-. (Join-Path $e2eRoot "Lib\E2E.BrowserTeardown.ps1")
 
 . (Join-Path $e2eRoot "Suites\Tier1.Functional.ps1")
 . (Join-Path $e2eRoot "Suites\Tier2.EdgeAndSecurity.ps1")
@@ -53,18 +52,10 @@ $integrityResult = [PSCustomObject]@{ Clean = $true; Drifts = @() }
 
 try {
     if ($ValidateSuiteOnly) {
-        # Phase A suite integrity checks: AST (PS 5.1 & 7), node --check, UTF-8 no-BOM, policy hygiene, sandbox self-test
+        # Phase A suite integrity checks: AST (PS 5.1 & 7), UTF-8 no-BOM, policy hygiene, sandbox self-test
         $e2ePs1 = @(Get-ChildItem -LiteralPath $e2eRoot -Filter "*.ps1" -Recurse | Select-Object -ExpandProperty FullName)
         $astErrs = Test-PowerShellAst -Files $e2ePs1
         foreach ($e in $astErrs) { $suiteSelfErrors.Add($e) }
-
-        $mjsPath = Join-Path $e2eRoot "Lib\Verify-TeardownCdp.mjs"
-        $nodeExe = (Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
-        if ([string]::IsNullOrWhiteSpace($nodeExe)) { $nodeExe = "C:\Program Files\nodejs\node.exe" }
-        $null = & $nodeExe --check $mjsPath 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            $suiteSelfErrors.Add("node --check failed for Verify-TeardownCdp.mjs")
-        }
 
         $bomErrs = Find-Utf8BomFiles -RootDir $e2eRoot -Extensions @(".ps1", ".json")
         foreach ($b in $bomErrs) { $suiteSelfErrors.Add("BOM violation: $b") }

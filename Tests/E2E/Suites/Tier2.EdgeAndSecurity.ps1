@@ -1,4 +1,4 @@
-# Tier2.EdgeAndSecurity.ps1 — 40 Boundary, Corner, Negative & Security Tests (5 per Feature Area F1-F8)
+# Tier2.EdgeAndSecurity.ps1 -- 40 Boundary, Corner, Negative & Security Tests (5 per Feature Area F1-F8)
 
 Set-StrictMode -Version Latest
 
@@ -296,7 +296,7 @@ Write-Output 'BOOT_SESSION_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "src/ or slint/ not yet created (M3/M4 pending)" -Artifact "slint/"
         }
         $all = (@(Get-ChildItem -LiteralPath $slintDir -Filter "*.slint" -Recurse) + @(Get-ChildItem -LiteralPath $srcDir -Filter "*.rs" -Recurse) | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
-        Assert-E2ENotMatch $all '(?i)(Профиль оптимизации|Соревновательный|Пользовательский|competitive|CUSTOM_PROFILE)' "Zero non-AAA profile references allowed in UI/Rust"
+        Assert-E2ENotMatch $all '(?i)(\u041f\u0440\u043e\u0444\u0438\u043b\u044c \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438|\u0421\u043e\u0440\u0435\u0432\u043d\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439|\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u0438\u0439|competitive|CUSTOM_PROFILE)' "Zero non-AAA profile references allowed in UI/Rust"
     }
 
     # =========================================================================
@@ -451,57 +451,63 @@ Write-Output 'MIXED_CASE_TCP_OK'
     }
 
     # =========================================================================
-    # F7: Offline 3D Architecture Teardown & Docs (5 tests)
+    # F7: Unified AAA Pipeline UI, Theme Rendering, DWM & Docs (5 tests)
     # =========================================================================
-    Register-E2ETest -Id "T2-F7-01" -Tier 2 -Feature "F7" -Name "3D Teardown adapts to 960x680, 860x600, and 390x844 viewports without collapsing canvas" -Artifact "docs/teardown/index.html" -Body {
+    Register-E2ETest -Id "T2-F7-01" -Tier 2 -Feature "F7" -Name "Offscreen Slint renderer validates all 8 themes and 5 tabs at 960x680 and 860x600" -Artifact "src/ui_bridge.rs" -Body {
         param($ctx)
-        $htmlPath = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
-        if (-not $ctx.Cache.ContainsKey("TeardownCdp")) {
-            $ctx.Cache["TeardownCdp"] = Invoke-TeardownCdpVerification -HtmlPath $htmlPath -UserDataDir $ctx.Sandbox.BrowserProfile
-        }
-        $resizes = @($ctx.Cache["TeardownCdp"].Result.resizeResults)
-        Assert-E2ETrue ($resizes.Count -ge 3) "Must test 3 viewport sizes"
-        foreach ($r in $resizes) {
-            Assert-E2ETrue ($r.canvasW -gt 0 -and $r.canvasH -gt 0) "Canvas collapsed at viewport $($r.viewport)"
-        }
-    }
-
-    Register-E2ETest -Id "T2-F7-02" -Tier 2 -Feature "F7" -Name "CDP verifier negative self-test reliably detects external HTTP requests and JS errors" -Artifact "Tests/E2E/Lib/Verify-TeardownCdp.mjs" -Body {
-        param($ctx)
-        $neg = Invoke-TeardownCdpVerification -UserDataDir $ctx.Sandbox.BrowserProfile -NegativeSelfTest
-        Assert-E2EEqual 0 $neg.ExitCode "Negative self-test mode must return 0 when catching faults"
-        Assert-E2ETrue (@($neg.Result.externalRequests).Count -gt 0) "CDP must detect injected external HTTPS request"
-        Assert-E2ETrue ((@($neg.Result.consoleErrors).Count -gt 0) -or (@($neg.Result.exceptions).Count -gt 0)) "CDP must detect injected console error / uncaught exception"
-    }
-
-    Register-E2ETest -Id "T2-F7-03" -Tier 2 -Feature "F7" -Name "3D Teardown avoids external ES modules or CORS-blocked file:// imports" -Artifact "docs/teardown/index.html" -Body {
-        param($ctx)
-        $htmlPath = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
-        $raw = Get-Content -LiteralPath $htmlPath -Raw -Encoding UTF8
-        Assert-E2ENotMatch $raw '<script[^>]+type\s*=\s*"module"' "Must not rely on ES module imports blocked under file:// CORS"
-        Assert-E2ENotMatch $raw '\bfetch\s*\(\s*["'']https?://' "Must not call fetch() against external URLs"
-    }
-
-    Register-E2ETest -Id "T2-F7-04" -Tier 2 -Feature "F7" -Name "Backend open_teardown_page handles missing local HTML cleanly without panic" -Artifact "src/backend.rs" -Body {
-        param($ctx)
-        $backendRs = Join-Path $ctx.RepoRoot "src\backend.rs"
-        if (-not (Test-Path -LiteralPath $backendRs)) {
-            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "src/backend.rs not yet created (M3 pending)" -Artifact "src/backend.rs"
-        }
-        $raw = Get-Content -LiteralPath $backendRs -Raw -Encoding UTF8
-        Assert-E2EMatch $raw 'teardown' "Teardown launcher logic must exist in backend.rs"
         $ct = Invoke-CachedCargoTest -Context $ctx
-        Assert-E2EEqual 0 $ct.ExitCode "cargo test must pass teardown path tests"
+        Assert-E2EEqual 0 $ct.ExitCode "cargo test must pass offscreen rendering tests"
+        Assert-E2EMatch $ct.Output 'test_render_all_8_themes_and_views_offscreen\s*\.\.\.\s*ok' "Offscreen 8-theme & multi-viewport test must pass"
     }
 
-    Register-E2ETest -Id "T2-F7-05" -Tier 2 -Feature "F7" -Name "README.md and README.ru.md contain zero broken ui/ links or missing teardown assets" -Artifact "README.md" -Body {
+    Register-E2ETest -Id "T2-F7-02" -Tier 2 -Feature "F7" -Name "Theme transitions are atomic across Slint templates with zero color-animation ghosting" -Artifact "slint/" -Body {
+        param($ctx)
+        $slintFiles = Get-ChildItem -LiteralPath (Join-Path $ctx.RepoRoot "slint") -Filter "*.slint" -Recurse
+        foreach ($sf in $slintFiles) {
+            $raw = Get-Content -LiteralPath $sf.FullName -Raw -Encoding UTF8
+            Assert-E2ENotMatch $raw '\banimate\s+(background|border-color|color)\b' "$($sf.Name) must not animate color tokens (causes theme/tab switch ghosting)"
+        }
+    }
+
+    Register-E2ETest -Id "T2-F7-03" -Tier 2 -Feature "F7" -Name "Windows DWM chrome sync configures dark mode, rounded corners (33), and border color (34)" -Artifact "src/dwm.rs" -Body {
+        param($ctx)
+        $dwmRs = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "src\dwm.rs") -Raw -Encoding UTF8
+        $bridgeRs = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "src\ui_bridge.rs") -Raw -Encoding UTF8
+        Assert-E2EMatch $dwmRs 'DWMWA_WINDOW_CORNER_PREFERENCE:\s*u32\s*=\s*33' "dwm.rs must define DWMWA_WINDOW_CORNER_PREFERENCE = 33"
+        Assert-E2EMatch $dwmRs 'DWMWA_BORDER_COLOR:\s*u32\s*=\s*34' "dwm.rs must define DWMWA_BORDER_COLOR = 34"
+        Assert-E2EMatch $dwmRs 'pub fn apply_dwm_window_chrome' "dwm.rs must export apply_dwm_window_chrome"
+        Assert-E2EMatch $bridgeRs 'sync_window_dwm_chrome' "ui_bridge.rs must invoke sync_window_dwm_chrome on theme updates"
+    }
+
+    Register-E2ETest -Id "T2-F7-04" -Tier 2 -Feature "F7" -Name "All 8 themes expose glow coordinates, surface highlight tokens, and exact color palettes" -Artifact "src/themes.rs" -Body {
+        param($ctx)
+        $themeSlint = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "slint\theme.slint") -Raw -Encoding UTF8
+        $themesRs = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "src\themes.rs") -Raw -Encoding UTF8
+        Assert-E2EMatch $themeSlint 'bg-app-glow-cx' "theme.slint must expose bg-app-glow-cx"
+        Assert-E2EMatch $themeSlint 'surface-top-highlight' "theme.slint must expose surface-top-highlight"
+        Assert-E2EMatch $themesRs 'surface_top_highlight' "themes.rs must populate surface_top_highlight"
+        $ct = Invoke-CachedCargoTest -Context $ctx
+        Assert-E2EEqual 0 $ct.ExitCode "cargo test must pass theme token checks"
+        Assert-E2EMatch $ct.Output 'test_all_43_base_tokens_exact_strings_per_theme\s*\.\.\.\s*ok' "Exact 43-token palette test must pass"
+        Assert-E2EMatch $ct.Output 'test_all_8_themes_order_metadata_and_exact_tokens\s*\.\.\.\s*ok' "8-theme metadata & token test must pass"
+    }
+
+    Register-E2ETest -Id "T2-F7-05" -Tier 2 -Feature "F7" -Name "README.md and README.ru.md contain zero broken local links or removed Tauri/teardown/log_console refs" -Artifact "README.md" -Body {
         param($ctx)
         foreach ($md in @("README.md", "README.ru.md")) {
             $txt = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot $md) -Raw -Encoding UTF8
-            if ($txt -notmatch 'docs/teardown/' -or $txt -notmatch '4\.0\.0') {
-                Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "$md not yet updated for v4.0.0 (M2 pending)" -Artifact $md
-            }
             Assert-E2ENotMatch $txt 'ui/src-tauri' "$md must not point to removed Tauri paths"
+            Assert-E2ENotMatch $txt 'docs/teardown' "$md must not point to removed 3D teardown paths"
+            Assert-E2ENotMatch $txt 'log_console\.slint' "$md must not list nonexistent log_console.slint"
+            Assert-E2EMatch $txt 'components\.slint' "$md directory structure must document components.slint"
+            Assert-E2EMatch $txt 'dialogs\.slint' "$md directory structure must document dialogs.slint"
+
+            foreach ($m in [regex]::Matches($txt, '\[[^\]]+\]\(([^)#:\s][^)\s]*)\)')) {
+                $target = $m.Groups[1].Value
+                if ($target -match '^https?://') { continue }
+                $resolved = Join-Path $ctx.RepoRoot ($target -replace '/', '\')
+                Assert-E2ETrue (Test-Path -LiteralPath $resolved) "$md contains broken local link '$target'"
+            }
         }
     }
 

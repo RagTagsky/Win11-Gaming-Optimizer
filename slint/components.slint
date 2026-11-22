@@ -1,0 +1,695 @@
+import { ThemeTokens } from "theme.slint";
+
+// ============================================================================
+// Crisp Vector Icons (24x24 viewbox, unified stroke weight, theme-colored)
+// ============================================================================
+
+export component IconBolt {
+    in property <color> color: ThemeTokens.text-on-solid;
+    in property <length> size: 15px;
+    in property <bool> filled: true;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.filled ? root.color : transparent;
+        stroke: root.color;
+        stroke-width: root.filled ? 1px : 1.75px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 13 2 L 4.5 13.5 H 12 L 11 22 L 19.5 10.5 H 12 Z";
+    }
+}
+
+export component IconCheck {
+    in property <color> color: ThemeTokens.status-active-text;
+    in property <length> size: 16px;
+    in property <length> stroke-width: 2.2px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: root.stroke-width;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 5 12.5 L 10 17.5 L 19.5 7";
+    }
+}
+
+export component IconClock {
+    in property <color> color: ThemeTokens.status-warn-text;
+    in property <length> size: 18px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.8px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 12 3 A 9 9 0 1 0 12 21 A 9 9 0 1 0 12 3 M 12 7.5 V 12 L 15.2 13.8";
+    }
+}
+
+export component IconSun {
+    in property <color> color: ThemeTokens.accent-text;
+    in property <length> size: 15px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.8px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 12 8 A 4 4 0 1 0 12 16 A 4 4 0 1 0 12 8 M 12 2.5 V 4.8 M 12 19.2 V 21.5 M 4.8 12 H 2.5 M 21.5 12 H 19.2 M 5.6 5.6 L 7.2 7.2 M 16.8 16.8 L 18.4 18.4 M 18.4 5.6 L 16.8 7.2 M 7.2 16.8 L 5.6 18.4";
+    }
+}
+
+export component IconMoon {
+    in property <color> color: ThemeTokens.accent-text;
+    in property <length> size: 15px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.8px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 20.5 14.5 A 8.5 8.5 0 1 1 9.5 3.5 A 6.8 6.8 0 0 0 20.5 14.5 Z";
+    }
+}
+
+export component IconMinimize {
+    in property <color> color: ThemeTokens.text-secondary;
+    width: 12px;
+    height: 12px;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.2px;
+        stroke-line-cap: round;
+        commands: "M 1.5 6.5 H 10.5";
+    }
+}
+
+export component IconMaximize {
+    in property <color> color: ThemeTokens.text-secondary;
+    in property <bool> is-maximized: false;
+    width: 12px;
+    height: 12px;
+
+    if !root.is-maximized : Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.15px;
+        stroke-line-join: round;
+        commands: "M 2 2 H 10 V 10 H 2 Z";
+    }
+
+    if root.is-maximized : Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.15px;
+        stroke-line-join: round;
+        commands: "M 1.8 3.8 H 8.2 V 10.2 H 1.8 Z M 3.8 3.8 V 1.8 H 10.2 V 8.2 H 8.2";
+    }
+}
+
+export component IconClose {
+    in property <color> color: ThemeTokens.text-secondary;
+    in property <length> size: 12px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.3px;
+        stroke-line-cap: round;
+        commands: "M 2.2 2.2 L 9.8 9.8 M 9.8 2.2 L 2.2 9.8";
+    }
+}
+
+export component IconSearch {
+    in property <color> color: ThemeTokens.text-muted;
+    in property <length> size: 14px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 2px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 11 4 A 7 7 0 1 0 11 18 A 7 7 0 1 0 11 4 M 16.2 16.2 L 20.5 20.5";
+    }
+}
+
+export component IconLock {
+    in property <color> color: ThemeTokens.text-muted;
+    in property <length> size: 13px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.9px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 6 11 H 18 V 20 H 6 Z M 8.5 11 V 8 A 3.5 3.5 0 0 1 15.5 8 V 11";
+    }
+}
+
+export component IconChevron {
+    in property <color> color: ThemeTokens.text-secondary;
+    in property <bool> down: false;
+    in property <length> size: 13px;
+    width: root.size;
+    height: root.size;
+
+    if root.down : Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 2.2px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 6 9 L 12 15 L 18 9";
+    }
+
+    if !root.down : Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 2.2px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 6 15 L 12 9 L 18 15";
+    }
+}
+
+export component IconExternal {
+    in property <color> color: ThemeTokens.text-secondary;
+    in property <length> size: 13px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 2px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 14 4 H 20 V 10 M 10 14 L 20 4 M 18 14 V 19 H 5 V 6 H 10";
+    }
+}
+
+export component IconGpu {
+    in property <color> color: ThemeTokens.accent-text;
+    in property <length> size: 16px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 3 5 H 21 V 16 H 3 Z M 8 20 H 16 M 12 16 V 20";
+    }
+}
+
+export component IconCpu {
+    in property <color> color: ThemeTokens.accent-text;
+    in property <length> size: 16px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 7 7 H 17 V 17 H 7 Z M 10 10 H 14 V 14 H 10 Z M 9 3 V 7 M 15 3 V 7 M 9 17 V 21 M 15 17 V 21 M 3 9 H 7 M 3 15 H 7 M 17 9 H 21 M 17 15 H 21";
+    }
+}
+
+export component IconMemory {
+    in property <color> color: ThemeTokens.accent-text;
+    in property <length> size: 16px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 3 8 H 21 V 16 H 3 Z M 7 16 V 19 M 10.5 16 V 19 M 13.5 16 V 19 M 17 16 V 19 M 7 11 V 13 M 12 11 V 13 M 17 11 V 13";
+    }
+}
+
+export component IconShield {
+    in property <color> color: ThemeTokens.status-active-text;
+    in property <length> size: 16px;
+    width: root.size;
+    height: root.size;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.color;
+        stroke-width: 1.7px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        commands: "M 12 3 L 19 6 V 11.5 C 19 16.2 16 19.6 12 21 C 8 19.6 5 16.2 5 11.5 V 6 Z M 9 12 L 11.2 14.2 L 15.5 9.8";
+    }
+}
+
+// ============================================================================
+// Reusable Themed Surface Card (with optional top specular highlight)
+// ============================================================================
+
+export component SurfaceCard inherits Rectangle {
+    in property <color> stroke-color: ThemeTokens.border-subtle;
+    in property <length> radius: 12px;
+
+    border-radius: root.radius;
+    background: ThemeTokens.bg-surface;
+    border-width: 1px;
+    border-color: root.stroke-color;
+    drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+    drop-shadow-blur: ThemeTokens.shadow-card-blur;
+    drop-shadow-color: ThemeTokens.shadow-card-color;
+
+    if ThemeTokens.has-surface-top-highlight : Rectangle {
+        x: root.radius;
+        y: 1px;
+        width: max(0px, parent.width - 2 * root.radius);
+        height: 1px;
+        background: ThemeTokens.surface-top-highlight;
+    }
+
+    @children
+}
+
+// ============================================================================
+// Fully Themed Vertical ScrollView (uses ThemeTokens.scrollbar-thumb*)
+// ============================================================================
+
+component ThemedScrollBar inherits Rectangle {
+    in-out property <length> maximum;
+    in-out property <length> page-size;
+    in-out property <length> value;
+
+    property <length> pad: 4px;
+    property <length> track-size: max(1px, root.height - 2 * root.pad);
+    property <length> thumb-height: root.maximum <= 0px ? 0px : max(28px, min(root.track-size, root.track-size * (root.page-size / (root.maximum + root.page-size))));
+    property <length> thumb-y: root.pad + (root.track-size - root.thumb-height) * (root.maximum > 0px ? clamp(-root.value / root.maximum, 0.0, 1.0) : 0.0);
+    property <bool> active: bar-ta.has-hover || bar-ta.pressed;
+
+    width: 12px;
+    background: transparent;
+    visible: root.maximum > 0px;
+
+    Rectangle {
+        x: root.active ? 3px : 5px;
+        y: root.thumb-y;
+        width: root.active ? 6px : 4px;
+        height: root.thumb-height;
+        border-radius: self.width / 2;
+        background: root.active ? ThemeTokens.scrollbar-thumb-hover : ThemeTokens.scrollbar-thumb;
+
+        animate width, x { duration: 120ms; easing: ease-out; }
+    }
+
+    bar-ta := TouchArea {
+        property <length> start-value: 0px;
+        property <length> start-y: 0px;
+
+        mouse-cursor: pointer;
+
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                if (root.maximum > 0px && root.track-size > root.thumb-height && (self.mouse-y < root.thumb-y || self.mouse-y > root.thumb-y + root.thumb-height)) {
+                    root.value = -clamp(
+                        (self.mouse-y - root.pad - root.thumb-height / 2) * (root.maximum / (root.track-size - root.thumb-height)),
+                        0px,
+                        root.maximum
+                    );
+                }
+                self.start-value = -root.value;
+                self.start-y = self.mouse-y;
+            }
+        }
+
+        moved => {
+            if (self.pressed && root.maximum > 0px && root.track-size > root.thumb-height) {
+                root.value = -clamp(
+                    self.start-value + (self.mouse-y - self.start-y) * (root.maximum / (root.track-size - root.thumb-height)),
+                    0px,
+                    root.maximum
+                );
+            }
+        }
+
+        scroll-event(event) => {
+            if (event.delta-y != 0px) {
+                root.value = clamp(root.value + event.delta-y, -root.maximum, 0px);
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+export component ThemedScrollView inherits Rectangle {
+    out property <length> visible-width <=> flickable.width;
+    out property <length> visible-height <=> flickable.height;
+    in-out property <length> content-y <=> flickable.content-y;
+
+    background: transparent;
+    clip: true;
+
+    flickable := Flickable {
+        mouse-drag-pan-enabled: false;
+        width: parent.width;
+        height: parent.height;
+        content-y <=> vbar.value;
+
+        @children
+    }
+
+    vbar := ThemedScrollBar {
+        x: parent.width - self.width;
+        y: 0px;
+        height: parent.height;
+        maximum: max(0px, flickable.content-height - flickable.height);
+        page-size: max(1px, flickable.height);
+    }
+}
+
+// ============================================================================
+// Fully Themed Single-Line Text Input (replaces un-themed std-widgets LineEdit)
+// ============================================================================
+
+export component ThemedLineEdit inherits Rectangle {
+    in-out property <string> text <=> ti.text;
+    in property <string> placeholder-text: "";
+    in property <bool> show-search-icon: false;
+    in property <bool> monospace: false;
+    in property <bool> enabled: true;
+    out property <bool> has-focus <=> ti.has-focus;
+
+    callback edited(string);
+    callback accepted(string);
+
+    height: 34px;
+    border-radius: 8px;
+    clip: true;
+    opacity: root.enabled ? 1.0 : 0.55;
+    background: ThemeTokens.bg-elevated;
+    border-width: 1px;
+    border-color: ti.has-focus ? ThemeTokens.focus-ring : (bg-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-input);
+    forward-focus: ti;
+
+    bg-ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.text : MouseCursor.default;
+        clicked => {
+            ti.focus();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 8px;
+        spacing: 7px;
+
+        if root.show-search-icon : VerticalLayout {
+            alignment: center;
+            IconSearch {
+                size: 14px;
+                color: ti.has-focus ? ThemeTokens.accent-text : ThemeTokens.text-muted;
+            }
+        }
+
+        Rectangle {
+            horizontal-stretch: 1;
+            min-width: 0px;
+            preferred-width: 0px;
+            clip: true;
+            background: transparent;
+
+            if root.text == "" : Text {
+                x: 0px;
+                width: parent.width;
+                height: parent.height;
+                text: root.placeholder-text;
+                font-family: root.monospace ? ThemeTokens.font-mono : ThemeTokens.font-sans;
+                font-size: 12px;
+                color: ThemeTokens.text-muted;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            ti-scroll := Flickable {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: parent.height;
+                interactive: false;
+                content-width: max(self.width, ti.preferred-width + 4px);
+                content-height: self.height;
+
+                ti := TextInput {
+                    x: 0px;
+                    y: 0px;
+                    width: max(parent.width, self.preferred-width + 4px);
+                    height: parent.height;
+                    single-line: true;
+                    enabled: root.enabled;
+                    font-family: root.monospace ? ThemeTokens.font-mono : ThemeTokens.font-sans;
+                    font-size: 12px;
+                    color: ThemeTokens.text-primary;
+                    selection-background-color: ThemeTokens.accent-solid;
+                    selection-foreground-color: ThemeTokens.text-on-solid;
+                    vertical-alignment: center;
+
+                    edited => {
+                        if (self.preferred-width > ti-scroll.width - 4px) {
+                            ti-scroll.content-x = ti-scroll.width - 4px - self.preferred-width;
+                        } else {
+                            ti-scroll.content-x = 0px;
+                        }
+                        root.edited(self.text);
+                    }
+
+                    accepted => {
+                        root.accepted(self.text);
+                    }
+                }
+            }
+        }
+
+        if root.text != "" && root.enabled : VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: 5px;
+                background: clr-ta.has-hover ? ThemeTokens.bg-hover : transparent;
+
+                clr-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    accessible-role: button;
+                    accessible-label: "Очистить поле";
+                    clicked => {
+                        root.text = "";
+                        ti-scroll.content-x = 0px;
+                        root.edited("");
+                        ti.focus();
+                    }
+                }
+
+                IconClose {
+                    x: 5px;
+                    y: 5px;
+                    size: 10px;
+                    color: clr-ta.has-hover ? ThemeTokens.text-primary : ThemeTokens.text-muted;
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Fully Themed Toggle Switch (animated thumb, keyboard accessible)
+// ============================================================================
+
+export component ThemedSwitch inherits Rectangle {
+    in property <bool> checked: false;
+    in property <bool> enabled: true;
+    in property <string> accessible-name: "";
+    callback toggled();
+
+    width: 46px;
+    height: 26px;
+    border-radius: 13px;
+    opacity: root.enabled ? 1.0 : 0.45;
+    background: root.checked ? (sw-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid) : (sw-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.switch-off-bg);
+    border-width: 1px;
+    border-color: sw-fs.has-focus ? ThemeTokens.focus-ring : (root.checked ? ThemeTokens.accent-solid : ThemeTokens.switch-off-border);
+
+    sw-fs := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.toggled();
+                return accept;
+            }
+            return reject;
+        }
+
+        sw-ta := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: root.enabled ? pointer : default;
+            accessible-role: checkbox;
+            accessible-checked: root.checked;
+            accessible-label: root.accessible-name;
+            clicked => {
+                sw-fs.focus();
+                root.toggled();
+            }
+        }
+    }
+
+    Rectangle {
+        x: root.checked ? 23px : 3px;
+        y: 3px;
+        width: 20px;
+        height: 20px;
+        border-radius: 10px;
+        background: root.checked ? ThemeTokens.text-on-solid : ThemeTokens.switch-off-thumb;
+
+        animate x { duration: 140ms; easing: ease-out; }
+    }
+}

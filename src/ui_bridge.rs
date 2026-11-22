@@ -12,7 +12,7 @@ use crate::backend::{
     AUTO_PURGE_RAM_POLL_SECS, MODE_ACTION_BUSY, PENDING_RESTORE_TRIGGERED, START_IN_TRAY,
     TIMER_LOCKED,
 };
-use crate::dwm::apply_dwm_dark_mode;
+use crate::dwm::{apply_dwm_dark_mode, apply_dwm_window_chrome_with_border_status};
 use crate::themes::{
     all_themes, get_theme_by_id, RgbaColor, ThemeDefinition, ThemeId, ThemePreferences,
 };
@@ -70,9 +70,66 @@ pub fn extract_window_hwnd(window: &MainWindow) -> Option<isize> {
     }
 }
 
+pub fn detect_preferred_fonts_in(fonts_dir: &std::path::Path) -> (&'static str, &'static str) {
+    let sans = if fonts_dir.join("SegUIVar.ttf").exists() {
+        "Segoe UI Variable Text"
+    } else {
+        "Segoe UI"
+    };
+
+    let mono = if fonts_dir.join("CascadiaCode.ttf").exists() {
+        "Cascadia Code"
+    } else if fonts_dir.join("CascadiaMono.ttf").exists() {
+        "Cascadia Mono"
+    } else {
+        "Consolas"
+    };
+
+    (sans, mono)
+}
+
+pub fn detect_preferred_fonts() -> (&'static str, &'static str) {
+    #[cfg(target_os = "windows")]
+    {
+        let fonts_dir = std::env::var_os("WINDIR")
+            .or_else(|| std::env::var_os("SystemRoot"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+            .join("Fonts");
+
+        detect_preferred_fonts_in(&fonts_dir)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        ("Segoe UI Variable Text", "Cascadia Code")
+    }
+}
+
+pub fn apply_fonts_to_window(window: &MainWindow) {
+    let (sans, mono) = detect_preferred_fonts();
+    let tokens = window.global::<ThemeTokens>();
+    tokens.set_font_sans(SharedString::from(sans));
+    tokens.set_font_mono(SharedString::from(mono));
+}
+
 pub fn sync_window_dwm_theme(window: &MainWindow, is_dark: bool) {
     if let Some(hwnd) = extract_window_hwnd(window) {
         let _ = apply_dwm_dark_mode(hwnd, is_dark);
+    }
+}
+
+pub fn sync_window_dwm_chrome(window: &MainWindow, theme: &ThemeDefinition) {
+    if let Some(hwnd) = extract_window_hwnd(window) {
+        let (_, dwm_border_active) = apply_dwm_window_chrome_with_border_status(
+            hwnd,
+            theme_polarity_to_dwm_flag(theme),
+            (
+                theme.border_subtle.r,
+                theme.border_subtle.g,
+                theme.border_subtle.b,
+            ),
+        );
+        window.set_dwm_border_active(dwm_border_active);
     }
 }
 
@@ -164,9 +221,11 @@ pub fn apply_theme_to_window(window: &MainWindow, theme_id: ThemeId) {
     if let Some(glow) = t.bg_app_glow {
         tokens.set_has_bg_app_glow(true);
         tokens.set_bg_app_glow_color(rgba_to_slint_color(glow.color));
+        tokens.set_bg_app_glow_cx(glow.cx_pct / 100.0);
     } else {
         tokens.set_has_bg_app_glow(false);
         tokens.set_bg_app_glow_color(slint::Color::from_argb_u8(0, 0, 0, 0));
+        tokens.set_bg_app_glow_cx(0.5);
     }
 
     if let Some(hl) = t.surface_top_highlight {
@@ -187,7 +246,7 @@ pub fn apply_theme_to_window(window: &MainWindow, theme_id: ThemeId) {
     window.set_theme_card_6(cards[6].clone());
     window.set_theme_card_7(cards[7].clone());
 
-    sync_window_dwm_theme(window, theme_polarity_to_dwm_flag(t));
+    sync_window_dwm_chrome(window, t);
 }
 
 fn now_hms_string() -> String {
@@ -610,6 +669,7 @@ pub fn run_native_app() {
 
     let window = MainWindow::new().expect("Не удалось инициализировать нативное окно Slint");
     window.set_app_version(SharedString::from(APP_VERSION));
+    apply_fonts_to_window(&window);
     apply_theme_to_window(&window, theme_prefs.theme);
     apply_tuning_to_window(&window, &initial_tuning);
     let (init_disabled_services, init_disabled_processes) =
@@ -708,7 +768,7 @@ pub fn run_native_app() {
         let weak = window.as_weak();
         window.on_toggle_maximize_window(move || {
             if let Some(w) = weak.upgrade() {
-                let next = !w.get_is_maximized();
+                let next = !w.window().is_maximized();
                 w.window().set_maximized(next);
                 w.set_is_maximized(next);
             }
@@ -800,6 +860,10 @@ pub fn run_native_app() {
                 return;
             }
             let cur_mode = w.get_mode().to_string();
+            if cur_mode == "RestoringPending" {
+                w.invoke_finish_pending_restore();
+                return;
+            }
             let action = if cur_mode == "Gaming" || cur_mode == "Armed" {
                 "Restore"
             } else {
@@ -920,26 +984,6 @@ pub fn run_native_app() {
                     Err(e) => st.push_log(&w, "error", e),
                 }
                 sync_tray();
-            }
-        });
-    }
-
-    // Open Offline 3D Architecture Teardown
-    {
-        let weak = window.as_weak();
-        let state = state.clone();
-        window.on_open_teardown(move || {
-            if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                let root = st.runtime_root.clone();
-                match backend::open_teardown_page_sync(&root) {
-                    Ok(path) => st.push_log(
-                        &w,
-                        "info",
-                        format!("Открыта 3D-разборка архитектуры: {}", path.display()),
-                    ),
-                    Err(e) => st.push_log(&w, "error", e),
-                }
             }
         });
     }
@@ -1401,6 +1445,12 @@ pub fn run_native_app() {
             std::time::Duration::from_millis(250),
             move || {
                 sync_tray();
+                if let Some(w) = weak.upgrade() {
+                    let os_max = w.window().is_maximized();
+                    if os_max != w.get_is_maximized() {
+                        w.set_is_maximized(os_max);
+                    }
+                }
                 let cmds: Vec<TrayCommand> = tray_rx
                     .lock()
                     .map(|rx| rx.try_iter().collect())
@@ -1412,8 +1462,9 @@ pub fn run_native_app() {
                             if let Some(w) = weak.upgrade() {
                                 let _ = w.show();
                                 w.window().set_minimized(false);
-                                let is_dark = w.global::<ThemeTokens>().get_is_dark();
-                                sync_window_dwm_theme(&w, is_dark);
+                                let theme_id = w.global::<ThemeTokens>().get_active_theme_id();
+                                let theme = crate::themes::get_theme(theme_id.as_str());
+                                sync_window_dwm_chrome(&w, theme);
                             }
                         }
                         TrayCommand::ToggleMode => {
@@ -1568,7 +1619,7 @@ pub fn run_native_app() {
 
     if !start_in_tray {
         let _ = window.show();
-        sync_window_dwm_theme(&window, get_theme_by_id(theme_prefs.theme).is_dark);
+        sync_window_dwm_chrome(&window, get_theme_by_id(theme_prefs.theme));
     }
 
     let _ = slint::run_event_loop_until_quit();
@@ -1577,6 +1628,55 @@ pub fn run_native_app() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
+    use slint::platform::Platform;
+
+    struct TestSoftwarePlatform {
+        window: Rc<MinimalSoftwareWindow>,
+    }
+
+    impl Platform for TestSoftwarePlatform {
+        fn create_window_adapter(
+            &self,
+        ) -> Result<Rc<dyn slint::platform::WindowAdapter>, slint::PlatformError> {
+            Ok(self.window.clone())
+        }
+    }
+
+    fn write_rgb_bmp(path: &std::path::Path, w: u32, h: u32, pixels: &[slint::Rgb8Pixel]) {
+        let row_bytes = (w * 3) as usize;
+        let pad = (4 - (row_bytes % 4)) % 4;
+        let pixel_data_size = (row_bytes + pad) * (h as usize);
+        let file_size = 54 + pixel_data_size;
+        let mut buf = Vec::with_capacity(file_size);
+        buf.extend_from_slice(b"BM");
+        buf.extend_from_slice(&(file_size as u32).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&54u32.to_le_bytes());
+        buf.extend_from_slice(&40u32.to_le_bytes());
+        buf.extend_from_slice(&(w as i32).to_le_bytes());
+        buf.extend_from_slice(&(-(h as i32)).to_le_bytes()); // top-down DIB
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&24u16.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&(pixel_data_size as u32).to_le_bytes());
+        buf.extend_from_slice(&2835u32.to_le_bytes());
+        buf.extend_from_slice(&2835u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                let p = pixels[y * w as usize + x];
+                buf.push(p.b);
+                buf.push(p.g);
+                buf.push(p.r);
+            }
+            for _ in 0..pad {
+                buf.push(0);
+            }
+        }
+        let _ = std::fs::write(path, &buf);
+    }
 
     #[test]
     fn test_all_8_themes_map_to_slint_colors_and_dwm_polarity() {
@@ -1604,5 +1704,372 @@ mod tests {
             assert_eq!(cards.iter().filter(|c| c.is_active).count(), 1);
             assert!(cards.iter().any(|c| c.id.as_str() == t.id_str && c.is_active));
         }
+
+        let (sans, mono) = detect_preferred_fonts();
+        assert!(
+            sans == "Segoe UI Variable Text" || sans == "Segoe UI",
+            "Unexpected UI font family: {}",
+            sans
+        );
+        assert!(
+            mono == "Cascadia Code" || mono == "Cascadia Mono" || mono == "Consolas",
+            "Unexpected mono font family: {}",
+            mono
+        );
+    }
+
+    #[test]
+    fn test_font_detection_prefers_win11_with_clean_fallback() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ugm_font_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&tmp);
+
+        // Windows 10 without variable fonts or Cascadia -> clean fallback
+        assert_eq!(detect_preferred_fonts_in(&tmp), ("Segoe UI", "Consolas"));
+
+        // CascadiaMono only -> Cascadia Mono fallback
+        std::fs::write(tmp.join("CascadiaMono.ttf"), b"").unwrap();
+        assert_eq!(detect_preferred_fonts_in(&tmp), ("Segoe UI", "Cascadia Mono"));
+
+        // Full Windows 11 typography -> Segoe UI Variable Text + Cascadia Code
+        std::fs::write(tmp.join("SegUIVar.ttf"), b"").unwrap();
+        std::fs::write(tmp.join("CascadiaCode.ttf"), b"").unwrap();
+        assert_eq!(
+            detect_preferred_fonts_in(&tmp),
+            ("Segoe UI Variable Text", "Cascadia Code")
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // Live host detection must always resolve to a known safe Windows family pair
+        let (sans, mono) = detect_preferred_fonts();
+        assert!(
+            sans == "Segoe UI Variable Text" || sans == "Segoe UI",
+            "Unexpected UI font family: {}",
+            sans
+        );
+        assert!(
+            mono == "Cascadia Code" || mono == "Cascadia Mono" || mono == "Consolas",
+            "Unexpected mono font family: {}",
+            mono
+        );
+    }
+
+    #[test]
+    fn test_render_all_8_themes_and_views_offscreen() {
+        let sw_window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
+        sw_window.set_size(slint::PhysicalSize::new(960, 680));
+        let _ = slint::platform::set_platform(Box::new(TestSoftwarePlatform {
+            window: sw_window.clone(),
+        }));
+
+        let window = MainWindow::new().expect("MainWindow should instantiate on software platform");
+        window.set_app_version(SharedString::from(APP_VERSION));
+        apply_fonts_to_window(&window);
+        window.set_cpu_name(SharedString::from("AMD Ryzen 5 5600X (6C / 12T)"));
+        window.set_gpu_name(SharedString::from("AMD Radeon RX 6600 (8 ГБ)"));
+        window.set_ram_summary(SharedString::from("32.0 ГБ DDR4 (свободно 24.4 ГБ)"));
+        window.set_display_summary(SharedString::from("2560×1440 @ 165 Гц · Flip + VRR"));
+        window.set_dpc_latency(SharedString::from("Потоковый DPC (оптимально)"));
+        window.set_mpo_status(SharedString::from("Штатный конвейер DWM (без мерцания)"));
+        window.set_timer_resolution(SharedString::from("0.500 мс (зафиксировано)"));
+        window.set_timer_locked(true);
+        window.set_disabled_services_count(205);
+        window.set_disabled_processes_count(40);
+        window.set_process_total_count(18);
+        window.set_process_disabled_count(6);
+        window.set_process_normal_count(12);
+        window.set_process_running_count(14);
+        window.set_process_os_core_count(5);
+        window.set_process_items(ModelRc::new(VecModel::from(vec![
+            ProcessRowItem {
+                key: "discord".into(),
+                name: "Discord".into(),
+                display_name: "Discord".into(),
+                is_running: true,
+                memory_label: "312 МБ ×4".into(),
+                is_protected: false,
+                protection_label: "".into(),
+                disable_in_gaming: true,
+                in_startup: true,
+                summary_ru: "Голосовой и текстовый мессенджер для геймеров.".into(),
+                can_disable_hint: "Безопасно закрывается на время игры.".into(),
+                safety_level: "optional".into(),
+            },
+            ProcessRowItem {
+                key: "winws".into(),
+                name: "winws".into(),
+                display_name: "Zapret DPI Bypass".into(),
+                is_running: true,
+                memory_label: "4.2 МБ".into(),
+                is_protected: true,
+                protection_label: "Zapret / Сеть".into(),
+                disable_in_gaming: false,
+                in_startup: false,
+                summary_ru: "Локальный фильтр обхода DPI (WinDivert).".into(),
+                can_disable_hint: "Защищён от закрытия в игровом режиме.".into(),
+                safety_level: "protected".into(),
+            },
+        ])));
+        window.set_service_total_count(300);
+        window.set_service_disabled_count(205);
+        window.set_service_normal_count(95);
+        window.set_service_running_count(82);
+        window.set_feature_packs(ModelRc::new(VecModel::from(vec![
+            FeaturePackItem { id: "wifi".into(), title: "Wi-Fi".into(), short_title: "Wi-Fi".into(), description: "".into(), keep_enabled_in_game: true },
+            FeaturePackItem { id: "bluetooth".into(), title: "Bluetooth".into(), short_title: "Bluetooth".into(), description: "".into(), keep_enabled_in_game: false },
+            FeaturePackItem { id: "faceit".into(), title: "FACEIT AC".into(), short_title: "FACEIT AC".into(), description: "".into(), keep_enabled_in_game: true },
+            FeaturePackItem { id: "camera".into(), title: "Камера".into(), short_title: "Камера".into(), description: "".into(), keep_enabled_in_game: false },
+            FeaturePackItem { id: "xbox".into(), title: "Xbox / Store".into(), short_title: "Xbox / Store".into(), description: "".into(), keep_enabled_in_game: false },
+            FeaturePackItem { id: "vpn".into(), title: "VPN / PPPoE".into(), short_title: "VPN / PPPoE".into(), description: "".into(), keep_enabled_in_game: true },
+            FeaturePackItem { id: "printer".into(), title: "Принтер".into(), short_title: "Принтер".into(), description: "".into(), keep_enabled_in_game: false },
+        ])));
+        window.set_service_items(ModelRc::new(VecModel::from(vec![
+            ServiceRowItem {
+                name: "DiagTrack".into(),
+                display_name: "Функциональные возможности и телеметрия".into(),
+                status_label: "Работает".into(),
+                is_running: true,
+                is_core_locked: false,
+                disable_in_gaming: true,
+                summary_ru: "Сбор диагностических данных и телеметрии Windows.".into(),
+                can_disable_hint: "Рекомендуется отключать в игровом режиме.".into(),
+                safety_level: "safe".into(),
+            },
+            ServiceRowItem {
+                name: "Audiosrv".into(),
+                display_name: "Windows Audio".into(),
+                status_label: "Работает".into(),
+                is_running: true,
+                is_core_locked: true,
+                disable_in_gaming: false,
+                summary_ru: "Управление звуком и аудиоустройствами Windows.".into(),
+                can_disable_hint: "Критическая служба ядра ОС.".into(),
+                safety_level: "protected".into(),
+            },
+        ])));
+        window.set_log_count(2);
+        window.set_logs(ModelRc::new(VecModel::from(vec![
+            LogRowItem { timestamp: "12:00:01".into(), level: "info".into(), message: "Нативный интерфейс Slint инициализирован (v4.0.0, профиль AAA).".into() },
+            LogRowItem { timestamp: "12:00:02".into(), level: "success".into(), message: "Таймер зафиксирован: 0.500 мс.".into() },
+        ])));
+
+        let dump_dir = std::env::var_os("UGM_DUMP_SCREENSHOTS").map(PathBuf::from);
+        if let Some(ref dir) = dump_dir {
+            let _ = std::fs::create_dir_all(dir);
+        }
+
+        let mut buf = vec![slint::Rgb8Pixel::new(0, 0, 0); 960 * 680];
+        let mut theme_luma = Vec::new();
+
+        for t in all_themes() {
+            apply_theme_to_window(&window, t.id);
+            window.set_active_tab(0);
+            window.show().expect("show software window");
+            sw_window.request_redraw();
+            sw_window.draw_if_needed(|renderer| {
+                renderer.render(&mut buf, 960);
+            });
+
+            // Verify non-blank rendering and theme-accurate luminance polarity
+            let mut sum_luma: f64 = 0.0;
+            let mut distinct = std::collections::HashSet::new();
+            for p in buf.iter().step_by(37) {
+                sum_luma += 0.2126 * p.r as f64 + 0.7152 * p.g as f64 + 0.0722 * p.b as f64;
+                distinct.insert((p.r, p.g, p.b));
+            }
+            let avg_luma = sum_luma / ((buf.len() / 37) as f64);
+            assert!(
+                distinct.len() > 20,
+                "Theme '{}' rendered too few distinct colors ({})",
+                t.id_str,
+                distinct.len()
+            );
+            if t.is_dark {
+                assert!(
+                    avg_luma < 70.0,
+                    "Dark theme '{}' rendered too bright (avg_luma={:.1})",
+                    t.id_str,
+                    avg_luma
+                );
+            } else {
+                assert!(
+                    avg_luma > 180.0,
+                    "Light theme '{}' rendered too dark (avg_luma={:.1})",
+                    t.id_str,
+                    avg_luma
+                );
+            }
+            theme_luma.push((t.id_str, avg_luma));
+
+            if let Some(ref dir) = dump_dir {
+                write_rgb_bmp(&dir.join(format!("dash_{}.bmp", t.id_str)), 960, 680, &buf);
+                window.set_active_tab(3);
+                sw_window.request_redraw();
+                sw_window.draw_if_needed(|renderer| {
+                    renderer.render(&mut buf, 960);
+                });
+                write_rgb_bmp(&dir.join(format!("settings_{}.bmp", t.id_str)), 960, 680, &buf);
+            }
+        }
+
+        // Verify all 5 tabs render cleanly on Dark & Light themes at both 960x680 and 860x600
+        for (w, h) in [(960u32, 680u32), (860u32, 600u32)] {
+            sw_window.set_size(slint::PhysicalSize::new(w, h));
+            let mut rbuf = vec![slint::Rgb8Pixel::new(0, 0, 0); (w * h) as usize];
+            for theme_id in [ThemeId::Dark, ThemeId::Light] {
+                apply_theme_to_window(&window, theme_id);
+                for tab in 0..5 {
+                    window.set_active_tab(tab);
+                    sw_window.request_redraw();
+                    sw_window.draw_if_needed(|renderer| {
+                        renderer.render(&mut rbuf, w as usize);
+                    });
+                    let mut distinct = std::collections::HashSet::new();
+                    for p in rbuf.iter().step_by(53) {
+                        distinct.insert((p.r, p.g, p.b));
+                    }
+                    assert!(
+                        distinct.len() > 15,
+                        "Tab {} ({}x{}, {}) rendered too few colors ({})",
+                        tab,
+                        w,
+                        h,
+                        theme_id.as_str(),
+                        distinct.len()
+                    );
+                    if let Some(ref dir) = dump_dir {
+                        if w == 960 && theme_id == ThemeId::Dark {
+                            write_rgb_bmp(&dir.join(format!("tab{}_dark_960.bmp", tab)), w, h, &rbuf);
+                        }
+                        if w == 960 && theme_id == ThemeId::Light && (tab == 1 || tab == 2) {
+                            write_rgb_bmp(&dir.join(format!("tab{}_light_960.bmp", tab)), w, h, &rbuf);
+                        }
+                        if w == 860 && theme_id == ThemeId::Dark && (tab == 0 || tab == 3) {
+                            write_rgb_bmp(&dir.join(format!("tab{}_dark_860.bmp", tab)), w, h, &rbuf);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Regression checks on interactive primitives & modal accessibility at 960x680
+        sw_window.set_size(slint::PhysicalSize::new(960, 680));
+        apply_theme_to_window(&window, ThemeId::Dark);
+        let mut rbuf_a = vec![slint::Rgb8Pixel::new(0, 0, 0); 960 * 680];
+        let mut rbuf_b = vec![slint::Rgb8Pixel::new(0, 0, 0); 960 * 680];
+
+        // 1. ThemedLineEdit must strictly clip long text without bleeding over "+ Добавить" / "Обновить"
+        window.set_active_tab(1);
+        window.set_new_process_name(SharedString::default());
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+
+        window.set_new_process_name(SharedString::from("VeryLongProcessNameThatWouldBleedOverButtons.exe"));
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_b, 960); });
+
+        // Inspect button band at x=755..930, y=105..155 where "+ Добавить" and "Обновить" live
+        let mut button_region_diffs = 0usize;
+        for y in 105..155 {
+            for x in 755..930 {
+                if rbuf_a[y * 960 + x] != rbuf_b[y * 960 + x] {
+                    button_region_diffs += 1;
+                }
+            }
+        }
+        assert_eq!(
+            button_region_diffs, 0,
+            "ThemedLineEdit long text bled over adjacent buttons ({} pixels differed)",
+            button_region_diffs
+        );
+        window.set_new_process_name(SharedString::default());
+
+        // 2. ThemedScrollBar track click must scroll a multi-row list
+        let many_services: Vec<ServiceRowItem> = (0..25)
+            .map(|idx| ServiceRowItem {
+                name: SharedString::from(format!("TestSvc{:02}", idx)),
+                display_name: SharedString::from(format!("Тестовая служба №{:02}", idx)),
+                status_label: SharedString::from("Работает"),
+                is_running: true,
+                is_core_locked: false,
+                disable_in_gaming: idx % 2 == 0,
+                summary_ru: SharedString::from("Описание тестовой службы."),
+                can_disable_hint: SharedString::from("Можно выключить."),
+                safety_level: SharedString::from("safe"),
+            })
+            .collect();
+        window.set_service_items(ModelRc::new(VecModel::from(many_services)));
+        window.set_active_tab(2);
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+
+        sw_window.dispatch_event(slint::platform::WindowEvent::PointerPressed {
+            position: slint::LogicalPosition::new(938.0, 560.0),
+            button: slint::platform::PointerEventButton::Left,
+        });
+        sw_window.dispatch_event(slint::platform::WindowEvent::PointerReleased {
+            position: slint::LogicalPosition::new(938.0, 560.0),
+            button: slint::platform::PointerEventButton::Left,
+        });
+        sw_window.dispatch_event(slint::platform::WindowEvent::PointerMoved {
+            position: slint::LogicalPosition::new(10.0, 10.0),
+        });
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_b, 960); });
+
+        let mut list_content_diffs = 0usize;
+        for y in 340..600 {
+            for x in 40..880 {
+                if rbuf_a[y * 960 + x] != rbuf_b[y * 960 + x] {
+                    list_content_diffs += 1;
+                }
+            }
+        }
+        assert!(
+            list_content_diffs > 500,
+            "ThemedScrollBar track click did not scroll list content (only {} px changed)",
+            list_content_diffs
+        );
+
+        // 3. Keyboard Escape must dismiss both ConfirmDialogOverlay and TooltipOverlay
+        window.set_confirm_visible(true);
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+        sw_window.dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: SharedString::from(slint::platform::Key::Escape),
+        });
+        sw_window.dispatch_event(slint::platform::WindowEvent::KeyReleased {
+            text: SharedString::from(slint::platform::Key::Escape),
+        });
+        assert!(
+            !window.get_confirm_visible(),
+            "Pressing Escape must dismiss ConfirmDialogOverlay"
+        );
+
+        window.set_tooltip_visible(true);
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+        sw_window.dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: SharedString::from(slint::platform::Key::Escape),
+        });
+        sw_window.dispatch_event(slint::platform::WindowEvent::KeyReleased {
+            text: SharedString::from(slint::platform::Key::Escape),
+        });
+        assert!(
+            !window.get_tooltip_visible(),
+            "Pressing Escape must dismiss TooltipOverlay"
+        );
+
+        // 4. Empty list state renders cleanly without panicking
+        window.set_service_items(ModelRc::new(VecModel::from(Vec::<ServiceRowItem>::new())));
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
     }
 }

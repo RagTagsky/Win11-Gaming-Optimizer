@@ -76,16 +76,6 @@ pub const EMBEDDED_RUNTIME_ASSETS: &[EmbeddedAsset] = &[
         preserve_if_exists: true,
     },
     EmbeddedAsset {
-        rel_path: "docs/teardown/index.html",
-        bytes: include_bytes!("../docs/teardown/index.html"),
-        preserve_if_exists: false,
-    },
-    EmbeddedAsset {
-        rel_path: "docs/teardown/preview.svg",
-        bytes: include_bytes!("../docs/teardown/preview.svg"),
-        preserve_if_exists: false,
-    },
-    EmbeddedAsset {
         rel_path: "Tests/Verify-UniversalEngine.ps1",
         bytes: include_bytes!("../Tests/Verify-UniversalEngine.ps1"),
         preserve_if_exists: false,
@@ -2832,7 +2822,7 @@ pub fn resolve_runtime_root_fresh() -> PathBuf {
     }
 
     // Single-file portable UltraGamingMode.exe or read-only directory:
-    // materialize all scripts, configs, and docs/teardown/index.html into a writable candidate.
+    // materialize all scripts and configs into a writable candidate.
     for candidate in standalone_runtime_candidates() {
         if std::fs::create_dir_all(&candidate).is_ok()
             && is_dir_writable(&candidate)
@@ -4743,40 +4733,6 @@ pub fn open_release_url_sync(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn resolve_teardown_html_path(root: &Path) -> Result<PathBuf, String> {
-    let candidate = root.join("docs").join("teardown").join("index.html");
-    if candidate.exists() {
-        return Ok(candidate);
-    }
-    // Attempt to materialize embedded teardown HTML into root if writable
-    if is_dir_writable(root) {
-        let _ = sync_embedded_runtime(root);
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-    Err(format!(
-        "Локальная 3D-разборка архитектуры не найдена по пути: {}",
-        candidate.display()
-    ))
-}
-
-pub fn open_teardown_page_sync(root: &Path) -> Result<PathBuf, String> {
-    let path = resolve_teardown_html_path(root)?;
-    #[cfg(target_os = "windows")]
-    {
-        let explorer = std::env::var_os("SystemRoot")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
-            .join("explorer.exe");
-        Command::new(&explorer)
-            .arg(&path)
-            .spawn()
-            .map_err(|e| format!("Не удалось открыть 3D-разборку в браузере: {}", e))?;
-    }
-    Ok(path)
-}
-
 pub const AUTOSTART_TASK_NAME: &str = "UltraGamingMode_AutoStart";
 
 pub fn escape_xml_text(s: &str) -> String {
@@ -6149,7 +6105,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sync_embedded_runtime_materializes_all_assets_including_teardown_and_preserves_custom_tuning() {
+    fn test_sync_embedded_runtime_materializes_all_assets_and_preserves_custom_tuning() {
         let temp_root =
             std::env::temp_dir().join(format!("ugm_embedded_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_root);
@@ -6175,7 +6131,10 @@ mod tests {
             assert_eq!(bytes.as_slice(), asset.bytes);
         }
         assert!(temp_root.join("Backups").is_dir());
-        assert!(resolve_teardown_html_path(&temp_root).is_ok());
+        assert!(
+            !temp_root.join("docs").exists(),
+            "Removed 3D teardown docs must not be materialized"
+        );
 
         let custom_tuning = br#"{"AutoLockTimerInGaming":false,"AutoPurgeRamInGaming":true,"AutoPurgeRamThresholdMB":4096}"#;
         std::fs::write(temp_root.join("Config").join("tuning.json"), custom_tuning)
@@ -6197,12 +6156,6 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_root);
-    }
-
-    #[test]
-    fn test_resolve_teardown_html_path_handles_missing_and_materialization() {
-        let missing = PathBuf::from(r"Z:\nonexistent_ugm_drive_xyz\no_teardown");
-        assert!(resolve_teardown_html_path(&missing).is_err());
     }
 
     #[test]

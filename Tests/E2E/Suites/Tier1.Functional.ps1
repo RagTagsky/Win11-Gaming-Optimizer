@@ -1,4 +1,4 @@
-# Tier1.Functional.ps1 — 40 Isolated Requirement-Level Tests (5 per Feature Area F1-F8)
+# Tier1.Functional.ps1 -- 40 Isolated Requirement-Level Tests (5 per Feature Area F1-F8)
 
 Set-StrictMode -Version Latest
 
@@ -119,7 +119,8 @@ function Register-Tier1Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "slint/ templates not yet created (M4 pending)" -Artifact "slint/"
         }
         $allSlint = (Get-ChildItem -LiteralPath $slintDir -Filter "*.slint" -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
-        foreach ($tab in @("Обзор", "Процессы", "Службы", "Настройки", "Обслуживание")) {
+        foreach ($tabEsc in @('\u041e\u0431\u0437\u043e\u0440', '\u041f\u0440\u043e\u0446\u0435\u0441\u0441\u044b', '\u0421\u043b\u0443\u0436\u0431\u044b', '\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438', '\u041e\u0431\u0441\u043b\u0443\u0436\u0438\u0432\u0430\u043d\u0438\u0435')) {
+            $tab = [regex]::Unescape($tabEsc)
             Assert-E2EMatch $allSlint ([regex]::Escape($tab)) "Slint UI must contain Russian tab '$tab'"
         }
         $srcText = (Get-ChildItem -LiteralPath (Join-Path $ctx.RepoRoot "src") -Filter "*.rs" -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
@@ -142,7 +143,7 @@ function Register-Tier1Tests {
         foreach ($id in @("tray-status", "tray-open", "tray-toggle", "tray-clean-ram", "tray-timer", "tray-reboot", "tray-exit")) {
             Assert-E2EMatch $raw ([regex]::Escape($id)) "Tray module must define menu ID '$id'"
         }
-        Assert-E2ENotMatch $raw 'Профиль оптимизации' "Tray must NOT have profile submenu"
+        Assert-E2ENotMatch $raw '\u041f\u0440\u043e\u0444\u0438\u043b\u044c \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438' "Tray must NOT have profile submenu"
         $ct = Invoke-CachedCargoTest -Context $ctx
         Assert-E2EEqual 0 $ct.ExitCode "cargo test must pass cleanly"
     }
@@ -257,14 +258,14 @@ function Register-Tier1Tests {
         }
         $raw = Get-Content -LiteralPath $themesRs -Raw -Encoding UTF8
         $expectedThemes = @(
-            @{ id = "dark"; name = "Тёмная классика"; tokens = @("#0c0f14", "#131720", "#1b202c", "#232a38", "#2c3547", "#2563eb", "#74b4fc", "#f1f5f9", "#c42b1c") },
-            @{ id = "oled-obsidian"; name = "OLED Обсидиан"; tokens = @("#000000", "#090b0f", "#11151d", "#191f2b", "#222a3a", "#0275a6", "#4cc4fa", "#f3f6fa", "#d42636") },
-            @{ id = "emerald-ops"; name = "Тактический изумруд"; tokens = @("#090e0d", "#101715", "#17221f", "#1f2e2a", "#283b36", "#0e7478", "#3ddbe0", "#edf6f2", "#65e67d") },
-            @{ id = "graphite-amber"; name = "Спокойный графит"; tokens = @("#141518", "#1b1d21", "#24272d", "#2d3139", "#373c46", "#c2410c", "#fb9b52", "#f3f1ec", "#fdeb5b") },
-            @{ id = "midnight-violet"; name = "Глубокая ночь"; tokens = @("#0d0c16", "#151324", "#1f1c33", "#282442", "#322d52", "#7c3aed", "#c4a8fd", "#f3f1fc", "#a78bfa") },
-            @{ id = "light"; name = "Светлая классика"; tokens = @("#f3f6fa", "#ffffff", "#edf2f7", "#e2e9f2", "#d4dfec", "#2563eb", "#1d4ed8", "#0f172a", "#046c4e") },
-            @{ id = "daylight-warm"; name = "Тёплая дневная"; tokens = @("#f3efe6", "#fbf9f4", "#ece6da", "#e2dacb", "#d5cbb8", "#0b6e73", "#096166", "#1f1c17", "#1b6628") },
-            @{ id = "frost-slate"; name = "Северный лёд"; tokens = @("#e8eef5", "#f5f8fc", "#e1e8f2", "#d4dfed", "#c5d4e6", "#3749a6", "#2c3d91", "#141e30", "#04694b") }
+            @{ id = "dark"; name = [regex]::Unescape('\u0422\u0451\u043c\u043d\u0430\u044f \u043a\u043b\u0430\u0441\u0441\u0438\u043a\u0430'); tokens = @("#0c0f14", "#131720", "#1b202c", "#232a38", "#2c3547", "#2563eb", "#74b4fc", "#f1f5f9", "#c42b1c") },
+            @{ id = "oled-obsidian"; name = [regex]::Unescape('OLED \u041e\u0431\u0441\u0438\u0434\u0438\u0430\u043d'); tokens = @("#000000", "#090b0f", "#11151d", "#191f2b", "#222a3a", "#0275a6", "#4cc4fa", "#f3f6fa", "#d42636") },
+            @{ id = "emerald-ops"; name = [regex]::Unescape('\u0422\u0430\u043a\u0442\u0438\u0447\u0435\u0441\u043a\u0438\u0439 \u0438\u0437\u0443\u043c\u0440\u0443\u0434'); tokens = @("#090e0d", "#101715", "#17221f", "#1f2e2a", "#283b36", "#0e7478", "#3ddbe0", "#edf6f2", "#65e67d") },
+            @{ id = "graphite-amber"; name = [regex]::Unescape('\u0421\u043f\u043e\u043a\u043e\u0439\u043d\u044b\u0439 \u0433\u0440\u0430\u0444\u0438\u0442'); tokens = @("#141518", "#1b1d21", "#24272d", "#2d3139", "#373c46", "#c2410c", "#fb9b52", "#f3f1ec", "#fdeb5b") },
+            @{ id = "midnight-violet"; name = [regex]::Unescape('\u0413\u043b\u0443\u0431\u043e\u043a\u0430\u044f \u043d\u043e\u0447\u044c'); tokens = @("#0d0c16", "#151324", "#1f1c33", "#282442", "#322d52", "#7c3aed", "#c4a8fd", "#f3f1fc", "#a78bfa") },
+            @{ id = "light"; name = [regex]::Unescape('\u0421\u0432\u0435\u0442\u043b\u0430\u044f \u043a\u043b\u0430\u0441\u0441\u0438\u043a\u0430'); tokens = @("#f3f6fa", "#ffffff", "#edf2f7", "#e2e9f2", "#d4dfec", "#2563eb", "#1d4ed8", "#0f172a", "#046c4e") },
+            @{ id = "daylight-warm"; name = [regex]::Unescape('\u0422\u0451\u043f\u043b\u0430\u044f \u0434\u043d\u0435\u0432\u043d\u0430\u044f'); tokens = @("#f3efe6", "#fbf9f4", "#ece6da", "#e2dacb", "#d5cbb8", "#0b6e73", "#096166", "#1f1c17", "#1b6628") },
+            @{ id = "frost-slate"; name = [regex]::Unescape('\u0421\u0435\u0432\u0435\u0440\u043d\u044b\u0439 \u043b\u0451\u0434'); tokens = @("#e8eef5", "#f5f8fc", "#e1e8f2", "#d4dfed", "#c5d4e6", "#3749a6", "#2c3d91", "#141e30", "#04694b") }
         )
         $lastPos = -1
         foreach ($t in $expectedThemes) {
@@ -597,78 +598,78 @@ Write-Output 'TCP_TIMESTAMPS_OK'
     }
 
     # =========================================================================
-    # F7: Offline 3D Architecture Teardown & Docs (5 tests)
+    # F7: Unified AAA Pipeline UI, Typography, Themed Primitives & Docs (5 tests)
     # =========================================================================
-    Register-E2ETest -Id "T1-F7-01" -Tier 1 -Feature "F7" -Name "docs/teardown/index.html loads via file:// with 0 network requests, 0 JS errors, non-blank canvas" -Artifact "docs/teardown/index.html" -Body {
+    Register-E2ETest -Id "T1-F7-01" -Tier 1 -Feature "F7" -Name "Removed 3D teardown artifacts are absent from repo, build.rs, backend, and Slint UI" -Artifact "src/backend.rs" -Body {
         param($ctx)
-        $htmlPath = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
-        Assert-E2ETrue (Test-Path -LiteralPath $htmlPath) "docs/teardown/index.html must exist"
-        $cdp = Invoke-TeardownCdpVerification -HtmlPath $htmlPath -UserDataDir $ctx.Sandbox.BrowserProfile
-        $ctx.Cache["TeardownCdp"] = $cdp
-        Assert-E2EEqual 0 $cdp.ExitCode "CDP verifier must exit 0"
-        Assert-E2EEqual 0 @($cdp.Result.externalRequests).Count "Zero external requests allowed"
-        Assert-E2EEqual 0 @($cdp.Result.consoleErrors).Count "Zero console errors allowed"
-        Assert-E2EEqual 0 @($cdp.Result.exceptions).Count "Zero JS exceptions allowed"
-        Assert-E2ETrue $cdp.Result.staticCheck.hasCanvas "Canvas must render"
-        Assert-E2ETrue ($cdp.Result.staticCheck.nonZeroColorCount -gt 3) "Canvas pixels must be non-blank"
+        Assert-E2ETrue (-not (Test-Path -LiteralPath (Join-Path $ctx.RepoRoot "docs\teardown"))) "docs/teardown directory must be removed"
+        $buildRs = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "build.rs") -Raw -Encoding UTF8
+        Assert-E2ENotMatch $buildRs 'teardown' "build.rs must not reference teardown"
+
+        $backendRs = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "src\backend.rs") -Raw -Encoding UTF8
+        Assert-E2ENotMatch $backendRs 'open_teardown_page|resolve_teardown_html_path|docs/teardown' "src/backend.rs must not embed or launch teardown"
+
+        $slintAll = (Get-ChildItem -LiteralPath (Join-Path $ctx.RepoRoot "slint") -Filter "*.slint" -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        Assert-E2ENotMatch $slintAll 'open-teardown|3D-\u0430\u0440\u0445\u0438\u0442\u0435\u043a\u0442\u0443\u0440' "Slint UI must not expose 3D teardown callbacks or buttons"
     }
 
-    Register-E2ETest -Id "T1-F7-02" -Tier 1 -Feature "F7" -Name "3D Teardown page presents all 7 AAA architecture layers in Russian" -Artifact "docs/teardown/index.html" -Body {
+    Register-E2ETest -Id "T1-F7-02" -Tier 1 -Feature "F7" -Name "Dashboard renders unified 4-stage AAA gaming pipeline cleanly without clutter" -Artifact "slint/dashboard.slint" -Body {
         param($ctx)
-        $htmlPath = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
-        $raw = Get-Content -LiteralPath $htmlPath -Raw -Encoding UTF8
-        Assert-E2ENotMatch $raw '(?i)(<script[^>]+src="http|<link[^>]+href="http|https?://fonts\.|cdn\.jsdelivr|unpkg\.com)' "Teardown HTML must not reference external scripts/styles/CDNs"
-        if (-not $ctx.Cache.ContainsKey("TeardownCdp")) {
-            $ctx.Cache["TeardownCdp"] = Invoke-TeardownCdpVerification -HtmlPath $htmlPath -UserDataDir $ctx.Sandbox.BrowserProfile
-        }
-        $cdp = $ctx.Cache["TeardownCdp"]
-        Assert-E2EEqual 7 ([int]$cdp.Result.staticCheck.layerCount) "All 7 architecture layers must be rendered"
-        Assert-E2ETrue $cdp.Result.staticCheck.bodyHasLayers "Russian layer descriptions must cover GUI, PowerShell, CPU, GPU, RAM, Zapret"
+        $dash = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "slint\dashboard.slint") -Raw -Encoding UTF8
+        Assert-E2EMatch $dash '\u0415\u0434\u0438\u043d\u044b\u0439 \u0438\u0433\u0440\u043e\u0432\u043e\u0439 \u043a\u043e\u043d\u0432\u0435\u0439\u0435\u0440 AAA' "Dashboard must display unified AAA pipeline title"
+        Assert-E2EMatch $dash '\u0413\u0440\u0430\u0444\u0438\u043a\u0430 \u0438 DWM' "Dashboard pipeline must include Graphics & DWM stage"
+        Assert-E2EMatch $dash '\u042f\u0434\u0440\u043e \u0438 \u0432\u0432\u043e\u0434 HID' "Dashboard pipeline must include CPU & HID input stage"
+        Assert-E2EMatch $dash '\u041f\u0430\u043c\u044f\u0442\u044c \u0438 \u0442\u0430\u0439\u043c\u0435\u0440' "Dashboard pipeline must include Memory & Timer stage"
+        Assert-E2EMatch $dash '\u0421\u0435\u0442\u044c \u0438 \u0437\u0430\u0449\u0438\u0442\u0430 DPI' "Dashboard pipeline must include Network & DPI protection stage"
+        Assert-E2EMatch $dash '0\.500 \u043c\u0441' "Dashboard must reflect 0.500 ms timer lock"
+        Assert-E2EMatch $dash 'Zapret' "Dashboard must reflect Zapret DPI protection"
     }
 
-    Register-E2ETest -Id "T1-F7-03" -Tier 1 -Feature "F7" -Name "3D Teardown interactive exploded, cutaway, telemetry, theme and zoom controls mutate state & canvas" -Artifact "docs/teardown/index.html" -Body {
+    Register-E2ETest -Id "T1-F7-03" -Tier 1 -Feature "F7" -Name "Windows typography (Segoe UI Variable Text + Cascadia Code) and Win10 fallbacks are wired" -Artifact "slint/theme.slint" -Body {
         param($ctx)
-        $htmlPath = Join-Path $ctx.RepoRoot "docs\teardown\index.html"
-        if (-not $ctx.Cache.ContainsKey("TeardownCdp")) {
-            $ctx.Cache["TeardownCdp"] = Invoke-TeardownCdpVerification -HtmlPath $htmlPath -UserDataDir $ctx.Sandbox.BrowserProfile
-        }
-        $inter = $ctx.Cache["TeardownCdp"].Result.interactive
-        Assert-E2ETrue $inter.themeChanged "Theme toggle must switch dark <-> light"
-        Assert-E2ETrue $inter.cutawayChanged "Cutaway toggle must update state"
-        Assert-E2ETrue $inter.explodeChanged "Exploded view control must update state"
-        Assert-E2ETrue $inter.telemetryChanged "Telemetry mode toggle must update metrics"
-        Assert-E2ETrue $inter.canvasPixelsChanged "Interactive controls must visibly update canvas pixels"
+        $themeSlint = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "slint\theme.slint") -Raw -Encoding UTF8
+        $mainSlint = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "slint\main.slint") -Raw -Encoding UTF8
+        $bridgeRs = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "src\ui_bridge.rs") -Raw -Encoding UTF8
+
+        Assert-E2EMatch $themeSlint 'font-sans:\s*"Segoe UI Variable Text"' "ThemeTokens must configure Segoe UI Variable Text"
+        Assert-E2EMatch $themeSlint 'font-mono:\s*"Cascadia Code"' "ThemeTokens must configure Cascadia Code"
+        Assert-E2EMatch $mainSlint 'default-font-family:\s*ThemeTokens\.font-sans' "MainWindow must bind default-font-family to ThemeTokens.font-sans"
+        Assert-E2EMatch $bridgeRs 'Segoe UI' "ui_bridge.rs must include Windows 10 Segoe UI fallback"
+        Assert-E2EMatch $bridgeRs 'Consolas' "ui_bridge.rs must include Windows 10 Consolas fallback"
+
+        $ct = Invoke-CachedCargoTest -Context $ctx
+        Assert-E2EEqual 0 $ct.ExitCode "cargo test must pass font detection & UI bridge tests"
+        Assert-E2EMatch $ct.Output 'test_font_detection_prefers_win11_with_clean_fallback\s*\.\.\.\s*ok' "Font detection unit test must pass"
     }
 
-    Register-E2ETest -Id "T1-F7-04" -Tier 1 -Feature "F7" -Name "docs/teardown/preview.svg is valid XML and README/README.ru link v4.0.0 teardown" -Artifact "docs/teardown/preview.svg" -Body {
+    Register-E2ETest -Id "T1-F7-04" -Tier 1 -Feature "F7" -Name "All 8 themes use custom themed Slint primitives with zero un-themed std-widgets imports" -Artifact "slint/components.slint" -Body {
         param($ctx)
-        $svgPath = Join-Path $ctx.RepoRoot "docs\teardown\preview.svg"
-        Assert-E2ETrue (Test-Path -LiteralPath $svgPath) "docs/teardown/preview.svg must exist"
-        $xml = [xml](Get-Content -LiteralPath $svgPath -Raw -Encoding UTF8)
-        Assert-E2EEqual "svg" $xml.DocumentElement.LocalName "preview.svg root element must be <svg>"
+        $slintFiles = Get-ChildItem -LiteralPath (Join-Path $ctx.RepoRoot "slint") -Filter "*.slint" -Recurse
+        $slintAll = ($slintFiles | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
+        Assert-E2ENotMatch $slintAll 'std-widgets\.slint' "Slint views must not import un-themed std-widgets.slint"
 
+        $comp = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "slint\components.slint") -Raw -Encoding UTF8
+        Assert-E2EMatch $comp 'export component SurfaceCard' "components.slint must export SurfaceCard"
+        Assert-E2EMatch $comp 'export component ThemedScrollView' "components.slint must export ThemedScrollView"
+        Assert-E2EMatch $comp 'ThemeTokens\.scrollbar-thumb' "ThemedScrollView must bind ThemeTokens.scrollbar-thumb"
+        Assert-E2EMatch $comp 'export component ThemedLineEdit' "components.slint must export ThemedLineEdit"
+        Assert-E2EMatch $comp 'ThemeTokens\.border-input' "ThemedLineEdit must bind ThemeTokens.border-input"
+        Assert-E2EMatch $comp 'export component ThemedSwitch' "components.slint must export ThemedSwitch"
+
+        $mainSlint = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "slint\main.slint") -Raw -Encoding UTF8
+        Assert-E2EMatch $mainSlint '@radial-gradient\(' "MainWindow ambient glow must use smooth radial gradient"
+    }
+
+    Register-E2ETest -Id "T1-F7-05" -Tier 1 -Feature "F7" -Name "README.md and README.ru.md document v4.0.0 Slint UI, unified pipeline, 8 themes, and typography" -Artifact "README.md" -Body {
+        param($ctx)
         foreach ($md in @("README.md", "README.ru.md")) {
-            $p = Join-Path $ctx.RepoRoot $md
-            $txt = Get-Content -LiteralPath $p -Raw -Encoding UTF8
-            if ($txt -notmatch 'docs/teardown/' -or $txt -notmatch '4\.0\.0' -or $txt -notmatch '(?i)slint') {
-                Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "$md not yet updated for v4.0.0/Slint/teardown (M2 pending)" -Artifact $md
-            }
-            Assert-E2EMatch $txt 'docs/teardown/index\.html' "$md must link docs/teardown/index.html"
-            Assert-E2EMatch $txt 'docs/teardown/preview\.svg' "$md must embed docs/teardown/preview.svg"
+            $txt = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot $md) -Raw -Encoding UTF8
+            Assert-E2EMatch $txt '4\.0\.0' "$md must document v4.0.0"
+            Assert-E2EMatch $txt '(?i)slint' "$md must document Slint GUI"
+            Assert-E2EMatch $txt 'Segoe UI Variable Text' "$md must document Segoe UI Variable Text typography"
+            Assert-E2EMatch $txt 'Cascadia Code' "$md must document Cascadia Code monospace typography"
+            Assert-E2ENotMatch $txt 'docs/teardown/|preview\.svg' "$md must not link removed 3D teardown assets"
         }
-    }
-
-    Register-E2ETest -Id "T1-F7-05" -Tier 1 -Feature "F7" -Name "Native app embeds docs/teardown/index.html and wires UI launch button" -Artifact "src/backend.rs" -Body {
-        param($ctx)
-        $srcDir = Join-Path $ctx.RepoRoot "src"
-        $slintDir = Join-Path $ctx.RepoRoot "slint"
-        if (-not (Test-Path -LiteralPath $srcDir) -or -not (Test-Path -LiteralPath $slintDir)) {
-            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "src/ or slint/ not yet created (M3/M4 pending)" -Artifact "src/backend.rs"
-        }
-        $srcAll = (Get-ChildItem -LiteralPath $srcDir -Filter "*.rs" -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
-        $slintAll = (Get-ChildItem -LiteralPath $slintDir -Filter "*.slint" -Recurse | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 }) -join "`n"
-        Assert-E2EMatch $srcAll 'teardown[/\\]index\.html' "Backend must embed/launch docs/teardown/index.html"
-        Assert-E2EMatch ($srcAll + "`n" + $slintAll) '(?i)(teardown|3d|архитектур)' "UI must expose 3D teardown launch button"
     }
 
     # =========================================================================
@@ -698,7 +699,8 @@ Write-Output 'TCP_TIMESTAMPS_OK'
             $candidates = @($portDir, (Join-Path $ctx.Sandbox.EnvRw "ProgramFiles\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "ProgramData\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "LocalAppData\UltraGamingMode"), (Join-Path $ctx.Sandbox.EnvRw "LocalAppData\UltraGamingMode\Runtime"))
             $foundRoot = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ "UltraGamingMode.ps1") } | Select-Object -First 1
             Assert-E2ETrue ($null -ne $foundRoot) "Portable runtime must materialize UltraGamingMode.ps1 inside sandbox"
-            Assert-E2ETrue (Test-Path -LiteralPath (Join-Path $foundRoot "docs\teardown\index.html")) "Portable runtime must materialize docs/teardown/index.html"
+            Assert-E2ETrue (Test-Path -LiteralPath (Join-Path $foundRoot "Core\SystemOptimizer.ps1")) "Portable runtime must materialize Core/SystemOptimizer.ps1"
+            Assert-E2ETrue (-not (Test-Path -LiteralPath (Join-Path $foundRoot "docs"))) "Removed docs/ directory must not be materialized"
             Assert-E2ETrue (-not (Test-Path -LiteralPath (Join-Path $foundRoot "EBWebView"))) "EBWebView directory must never be created"
         } finally {
             Stop-E2EProcessTree -RootPid $proc.Id
@@ -759,7 +761,11 @@ Write-Output 'TCP_TIMESTAMPS_OK'
         Assert-E2EMatch $raw 'cargo build --release' "Build-Release.ps1 must invoke cargo build --release"
 
         # Validate release notes contract helper if embedded or documented
-        $sampleValid = @("- Переход на нативный интерфейс без лишних зависимостей", "- Добавлены восемь тем оформления с переключением", "- Оставлен только профиль оптимизации AAA")
+        $sampleValid = @(
+            ([regex]::Unescape('- \u041f\u0435\u0440\u0435\u0445\u043e\u0434 \u043d\u0430 \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 \u0431\u0435\u0437 \u043b\u0438\u0448\u043d\u0438\u0445 \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0435\u0439')),
+            ([regex]::Unescape('- \u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u0432\u043e\u0441\u0435\u043c\u044c \u0442\u0435\u043c \u043e\u0444\u043e\u0440\u043c\u043b\u0435\u043d\u0438\u044f \u0441 \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435\u043c')),
+            ([regex]::Unescape('- \u041e\u0441\u0442\u0430\u0432\u043b\u0435\u043d \u0442\u043e\u043b\u044c\u043a\u043e \u043f\u0440\u043e\u0444\u0438\u043b\u044c \u043e\u043f\u0442\u0438\u043c\u0438\u0437\u0430\u0446\u0438\u0438 AAA'))
+        )
         for ($i = 0; $i -lt 3; $i++) {
             Assert-E2EMatch $sampleValid[$i] '^- [^\*#`]+$' "Sample release bullet invalid"
         }
