@@ -42,12 +42,13 @@ export component MaintenanceView inherits Rectangle {
                 }
             }
 
-            // Status Banner
+            // Status Banner (bounded height so long logs stay crisp and readable)
             if root.status-text != "" : Rectangle {
                 border-radius: 10px;
                 background: root.status-is-error ? ThemeTokens.status-danger-soft : ThemeTokens.status-active-soft;
                 border-width: 1px;
                 border-color: root.status-is-error ? ThemeTokens.status-danger-border : ThemeTokens.status-active-border;
+                clip: true;
 
                 HorizontalLayout {
                     padding-left: 14px;
@@ -60,14 +61,14 @@ export component MaintenanceView inherits Rectangle {
                         horizontal-stretch: 1;
                         text: root.status-text;
                         font-size: 12px;
-                        font-weight: 600;
+                        font-weight: 500;
                         color: root.status-is-error ? ThemeTokens.status-danger-text : ThemeTokens.status-active-text;
                         vertical-alignment: center;
                         wrap: word-wrap;
                     }
 
                     VerticalLayout {
-                        alignment: center;
+                        alignment: start;
                         Rectangle {
                             width: 26px;
                             height: 26px;

@@ -1,20 +1,12 @@
 # ==============================================================================
-# Windows 11 Ultra Gaming Mode — Master Git Ignore Configuration
+# Windows 11 Ultra Gaming Mode — Git Ignore Configuration
 # ==============================================================================
 
-# ── Compiled Binaries & Release Packages (Upload to GitHub Releases) ──────────
-# Executable files and installers (belong in GitHub Releases, NOT repository)
+# ── Compiled Binaries & Release Packages (Uploaded to GitHub Releases) ────────
 *.exe
 *.msi
 *.msix
 *.appx
-*.dmg
-*.pkg
-*.deb
-*.rpm
-*.AppImage
-
-# Compiled libraries, symbols and objects
 *.dll
 *.sys
 *.pdb
@@ -23,138 +15,71 @@
 *.obj
 *.o
 *.a
-*.so
-*.dylib
-*.bin
-*.iso
-*.img
-
-# Release archives and distribution bundles
 *.zip
 *.7z
 *.rar
 *.tar
 *.tar.gz
 *.tgz
-*.tar.xz
-*.tar.bz2
 
-# Build bundle outputs & installer toolchains
-**/bundle/
-**/wix/
-**/nsis/
+# Build & installer outputs
+.bin/
+bin/
+releases/
+release/
 *.wixobj
 *.wixpdb
 *.wixbin
-releases/
-release/
-.bin/
-bin/
 
-# ── Rust & Tauri Build System ─────────────────────────────────────────────────
-# Cargo build tree (all profiles: debug, release)
+# ── Rust & Cargo Build System ─────────────────────────────────────────────────
+/target/
 **/target/
 **/*.rs.bk
 
-# Tauri generated schema cache
-**/src-tauri/gen/
-
-# ── Node.js, Frontend & Vite ──────────────────────────────────────────────────
-# Dependency directories
-**/node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Frontend build outputs
-**/dist/
-**/dist-ssr/
-**/.vite/
-**/.svelte-kit/
-**/.turbo/
-*.tsbuildinfo
-*.local
-
 # ── Dynamic Runtime State, Backups & Host Snapshots ───────────────────────────
-# Dynamic backups captured during optimization (host-specific)
 Backups/
 active_state.json
 **/active_state.json
+Config/ui_settings.json
 
-# Quarantined shortcuts and local backup files
+# Quarantined shortcuts & backup files
 *.ugm_backup
 *.bak
 *.backup
 *.old
 *.orig
 
-# ── Logs & Temporary Files ───────────────────────────────────────────────────
+# ── Logs, Temporary & Diagnostic Artifacts ────────────────────────────────────
 *.log
 *.tmp
 *.temp
 *.transcript.txt
 *PowerShell_transcript.*
 .history/
-
-# ── Test, Diagnostics & Benchmark Artifacts ──────────────────────────────────
 UGM_Test_*
 TestResults/
-coverage/
-.nyc_output/
 *.prof
 *.vprof
 
-# ── Windows Operating System Artifacts ───────────────────────────────────────
+# ── Operating System & IDE Artifacts ──────────────────────────────────────────
 [Tt]humbs.db
-[Tt]humbs.db:encryptable
-ehthumbs.db
-ehthumbs_vista.db
 [Dd]esktop.ini
 $RECYCLE.BIN/
-System Volume Information/
 *.lnk
-
-# ── macOS & Linux System Artifacts ───────────────────────────────────────────
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-*~
-.fuse_hidden*
-.directory
-
-# ── IDEs, Code Editors & Workspaces ──────────────────────────────────────────
-# Visual Studio Code
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 *.code-workspace
-
-# Visual Studio / JetBrains / Rider
 .vs/
 .idea/
 *.suo
 *.user
-*.userosscache
-*.sln.docstates
-*.ntvs*
-*.njsproj
-*.iml
-cmake-build-*/
-
-# Vim / Emacs / Sublime swap files
 *.swp
 *.swo
-*.sw?
-*.sublime-project
-*.sublime-workspace
-.#*
-#*#
+*~
 
 # ── Environment & Secrets ─────────────────────────────────────────────────────
 .env

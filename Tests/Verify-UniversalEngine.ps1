@@ -2,6 +2,10 @@
 .SYNOPSIS
     Unit, configuration, and behavioral verification suite for Ultra Gaming Mode.
 #>
+[CmdletBinding()]
+param(
+    [switch]$UserInstall
+)
 
 $ErrorActionPreference = "Stop"
 try {
@@ -162,8 +166,13 @@ $blNames = @($blConfig.TargetServices | ForEach-Object { if ($_ -is [string]) { 
 $wlNames = @($wlConfig.ProtectedServices)
 $overlapServices = @($blNames | Where-Object { $wlNames -contains $_ })
 
-Assert-Test ($blNames.Count -eq 205) "services_blacklist.json contains 205 TargetServices (actual: $($blNames.Count))"
-Assert-Test ($wlNames.Count -eq 95) "services_whitelist.json contains 95 ProtectedServices (actual: $($wlNames.Count))"
+if ($UserInstall) {
+    Assert-Test ($blNames.Count -ge 1) "services_blacklist.json contains valid TargetServices (actual: $($blNames.Count))"
+    Assert-Test ($wlNames.Count -ge 15) "services_whitelist.json contains valid ProtectedServices (actual: $($wlNames.Count))"
+} else {
+    Assert-Test ($blNames.Count -eq 205) "services_blacklist.json contains 205 TargetServices (actual: $($blNames.Count))"
+    Assert-Test ($wlNames.Count -eq 95) "services_whitelist.json contains 95 ProtectedServices (actual: $($wlNames.Count))"
+}
 Assert-Test ($overlapServices.Count -eq 0) "Zero overlap between services_blacklist.json and services_whitelist.json"
 
 $criticalWhitelisted = @("FACEIT", "FACEITService", "vgk", "vgc", "EasyAntiCheat", "BEService", "Audiosrv", "camsvc", "CaptureService", "cbdhsvc", "Apple Mobile Device Service", "ProcessGovernor", "zapret", "WinDivert", "WinDivert14")
@@ -173,10 +182,12 @@ Assert-Test ($missingCriticalWl.Count -eq 0) "services_whitelist.json protects a
 $svcDescObj = (Get-Content -LiteralPath $descPath -Raw -Encoding UTF8 | ConvertFrom-Json).Descriptions
 $missingDesc = @()
 $invalidSvcSafety = @()
-foreach ($svcName in ($blNames + $wlNames)) {
-    $p = $svcDescObj.PSObject.Properties[$svcName]
-    if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
-        $missingDesc += $svcName
+if (-not $UserInstall) {
+    foreach ($svcName in ($blNames + $wlNames)) {
+        $p = $svcDescObj.PSObject.Properties[$svcName]
+        if (-not $p -or [string]::IsNullOrWhiteSpace($p.Value.summaryRu) -or [string]::IsNullOrWhiteSpace($p.Value.canDisableRu)) {
+            $missingDesc += $svcName
+        }
     }
 }
 foreach ($prop in $svcDescObj.PSObject.Properties) {
@@ -184,7 +195,11 @@ foreach ($prop in $svcDescObj.PSObject.Properties) {
         $invalidSvcSafety += $prop.Name
     }
 }
-Assert-Test ($missingDesc.Count -eq 0) "service_descriptions.json covers all $($blNames.Count + $wlNames.Count) managed services (missing: $($missingDesc.Count))"
+if ($UserInstall) {
+    Assert-Test (@($svcDescObj.PSObject.Properties).Count -ge 300) "service_descriptions.json contains curated Russian service descriptions ($(@($svcDescObj.PSObject.Properties).Count) entries)"
+} else {
+    Assert-Test ($missingDesc.Count -eq 0) "service_descriptions.json covers all $($blNames.Count + $wlNames.Count) managed services (missing: $($missingDesc.Count))"
+}
 Assert-Test ($invalidSvcSafety.Count -eq 0) "service_descriptions.json defines valid safetyLevel on every entry (invalid: $($invalidSvcSafety.Count))"
 
 $procDescPath = Join-Path $repoRoot "Config\process_descriptions.json"
@@ -203,13 +218,19 @@ foreach ($prop in $procDescObj.PSObject.Properties) {
     }
 }
 $missingProcDesc = @()
-foreach ($pName in (@($stConfig.BlacklistProcesses) + @($stConfig.ProtectedStartupNames))) {
-    $cleanKey = ($pName.Trim() -replace '(?i)\.exe$', '').ToLowerInvariant()
-    if (-not $procDescKeys.ContainsKey($cleanKey)) {
-        $missingProcDesc += $pName
+if (-not $UserInstall) {
+    foreach ($pName in (@($stConfig.BlacklistProcesses) + @($stConfig.ProtectedStartupNames))) {
+        $cleanKey = ($pName.Trim() -replace '(?i)\.exe$', '').ToLowerInvariant()
+        if (-not $procDescKeys.ContainsKey($cleanKey)) {
+            $missingProcDesc += $pName
+        }
     }
 }
-Assert-Test ($missingProcDesc.Count -eq 0 -and $invalidProcSafety.Count -eq 0) "process_descriptions.json covers all configured processes with valid Russian metadata and safetyLevel (missing: $($missingProcDesc.Count), invalid: $($invalidProcSafety.Count))"
+if ($UserInstall) {
+    Assert-Test ($procDescKeys.Count -ge 170 -and $invalidProcSafety.Count -eq 0) "process_descriptions.json contains valid Russian metadata and safetyLevel ($($procDescKeys.Count) entries, invalid: $($invalidProcSafety.Count))"
+} else {
+    Assert-Test ($missingProcDesc.Count -eq 0 -and $invalidProcSafety.Count -eq 0) "process_descriptions.json covers all configured processes with valid Russian metadata and safetyLevel (missing: $($missingProcDesc.Count), invalid: $($invalidProcSafety.Count))"
+}
 
 Assert-Test ($stConfig.BlacklistProcesses -notcontains "SearchHost" -and $stConfig.BlacklistProcesses -notcontains "TextInputHost" -and $stConfig.BlacklistProcesses -notcontains "UltraGamingMode") "startup_apps.json excludes SearchHost, TextInputHost, and UltraGamingMode from BlacklistProcesses"
 $tuningProps = @($tunConfig.PSObject.Properties.Name)

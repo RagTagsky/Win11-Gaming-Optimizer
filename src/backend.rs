@@ -2736,7 +2736,200 @@ pub fn sync_embedded_runtime(root: &Path) -> Result<(), String> {
         }
     }
 
+    migrate_user_configs_in_place(root);
+
     Ok(())
+}
+
+/// Safely upgrades legacy user Config/*.json files (e.g. from v3.5.x / v3.6.0)
+/// in place without erasing user-customized service/process selections:
+/// - Strips accidental UTF-8 BOMs from Config/*.json
+/// - Migrates legacy tuning.json switches to strictly the 3 AAA automation keys
+/// - Ensures critical Zapret/WinDivert/anti-cheat services are whitelisted and never blacklisted
+/// - Ensures Zapret/winws and core OS shell processes are protected in startup_apps.json
+pub fn migrate_user_configs_in_place(root: &Path) {
+    let config_dir = root.join("Config");
+    if !config_dir.is_dir() {
+        return;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&config_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("json"))
+                .unwrap_or(false)
+            {
+                if let Ok(bytes) = std::fs::read(&p) {
+                    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+                        let _ = std::fs::write(&p, &bytes[3..]);
+                    }
+                }
+            }
+        }
+    }
+
+    let tuning_path = config_dir.join("tuning.json");
+    if let Ok(raw) = std::fs::read_to_string(&tuning_path) {
+        let trimmed = raw.trim_start_matches('\u{feff}');
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if let Some(obj) = val.as_object() {
+                let needs_migration = obj.len() != 3
+                    || !obj.contains_key("AutoLockTimerInGaming")
+                    || !obj.contains_key("AutoPurgeRamInGaming")
+                    || !obj.contains_key("AutoPurgeRamThresholdMB")
+                    || obj
+                        .get("AutoPurgeRamThresholdMB")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| {
+                            n < MIN_AUTO_PURGE_RAM_THRESHOLD_MB as u64
+                                || n > MAX_AUTO_PURGE_RAM_THRESHOLD_MB as u64
+                        })
+                        .unwrap_or(true);
+                if needs_migration {
+                    if let Ok(parsed) = serde_json::from_value::<TuningConfig>(val) {
+                        let normalized = normalize_tuning_config(parsed);
+                        let _ = write_json_no_bom(&tuning_path, &normalized);
+                    }
+                }
+            }
+        }
+    }
+
+    const MANDATORY_WHITELIST: &[&str] = &[
+        "FACEIT",
+        "FACEITService",
+        "vgk",
+        "vgc",
+        "EasyAntiCheat",
+        "BEService",
+        "Audiosrv",
+        "camsvc",
+        "CaptureService",
+        "cbdhsvc",
+        "Apple Mobile Device Service",
+        "ProcessGovernor",
+        "zapret",
+        "WinDivert",
+        "WinDivert14",
+    ];
+    let wl_path = config_dir.join("services_whitelist.json");
+    let bl_path = config_dir.join("services_blacklist.json");
+
+    if let Ok(raw) = std::fs::read_to_string(&wl_path) {
+        if let Ok(mut wl_val) =
+            serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}'))
+        {
+            if let Some(arr) = wl_val
+                .get_mut("ProtectedServices")
+                .and_then(|v| v.as_array_mut())
+            {
+                let mut changed = false;
+                for req in MANDATORY_WHITELIST {
+                    let exists = arr.iter().any(|item| {
+                        item.as_str()
+                            .map(|s| s.eq_ignore_ascii_case(req))
+                            .unwrap_or(false)
+                    });
+                    if !exists {
+                        arr.push(serde_json::Value::String((*req).to_string()));
+                        changed = true;
+                    }
+                }
+                if changed {
+                    let _ = write_json_no_bom(&wl_path, &wl_val);
+                }
+            }
+        }
+    }
+
+    if let Ok(raw) = std::fs::read_to_string(&bl_path) {
+        if let Ok(mut bl_val) =
+            serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}'))
+        {
+            if let Some(arr) = bl_val
+                .get_mut("TargetServices")
+                .and_then(|v| v.as_array_mut())
+            {
+                let orig_len = arr.len();
+                arr.retain(|item| {
+                    let name = item
+                        .as_str()
+                        .or_else(|| item.get("Name").and_then(|n| n.as_str()))
+                        .unwrap_or("");
+                    !MANDATORY_WHITELIST
+                        .iter()
+                        .any(|req| req.eq_ignore_ascii_case(name))
+                });
+                if arr.len() != orig_len {
+                    let _ = write_json_no_bom(&bl_path, &bl_val);
+                }
+            }
+        }
+    }
+
+    const MANDATORY_PROTECTED_PROCS: &[&str] = &["winws", "winws2", "zapret"];
+    const FORBIDDEN_BLACKLIST_PROCS: &[&str] = &[
+        "SearchHost",
+        "TextInputHost",
+        "UltraGamingMode",
+        "winws",
+        "winws2",
+        "zapret",
+    ];
+    let st_path = config_dir.join("startup_apps.json");
+    if let Ok(raw) = std::fs::read_to_string(&st_path) {
+        if let Ok(mut st_val) =
+            serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}'))
+        {
+            let mut changed = false;
+            if let Some(bl_arr) = st_val
+                .get_mut("BlacklistProcesses")
+                .and_then(|v| v.as_array_mut())
+            {
+                let orig_len = bl_arr.len();
+                bl_arr.retain(|item| {
+                    let clean = item
+                        .as_str()
+                        .unwrap_or("")
+                        .trim()
+                        .trim_end_matches(".exe")
+                        .trim_end_matches(".EXE");
+                    !FORBIDDEN_BLACKLIST_PROCS
+                        .iter()
+                        .any(|forb| forb.eq_ignore_ascii_case(clean))
+                });
+                if bl_arr.len() != orig_len {
+                    changed = true;
+                }
+            }
+            if let Some(prot_arr) = st_val
+                .get_mut("ProtectedStartupNames")
+                .and_then(|v| v.as_array_mut())
+            {
+                for req in MANDATORY_PROTECTED_PROCS {
+                    let exists = prot_arr.iter().any(|item| {
+                        item.as_str()
+                            .map(|s| {
+                                s.trim()
+                                    .trim_end_matches(".exe")
+                                    .trim_end_matches(".EXE")
+                                    .eq_ignore_ascii_case(req)
+                            })
+                            .unwrap_or(false)
+                    });
+                    if !exists {
+                        prot_arr.push(serde_json::Value::String((*req).to_string()));
+                        changed = true;
+                    }
+                }
+            }
+            if changed {
+                let _ = write_json_no_bom(&st_path, &st_val);
+            }
+        }
+    }
 }
 
 pub fn ensure_backups_writable(root: &Path) {
@@ -4148,6 +4341,9 @@ pub fn execute_emergency_repair_sync(kind: &str) -> Result<ActionResult, String>
     }
 
     let root = get_workspace_root();
+    if kind == "verify" {
+        migrate_user_configs_in_place(&root);
+    }
     let script_path = root.join("UltraGamingMode.ps1");
 
     let (args, script_to_run): (Vec<&'static str>, PathBuf) = match kind {
@@ -4158,7 +4354,10 @@ pub fn execute_emergency_repair_sync(kind: &str) -> Result<ActionResult, String>
             vec!["-Action", "RestoreDebloat", "-SkipUpdateCheck"],
             script_path,
         ),
-        "verify" => (Vec::new(), root.join("Tests").join("Verify-UniversalEngine.ps1")),
+        "verify" => (
+            vec!["-UserInstall"],
+            root.join("Tests").join("Verify-UniversalEngine.ps1"),
+        ),
         _ => return Err("Неизвестный тип операции".into()),
     };
 
@@ -4170,6 +4369,41 @@ pub fn execute_emergency_repair_sync(kind: &str) -> Result<ActionResult, String>
         "Не удалось выполнить команду",
     );
     invalidate_active_state_cache();
+
+    if kind == "verify" {
+        return match res {
+            Ok(ar) => {
+                let summary = ar
+                    .message
+                    .lines()
+                    .rev()
+                    .find(|l| l.contains("TEST RESULTS:"))
+                    .map(|l| l.trim().to_string())
+                    .unwrap_or_else(|| "Все проверки целостности пройдены без ошибок.".to_string());
+                Ok(ActionResult {
+                    success: true,
+                    message: format!("Проверка конфигов и движка пройдена: {}", summary),
+                })
+            }
+            Err(err_text) => {
+                let fail_lines: Vec<&str> = err_text
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| l.starts_with("[FAIL]") || l.contains("TEST RESULTS:"))
+                    .take(8)
+                    .collect();
+                if fail_lines.is_empty() {
+                    Err(err_text)
+                } else {
+                    Err(format!(
+                        "Обнаружены проблемы при проверке конфигов:\n{}",
+                        fail_lines.join("\n")
+                    ))
+                }
+            }
+        };
+    }
+
     res
 }
 
@@ -6311,5 +6545,107 @@ mod tests {
                 .any(|a| a.rel_path == "Tests/Verify-UniversalEngine.ps1"),
             "EMBEDDED_RUNTIME_ASSETS must include Tests/Verify-UniversalEngine.ps1 for portable maintenance verification"
         );
+    }
+
+    #[test]
+    fn test_migrate_legacy_user_configs_upgrades_tuning_zapret_and_preserves_custom_lists() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ugm_migrate_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let cfg = tmp.join("Config");
+        std::fs::create_dir_all(&cfg).unwrap();
+
+        let mut legacy_tuning = vec![0xEF, 0xBB, 0xBF];
+        legacy_tuning.extend_from_slice(
+            br#"{
+  "DisableFullscreenOptimizations": true,
+  "DisableMouseAccel": true,
+  "DisableNvidiaDynamicPstate": false,
+  "EnableNetAdapterMsi": true,
+  "InputBufferQueueSize": 100,
+  "AutoLockTimerInGaming": false,
+  "AutoPurgeRamInGaming": true,
+  "AutoPurgeRamThresholdMB": 3072
+}"#,
+        );
+        std::fs::write(cfg.join("tuning.json"), &legacy_tuning).unwrap();
+        std::fs::write(
+            cfg.join("services_whitelist.json"),
+            r#"{"ProtectedServices":["FACEIT","Audiosrv","MyCustomProtectedSvc"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            cfg.join("services_blacklist.json"),
+            r#"{"TargetServices":[{"Name":"Spooler"},{"Name":"zapret"},{"Name":"MyCustomDisabledSvc"}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            cfg.join("startup_apps.json"),
+            r#"{"BlacklistProcesses":["Discord","MyCustomApp","winws","SearchHost"],"ProtectedStartupNames":["FACEITClient"]}"#,
+        )
+        .unwrap();
+
+        migrate_user_configs_in_place(&tmp);
+
+        let tun_bytes = std::fs::read(cfg.join("tuning.json")).unwrap();
+        assert!(!tun_bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
+        let tun_val: serde_json::Value = serde_json::from_slice(&tun_bytes).unwrap();
+        let tun_obj = tun_val.as_object().unwrap();
+        assert_eq!(tun_obj.len(), 3);
+        assert_eq!(tun_obj["AutoLockTimerInGaming"], false);
+        assert_eq!(tun_obj["AutoPurgeRamInGaming"], true);
+        assert_eq!(tun_obj["AutoPurgeRamThresholdMB"], 3072);
+
+        let wl_val: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cfg.join("services_whitelist.json")).unwrap()).unwrap();
+        let wl_list: Vec<&str> = wl_val["ProtectedServices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert!(wl_list.contains(&"zapret"));
+        assert!(wl_list.contains(&"WinDivert"));
+        assert!(wl_list.contains(&"WinDivert14"));
+        assert!(wl_list.contains(&"MyCustomProtectedSvc"));
+
+        let bl_val: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cfg.join("services_blacklist.json")).unwrap()).unwrap();
+        let bl_names: Vec<&str> = bl_val["TargetServices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.get("Name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(!bl_names.contains(&"zapret"));
+        assert!(bl_names.contains(&"MyCustomDisabledSvc"));
+
+        let st_val: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cfg.join("startup_apps.json")).unwrap()).unwrap();
+        let st_bl: Vec<&str> = st_val["BlacklistProcesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        let st_pr: Vec<&str> = st_val["ProtectedStartupNames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
+        assert!(st_bl.contains(&"MyCustomApp"));
+        assert!(!st_bl.contains(&"winws"));
+        assert!(!st_bl.contains(&"SearchHost"));
+        assert!(st_pr.contains(&"winws"));
+        assert!(st_pr.contains(&"winws2"));
+        assert!(st_pr.contains(&"zapret"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

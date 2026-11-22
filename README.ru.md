@@ -555,7 +555,11 @@ Win11-Gaming-Optimizer/
 ├── LICENSE                          # Открытая лицензия MIT
 │
 ├── assets/
-│   └── icons/                       # Иконки приложения, встраиваемые в UltraGamingMode.exe
+│   └── icons/                       # Фирменные иконки Ultra Gaming Mode (PNG и многослойный ICO)
+│
+├── installer/                       # Нативные установщики Windows (без браузерных движков)
+│   ├── UltraGamingMode.nsi          # Скрипт NSIS-установщика (UltraGamingMode-Setup.exe)
+│   └── UltraGamingMode.wxs          # Описание x64 MSI-пакета WiX 3.14 (UltraGamingMode.msi)
 │
 ├── src/                             # Нативное ядро на Rust и бэкенд Win32 / Slint
 │   ├── main.rs                      # Точка входа, защита от дубля, цикл событий Slint и сворачивание в трей
