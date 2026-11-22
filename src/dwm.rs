@@ -4,6 +4,17 @@ pub const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
 pub const DWMWA_BORDER_COLOR: u32 = 34;
 pub const DWMWCP_ROUND: i32 = 2;
 
+pub const WM_SETICON: u32 = 0x0080;
+pub const ICON_SMALL: usize = 0;
+pub const ICON_BIG: usize = 1;
+pub const IMAGE_ICON: u32 = 1;
+pub const LR_DEFAULTCOLOR: u32 = 0x0000;
+pub const LR_SHARED: u32 = 0x8000;
+pub const SM_CXICON: i32 = 11;
+pub const SM_CYICON: i32 = 12;
+pub const SM_CXSMICON: i32 = 49;
+pub const SM_CYSMICON: i32 = 50;
+
 #[cfg(target_os = "windows")]
 #[link(name = "dwmapi")]
 extern "system" {
@@ -13,6 +24,64 @@ extern "system" {
         pv_attribute: *const std::ffi::c_void,
         cb_attribute: u32,
     ) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetModuleHandleW(lp_module_name: *const u16) -> isize;
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn GetSystemMetrics(n_index: i32) -> i32;
+    fn LoadImageW(
+        h_inst: isize,
+        name: *const u16,
+        img_type: u32,
+        cx: i32,
+        cy: i32,
+        fu_load: u32,
+    ) -> isize;
+    fn SendMessageW(hwnd: isize, msg: u32, w_param: usize, l_param: isize) -> isize;
+}
+
+#[cfg(target_os = "windows")]
+pub fn apply_window_icon_from_exe_resource(hwnd: isize) -> bool {
+    if hwnd == 0 {
+        return false;
+    }
+    unsafe {
+        let hinst = GetModuleHandleW(std::ptr::null());
+        if hinst == 0 {
+            return false;
+        }
+        let res_id = 1usize as *const u16;
+        let big_w = GetSystemMetrics(SM_CXICON).max(32);
+        let big_h = GetSystemMetrics(SM_CYICON).max(32);
+        let small_w = GetSystemMetrics(SM_CXSMICON).max(16);
+        let small_h = GetSystemMetrics(SM_CYSMICON).max(16);
+
+        let hicon_big = LoadImageW(hinst, res_id, IMAGE_ICON, big_w, big_h, LR_DEFAULTCOLOR | LR_SHARED);
+        let hicon_small = LoadImageW(hinst, res_id, IMAGE_ICON, small_w, small_h, LR_DEFAULTCOLOR | LR_SHARED);
+
+        let mut applied = false;
+        if hicon_big != 0 {
+            let _ = SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big);
+            applied = true;
+        }
+        if hicon_small != 0 {
+            let _ = SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small);
+            applied = true;
+        }
+        applied
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn apply_window_icon_from_exe_resource(_hwnd: isize) -> bool {
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -113,6 +182,11 @@ mod tests {
         assert_eq!(DWMWA_WINDOW_CORNER_PREFERENCE, 33);
         assert_eq!(DWMWA_BORDER_COLOR, 34);
         assert_eq!(DWMWCP_ROUND, 2);
+        assert_eq!(WM_SETICON, 0x0080);
+        assert_eq!(ICON_SMALL, 0);
+        assert_eq!(ICON_BIG, 1);
+        assert_eq!(IMAGE_ICON, 1);
+        assert!(!apply_window_icon_from_exe_resource(0));
 
         let res = apply_dwm_dark_mode(0, true);
         let (chrome_res, border_active) = apply_dwm_window_chrome_with_border_status(0, true, (0x24, 0x2b, 0x38));

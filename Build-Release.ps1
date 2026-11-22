@@ -2,7 +2,8 @@
 .SYNOPSIS
     Automated build and release packaging orchestrator for Ultra Gaming Mode v4.0.0.
     Terminates running instances, compiles native Rust/Slint release via cargo build --release,
-    populates .bin/UltraGamingMode.exe and root UltraGamingMode.exe, and writes SHA256SUMS.txt.
+    populates .bin/UltraGamingMode.exe and root UltraGamingMode.exe, packages native
+    UltraGamingMode-Setup.exe (NSIS) and UltraGamingMode.msi (WiX), and writes SHA256SUMS.txt.
 #>
 [CmdletBinding()]
 param(
@@ -26,8 +27,13 @@ if (-not (Test-Path $binDir)) {
     New-Item -Path $binDir -ItemType Directory -Force | Out-Null
 }
 
+$cleanVersion = ($Tag -replace '^[vV]', '')
+if ($cleanVersion -notmatch '^\d+\.\d+\.\d+$') {
+    $cleanVersion = "4.0.0"
+}
+
 Write-Host "=====================================================" -ForegroundColor Cyan
-Write-Host "   ULTRA GAMING MODE v4.0.0 -- NATIVE BUILDER        " -ForegroundColor Cyan
+Write-Host "   ULTRA GAMING MODE v$cleanVersion -- NATIVE BUILDER        " -ForegroundColor Cyan
 Write-Host "=====================================================" -ForegroundColor Cyan
 
 # 1. Stop any running instances so files are not locked
@@ -35,20 +41,12 @@ Write-Host "`n[*] Stopping any running UltraGamingMode instances..." -Foreground
 Stop-Process -Name "UltraGamingMode", "ultra-gaming-mode" -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
-# 2. Clean stale legacy binaries from target/ and .bin/
+# 2. Clean stale legacy binaries from target/ and previous installer outputs from .bin/
 $releaseDir = Join-Path $rootDir "target\release"
 $staleExe   = Join-Path $releaseDir "ultra-gaming-mode.exe"
 if (Test-Path $staleExe) {
     Remove-Item -Path $staleExe -Force -ErrorAction SilentlyContinue
     Write-Host "  [-] Removed stale legacy binary: target\release\ultra-gaming-mode.exe" -ForegroundColor DarkGray
-}
-
-foreach ($legacyPkg in @("UltraGamingMode-Setup.exe", "UltraGamingMode.msi")) {
-    $legacyPath = Join-Path $binDir $legacyPkg
-    if (Test-Path $legacyPath) {
-        Remove-Item -Path $legacyPath -Force -ErrorAction SilentlyContinue
-        Write-Host "  [-] Removed legacy bundle artifact: .bin\$legacyPkg" -ForegroundColor DarkGray
-    }
 }
 
 # 3. Run Native Cargo Release Build
@@ -65,7 +63,7 @@ if (-not $SkipBuild) {
     }
 }
 
-# 4. Locate and Harvest Artifacts
+# 4. Locate and Harvest Portable Binary
 Write-Host "`n[*] Harvesting compiled native binary into .bin/ and root..." -ForegroundColor Cyan
 
 $portablePath = Join-Path $releaseDir "UltraGamingMode.exe"
@@ -81,7 +79,90 @@ $sizeMb = [math]::Round((Get-Item $destBinExe).Length / 1MB, 2)
 Write-Host "  [+] Portable EXE:      .bin\UltraGamingMode.exe ($sizeMb MB)" -ForegroundColor Green
 Write-Host "  [+] Root Executable:   .\UltraGamingMode.exe (Updated!)" -ForegroundColor Green
 
-# 5. Compute Cryptographic Checksums (SHA256) in UTF-8 without BOM
+# 5. Build Native Installers (NSIS Setup EXE & WiX MSI)
+$installerDir = Join-Path $rootDir "installer"
+$destSetupExe = Join-Path $binDir "UltraGamingMode-Setup.exe"
+$destMsi      = Join-Path $binDir "UltraGamingMode.msi"
+
+function Resolve-ToolBinary {
+    param(
+        [string]$CommandName,
+        [string[]]$FallbackPaths
+    )
+    $cmd = Get-Command $CommandName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) { return $cmd.Source }
+    foreach ($fp in $FallbackPaths) {
+        if (-not [string]::IsNullOrWhiteSpace($fp) -and (Test-Path -LiteralPath $fp)) {
+            return $fp
+        }
+    }
+    return $null
+}
+
+$nsiScript = Join-Path $installerDir "UltraGamingMode.nsi"
+if (Test-Path -LiteralPath $nsiScript) {
+    $makensis = Resolve-ToolBinary -CommandName "makensis.exe" -FallbackPaths @(
+        (Join-Path $env:LOCALAPPDATA "tauri\NSIS\makensis.exe"),
+        "C:\Program Files (x86)\NSIS\makensis.exe",
+        "C:\Program Files\NSIS\makensis.exe"
+    )
+    if ($makensis) {
+        Write-Host "`n[*] Building NSIS installer (.bin\UltraGamingMode-Setup.exe)..." -ForegroundColor Yellow
+        Push-Location $installerDir
+        try {
+            & $makensis /V2 "/DAPP_VERSION=$cleanVersion" "/DOUT_FILE=$destSetupExe" $nsiScript
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $destSetupExe)) {
+                throw "NSIS makensis failed with exit code $LASTEXITCODE"
+            }
+            $setupMb = [math]::Round((Get-Item $destSetupExe).Length / 1MB, 2)
+            Write-Host "  [+] NSIS Setup EXE:    .bin\UltraGamingMode-Setup.exe ($setupMb MB)" -ForegroundColor Green
+        } finally {
+            Pop-Location
+        }
+    } else {
+        Write-Warning "makensis.exe not found; skipping UltraGamingMode-Setup.exe packaging."
+    }
+}
+
+$wxsScript = Join-Path $installerDir "UltraGamingMode.wxs"
+if (Test-Path -LiteralPath $wxsScript) {
+    $candle = Resolve-ToolBinary -CommandName "candle.exe" -FallbackPaths @(
+        (Join-Path $env:LOCALAPPDATA "tauri\WixTools314\candle.exe"),
+        "C:\Program Files (x86)\WiX Toolset v3.14\bin\candle.exe",
+        "C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe"
+    )
+    $light = Resolve-ToolBinary -CommandName "light.exe" -FallbackPaths @(
+        (Join-Path $env:LOCALAPPDATA "tauri\WixTools314\light.exe"),
+        "C:\Program Files (x86)\WiX Toolset v3.14\bin\light.exe",
+        "C:\Program Files (x86)\WiX Toolset v3.11\bin\light.exe"
+    )
+    if ($candle -and $light) {
+        Write-Host "`n[*] Building WiX MSI installer (.bin\UltraGamingMode.msi)..." -ForegroundColor Yellow
+        $wixObj = Join-Path $env:TEMP "UltraGamingMode_$cleanVersion.wixobj"
+        $wixPdb = Join-Path $binDir "UltraGamingMode.wixpdb"
+        Push-Location $installerDir
+        try {
+            & $candle -nologo -arch x64 "-dAppVersion=$cleanVersion.0" -out $wixObj $wxsScript
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $wixObj)) {
+                throw "WiX candle.exe failed with exit code $LASTEXITCODE"
+            }
+            & $light -nologo -ext WixUIExtension -spdb -sice:ICE61 -out $destMsi $wixObj
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $destMsi)) {
+                throw "WiX light.exe failed with exit code $LASTEXITCODE"
+            }
+            $msiMb = [math]::Round((Get-Item $destMsi).Length / 1MB, 2)
+            Write-Host "  [+] WiX MSI Package:   .bin\UltraGamingMode.msi ($msiMb MB)" -ForegroundColor Green
+        } finally {
+            Pop-Location
+            Remove-Item -LiteralPath $wixObj -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $wixPdb -Force -ErrorAction SilentlyContinue
+        }
+    } else {
+        Write-Warning "WiX candle.exe/light.exe not found; skipping UltraGamingMode.msi packaging."
+    }
+}
+
+# 6. Compute Cryptographic Checksums (SHA256) in UTF-8 without BOM
 Write-Host "`n[*] Computing SHA256 checksums..." -ForegroundColor Cyan
 $binFiles = Get-ChildItem -Path $binDir -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -in @(".exe", ".msi", ".zip") -and $_.Name -ne "SHA256SUMS.txt" } |
@@ -103,24 +184,34 @@ if ($hashLines.Count -gt 0) {
     Write-Warning "No binary artifacts found in $binDir to checksum!"
 }
 
-# 6. Optional GitHub Release creation
+# 7. Optional GitHub Release creation/update
 if ($CreateGhRelease) {
-    $exeSha = (Get-FileHash -Path $destBinExe -Algorithm SHA256).Hash.ToLowerInvariant()
-    $notesLines = @(
-        ([regex]::Unescape('- \u041f\u0435\u0440\u0435\u0445\u043e\u0434 \u043d\u0430 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 Rust \u0438 Slint \u0431\u0435\u0437 \u0432\u043d\u0435\u0448\u043d\u0438\u0445 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u043d\u044b\u0445 \u0434\u0432\u0438\u0436\u043a\u043e\u0432')),
-        ([regex]::Unescape('- \u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u0432\u043e\u0441\u0435\u043c\u044c \u0442\u0435\u043c \u043e\u0444\u043e\u0440\u043c\u043b\u0435\u043d\u0438\u044f \u0441 \u043c\u0433\u043d\u043e\u0432\u0435\u043d\u043d\u044b\u043c \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435\u043c \u0438 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u0435\u0439 \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0430 Windows')),
-        ([regex]::Unescape('- \u0415\u0434\u0438\u043d\u044b\u0439 \u0438\u0433\u0440\u043e\u0432\u043e\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044c AAA \u0441 \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0439 \u043e\u0447\u0438\u0441\u0442\u043a\u043e\u0439 \u043a\u044d\u0448\u0430 \u043f\u0430\u043c\u044f\u0442\u0438, \u0442\u0430\u0439\u043c\u0435\u0440\u043e\u043c 0.5 \u043c\u0441 \u0438 \u0437\u0430\u0449\u0438\u0442\u043e\u0439 Zapret')),
-        "",
-        (([regex]::Unescape('\u041a\u043e\u043d\u0442\u0440\u043e\u043b\u044c\u043d\u0430\u044f \u0441\u0443\u043c\u043c\u0430 SHA-256 (UltraGamingMode.exe): ')) + $exeSha)
-    )
+    $notesList = [System.Collections.Generic.List[string]]::new()
+    $notesList.Add(([regex]::Unescape('- \u041f\u0435\u0440\u0435\u0445\u043e\u0434 \u043d\u0430 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 Rust \u0438 Slint \u0431\u0435\u0437 \u0432\u043d\u0435\u0448\u043d\u0438\u0445 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u043d\u044b\u0445 \u0434\u0432\u0438\u0436\u043a\u043e\u0432')))
+    $notesList.Add(([regex]::Unescape('- \u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u0432\u043e\u0441\u0435\u043c\u044c \u0442\u0435\u043c \u043e\u0444\u043e\u0440\u043c\u043b\u0435\u043d\u0438\u044f \u0441 \u043c\u0433\u043d\u043e\u0432\u0435\u043d\u043d\u044b\u043c \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435\u043c \u0438 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u0435\u0439 \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0430 Windows')))
+    $notesList.Add(([regex]::Unescape('- \u0415\u0434\u0438\u043d\u044b\u0439 \u0438\u0433\u0440\u043e\u0432\u043e\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044c AAA \u0441 \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0439 \u043e\u0447\u0438\u0441\u0442\u043a\u043e\u0439 \u043a\u044d\u0448\u0430 \u043f\u0430\u043c\u044f\u0442\u0438, \u0442\u0430\u0439\u043c\u0435\u0440\u043e\u043c 0.5 \u043c\u0441 \u0438 \u0437\u0430\u0449\u0438\u0442\u043e\u0439 Zapret')))
+    $notesList.Add("")
+    $notesList.Add(([regex]::Unescape('### \u0424\u0430\u0439\u043b\u044b \u0438 SHA-256')))
+    foreach ($hl in $hashLines) {
+        $notesList.Add("- $hl")
+    }
+
+    $uploadAssets = [System.Collections.Generic.List[string]]::new()
+    foreach ($f in $binFiles) {
+        $uploadAssets.Add($f.FullName)
+    }
+    if (Test-Path -LiteralPath $checksumFile) {
+        $uploadAssets.Add($checksumFile)
+    }
+
     $notesFile = Join-Path $binDir "RELEASE_NOTES.txt"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllLines($notesFile, $notesLines, $utf8NoBom)
+    [System.IO.File]::WriteAllLines($notesFile, $notesList.ToArray(), $utf8NoBom)
     Push-Location $rootDir
     try {
         $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
         if ($ghCmd) {
-            & $ghCmd.Source release create $Tag $destBinExe $checksumFile --title "Ultra Gaming Mode $Tag" --notes-file $notesFile
+            & $ghCmd.Source release create $Tag $uploadAssets.ToArray() --title "Ultra Gaming Mode $Tag" --notes-file $notesFile
         } else {
             $credOut = ("protocol=https`nhost=github.com`n`n" | git credential fill) -join "`n"
             if ($credOut -notmatch 'password=([^\r\n]+)') {
@@ -130,10 +221,10 @@ if ($CreateGhRelease) {
             $headers = @{
                 Authorization = "Bearer $token"
                 Accept        = "application/vnd.github+json"
-                "User-Agent"  = "UltraGamingMode-Builder/4.0.0"
+                "User-Agent"  = "UltraGamingMode-Builder/$cleanVersion"
             }
             $repoSlug = "RagTagsky/Win11-Gaming-Optimizer"
-            $bodyText = $notesLines -join "`n"
+            $bodyText = $notesList.ToArray() -join "`n"
             $relPayload = (@{
                 tag_name   = $Tag
                 name       = "Ultra Gaming Mode $Tag"
@@ -150,15 +241,20 @@ if ($CreateGhRelease) {
                 $rel = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$repoSlug/releases" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($relPayload)) -ContentType "application/json; charset=utf-8" -ErrorAction Stop
             }
 
+            $assetNames = @($uploadAssets | ForEach-Object { [System.IO.Path]::GetFileName($_) })
             foreach ($existingAsset in @($rel.assets)) {
-                if ($existingAsset.name -in @("UltraGamingMode.exe", "SHA256SUMS.txt")) {
+                if ($existingAsset.name -in $assetNames) {
                     Invoke-RestMethod -Method Delete -Uri "https://api.github.com/repos/$repoSlug/releases/assets/$($existingAsset.id)" -Headers $headers -ErrorAction SilentlyContinue | Out-Null
                 }
             }
 
             $uploadBase = ($rel.upload_url -replace '\{\?name,label\}$', '')
-            Invoke-RestMethod -Method Post -Uri "${uploadBase}?name=UltraGamingMode.exe" -Headers $headers -InFile $destBinExe -ContentType "application/octet-stream" | Out-Null
-            Invoke-RestMethod -Method Post -Uri "${uploadBase}?name=SHA256SUMS.txt" -Headers $headers -InFile $checksumFile -ContentType "text/plain; charset=utf-8" | Out-Null
+            foreach ($assetPath in $uploadAssets) {
+                $assetName = [System.IO.Path]::GetFileName($assetPath)
+                $ct = if ($assetName.EndsWith(".txt")) { "text/plain; charset=utf-8" } else { "application/octet-stream" }
+                Invoke-RestMethod -Method Post -Uri "${uploadBase}?name=$assetName" -Headers $headers -InFile $assetPath -ContentType $ct | Out-Null
+                Write-Host "  [+] Uploaded GitHub Release asset: $assetName" -ForegroundColor Green
+            }
             Write-Host "  [+] GitHub Release $Tag published/updated via REST API: $($rel.html_url)" -ForegroundColor Green
         }
     } finally {

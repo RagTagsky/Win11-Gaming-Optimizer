@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=assets/icons/icon.ico");
+    println!("cargo:rerun-if-changed=assets/icons/128x128.png");
 
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));

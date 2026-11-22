@@ -12,7 +12,10 @@ use crate::backend::{
     AUTO_PURGE_RAM_POLL_SECS, MODE_ACTION_BUSY, PENDING_RESTORE_TRIGGERED, START_IN_TRAY,
     TIMER_LOCKED,
 };
-use crate::dwm::{apply_dwm_dark_mode, apply_dwm_window_chrome_with_border_status};
+use crate::dwm::{
+    apply_dwm_dark_mode, apply_dwm_window_chrome_with_border_status,
+    apply_window_icon_from_exe_resource,
+};
 use crate::themes::{
     all_themes, get_theme_by_id, RgbaColor, ThemeDefinition, ThemeId, ThemePreferences,
 };
@@ -120,6 +123,7 @@ pub fn sync_window_dwm_theme(window: &MainWindow, is_dark: bool) {
 
 pub fn sync_window_dwm_chrome(window: &MainWindow, theme: &ThemeDefinition) {
     if let Some(hwnd) = extract_window_hwnd(window) {
+        let _ = apply_window_icon_from_exe_resource(hwnd);
         let (_, dwm_border_active) = apply_dwm_window_chrome_with_border_status(
             hwnd,
             theme_polarity_to_dwm_flag(theme),

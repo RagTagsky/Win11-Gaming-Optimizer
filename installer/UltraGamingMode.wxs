@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <?ifndef AppVersion ?>
+    <?define AppVersion = "4.0.0.0" ?>
+  <?endif?>
+
+  <Product
+    Id="*"
+    Name="Ultra Gaming Mode"
+    Language="1033"
+    Version="$(var.AppVersion)"
+    Manufacturer="Ultra Gaming Mode Team"
+    UpgradeCode="7630b84c-95f6-58d0-8c30-969d061c38b0">
+
+    <Package
+      InstallerVersion="450"
+      Compressed="yes"
+      InstallScope="perMachine"
+      Platform="x64"
+      Description="Ultra Gaming Mode v4.0.0 Native Windows 11 Gaming Optimizer"
+      Manufacturer="Ultra Gaming Mode Team" />
+
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of Ultra Gaming Mode is already installed." />
+
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon.ico" SourceFile="..\assets\icons\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/RagTagsky/Win11-Gaming-Optimizer" />
+
+    <UIRef Id="WixUI_Minimal" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="UltraGamingMode">
+          <Directory Id="CoreFolder" Name="Core" />
+          <Directory Id="ConfigFolder" Name="Config" />
+          <Directory Id="TestsFolder" Name="Tests" />
+        </Directory>
+      </Directory>
+
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Ultra Gaming Mode" />
+      </Directory>
+
+      <Directory Id="DesktopFolder" Name="Desktop" />
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="B85B40A4-9B1F-49F2-A2A4-5F31E18E7C01" Win64="yes">
+        <File Id="UltraGamingModeExe" Name="UltraGamingMode.exe" Source="..\.bin\UltraGamingMode.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="RootScripts" Guid="B85B40A4-9B1F-49F2-A2A4-5F31E18E7C02" Win64="yes">
+        <File Id="UltraGamingModePs1" Name="UltraGamingMode.ps1" Source="..\UltraGamingMode.ps1" KeyPath="yes" />
+        <File Id="UltraGamingModeBat" Name="UltraGamingMode.bat" Source="..\UltraGamingMode.bat" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="CoreFolder">
+      <Component Id="CoreScripts" Guid="B85B40A4-9B1F-49F2-A2A4-5F31E18E7C03" Win64="yes">
+        <File Id="ServiceManagerPs1" Name="ServiceManager.ps1" Source="..\Core\ServiceManager.ps1" KeyPath="yes" />
+        <File Id="StateEnginePs1" Name="StateEngine.ps1" Source="..\Core\StateEngine.ps1" />
+        <File Id="SystemOptimizerPs1" Name="SystemOptimizer.ps1" Source="..\Core\SystemOptimizer.ps1" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="TestsFolder">
+      <Component Id="VerifyScript" Guid="B85B40A4-9B1F-49F2-A2A4-5F31E18E7C04" Win64="yes">
+        <File Id="VerifyUniversalEnginePs1" Name="Verify-UniversalEngine.ps1" Source="..\Tests\Verify-UniversalEngine.ps1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ConfigFolder">
+      <Component Id="ConfigFiles" Guid="B85B40A4-9B1F-49F2-A2A4-5F31E18E7C05" Win64="yes">
+        <File Id="ServiceDescriptionsJson" Name="service_descriptions.json" Source="..\Config\service_descriptions.json" KeyPath="yes" />
+        <File Id="ProcessDescriptionsJson" Name="process_descriptions.json" Source="..\Config\process_descriptions.json" />
+        <File Id="ServicesBlacklistJson" Name="services_blacklist.json" Source="..\Config\services_blacklist.json" />
+        <File Id="ServicesWhitelistJson" Name="services_whitelist.json" Source="..\Config\services_whitelist.json" />
+        <File Id="StartupAppsJson" Name="startup_apps.json" Source="..\Config\startup_apps.json" />
+        <File Id="TuningJson" Name="tuning.json" Source="..\Config\tuning.json" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcut" Guid="B85B40A4-9B1F-49F2-A2A4-5F31E18E7C06" Win64="yes">
+        <Shortcut
+          Id="ApplicationStartMenuShortcut"
+          Name="Ultra Gaming Mode"
+          Description="Ultra Gaming Mode - Windows 11 AAA Gaming Optimizer"
+          Target="[INSTALLFOLDER]UltraGamingMode.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="AppIcon.ico" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\UltraGamingMode" Name="StartMenuShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="B85B40A4-9B1F-49F2-A2A4-5F31E18E7C07" Win64="yes">
+        <Shortcut
+          Id="ApplicationDesktopShortcut"
+          Name="Ultra Gaming Mode"
+          Description="Ultra Gaming Mode - Windows 11 AAA Gaming Optimizer"
+          Target="[INSTALLFOLDER]UltraGamingMode.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Icon="AppIcon.ico" />
+        <RegistryValue Root="HKCU" Key="Software\UltraGamingMode" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="ProductFeature" Title="Ultra Gaming Mode" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="RootScripts" />
+      <ComponentRef Id="CoreScripts" />
+      <ComponentRef Id="VerifyScript" />
+      <ComponentRef Id="ConfigFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+  </Product>
+</Wix>
