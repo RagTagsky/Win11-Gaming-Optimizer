@@ -428,7 +428,6 @@ fn refresh_processes_model(state: &mut UiAppState, window: &MainWindow) {
                 || i.display_name.to_lowercase().contains(&q)
                 || i.summary_ru.to_lowercase().contains(&q)
         })
-        .take(100)
         .map(|i| ProcessRowItem {
             key: SharedString::from(&i.key),
             name: SharedString::from(&i.name),
@@ -530,7 +529,6 @@ fn refresh_services_model(state: &mut UiAppState, window: &MainWindow) {
                 || s.display_name.to_lowercase().contains(&q)
                 || s.summary_ru.to_lowercase().contains(&q)
         })
-        .take(100)
         .map(|s| ServiceRowItem {
             name: SharedString::from(&s.name),
             display_name: SharedString::from(&s.display_name),
@@ -614,6 +612,10 @@ pub fn run_native_app() {
     window.set_app_version(SharedString::from(APP_VERSION));
     apply_theme_to_window(&window, theme_prefs.theme);
     apply_tuning_to_window(&window, &initial_tuning);
+    let (init_disabled_services, init_disabled_processes) =
+        backend::compute_initial_disabled_counts(&runtime_root);
+    window.set_disabled_services_count(init_disabled_services as i32);
+    window.set_disabled_processes_count(init_disabled_processes as i32);
 
     if let Ok(st) = backend::read_system_status_sync() {
         apply_status_to_window(&window, &st);
@@ -771,9 +773,17 @@ pub fn run_native_app() {
                         refresh_services_model(&mut st, &w);
                     }
                 } else if tab_idx == 3 {
-                    if let Ok(auto_st) = backend::get_autostart_status_sync() {
-                        apply_autostart_to_window(&w, &auto_st);
-                    }
+                    drop(st);
+                    let weak_bg = weak.clone();
+                    std::thread::spawn(move || {
+                        if let Ok(auto_st) = backend::get_autostart_status_sync() {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(w) = weak_bg.upgrade() {
+                                    apply_autostart_to_window(&w, &auto_st);
+                                }
+                            });
+                        }
+                    });
                 }
             }
         });

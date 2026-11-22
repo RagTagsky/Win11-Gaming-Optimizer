@@ -105,17 +105,62 @@ if ($hashLines.Count -gt 0) {
 
 # 6. Optional GitHub Release creation
 if ($CreateGhRelease) {
+    $exeSha = (Get-FileHash -Path $destBinExe -Algorithm SHA256).Hash.ToLowerInvariant()
     $notesLines = @(
         "- Переход на полностью нативный интерфейс Rust и Slint без внешних браузерных движков",
         "- Добавлены восемь тем оформления с мгновенным переключением и синхронизацией заголовка Windows",
-        "- Единый игровой профиль AAA с автоматической очисткой кэша памяти, таймером 0.5 мс и защитой Zapret"
+        "- Единый игровой профиль AAA с автоматической очисткой кэша памяти, таймером 0.5 мс и защитой Zapret",
+        "",
+        "Контрольная сумма SHA-256 (UltraGamingMode.exe): $exeSha"
     )
     $notesFile = Join-Path $binDir "RELEASE_NOTES.txt"
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllLines($notesFile, $notesLines, $utf8NoBom)
     Push-Location $rootDir
     try {
-        gh release create $Tag $destBinExe $checksumFile --title "Ultra Gaming Mode $Tag" --notes-file $notesFile
+        $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+        if ($ghCmd) {
+            & $ghCmd.Source release create $Tag $destBinExe $checksumFile --title "Ultra Gaming Mode $Tag" --notes-file $notesFile
+        } else {
+            $credOut = ("protocol=https`nhost=github.com`n`n" | git credential fill) -join "`n"
+            if ($credOut -notmatch 'password=([^\r\n]+)') {
+                throw "GitHub CLI (gh) not found and git credential helper returned no token."
+            }
+            $token = $Matches[1].Trim()
+            $headers = @{
+                Authorization = "Bearer $token"
+                Accept        = "application/vnd.github+json"
+                "User-Agent"  = "UltraGamingMode-Builder/4.0.0"
+            }
+            $repoSlug = "RagTagsky/Win11-Gaming-Optimizer"
+            $bodyText = $notesLines -join "`n"
+            $relPayload = (@{
+                tag_name   = $Tag
+                name       = "Ultra Gaming Mode $Tag"
+                body       = $bodyText
+                draft      = $false
+                prerelease = $false
+            } | ConvertTo-Json -Depth 5)
+
+            $rel = $null
+            try {
+                $rel = Invoke-RestMethod -Method Get -Uri "https://api.github.com/repos/$repoSlug/releases/tags/$Tag" -Headers $headers -ErrorAction Stop
+                $rel = Invoke-RestMethod -Method Patch -Uri "https://api.github.com/repos/$repoSlug/releases/$($rel.id)" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($relPayload)) -ContentType "application/json; charset=utf-8" -ErrorAction Stop
+            } catch {
+                $rel = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$repoSlug/releases" -Headers $headers -Body ([System.Text.Encoding]::UTF8.GetBytes($relPayload)) -ContentType "application/json; charset=utf-8" -ErrorAction Stop
+            }
+
+            foreach ($existingAsset in @($rel.assets)) {
+                if ($existingAsset.name -in @("UltraGamingMode.exe", "SHA256SUMS.txt")) {
+                    Invoke-RestMethod -Method Delete -Uri "https://api.github.com/repos/$repoSlug/releases/assets/$($existingAsset.id)" -Headers $headers -ErrorAction SilentlyContinue | Out-Null
+                }
+            }
+
+            $uploadBase = ($rel.upload_url -replace '\{\?name,label\}$', '')
+            Invoke-RestMethod -Method Post -Uri "${uploadBase}?name=UltraGamingMode.exe" -Headers $headers -InFile $destBinExe -ContentType "application/octet-stream" | Out-Null
+            Invoke-RestMethod -Method Post -Uri "${uploadBase}?name=SHA256SUMS.txt" -Headers $headers -InFile $checksumFile -ContentType "text/plain; charset=utf-8" | Out-Null
+            Write-Host "  [+] GitHub Release $Tag published/updated via REST API: $($rel.html_url)" -ForegroundColor Green
+        }
     } finally {
         Pop-Location
         Remove-Item -LiteralPath $notesFile -Force -ErrorAction SilentlyContinue

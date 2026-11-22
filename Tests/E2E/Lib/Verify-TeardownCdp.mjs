@@ -169,9 +169,9 @@ async function launchChrome(browserExe, userDataDir, w, h) {
 
 async function runVerification(opts) {
   const browserExe = findBrowserExecutable();
-  const ownProfile = !opts.userDataDir;
-  const userDataDir = opts.userDataDir || fs.mkdtempSync(path.join(os.tmpdir(), "ugm_cdp_prof_"));
-  fs.mkdirSync(userDataDir, { recursive: true });
+  const baseProfileDir = opts.userDataDir || os.tmpdir();
+  fs.mkdirSync(baseProfileDir, { recursive: true });
+  const userDataDir = fs.mkdtempSync(path.join(baseProfileDir, "ugm_cdp_prof_"));
 
   let proc = null;
   let client = null;
@@ -183,7 +183,7 @@ async function runVerification(opts) {
       tempHtml = path.join(userDataDir, "neg_external_test.html");
       fs.writeFileSync(
         tempHtml,
-        `<!DOCTYPE html><html><head><meta charset="utf-8"><script src="https://example.invalid/bad.js"></script></head><body><script>console.error("E2E_NEG_CONSOLE_ERR"); throw new Error("E2E_NEG_EXC");</script></body></html>`,
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><script async src="https://example.invalid/bad.js"></script></head><body><script>console.error("E2E_NEG_CONSOLE_ERR"); setTimeout(() => { throw new Error("E2E_NEG_EXC"); }, 0);</script></body></html>`,
         "utf8"
       );
       targetHtml = tempHtml;
@@ -418,13 +418,7 @@ async function runVerification(opts) {
       } catch {}
       killChromeTree(proc.pid);
     }
-    if (ownProfile) {
-      await cleanupDirWithRetry(userDataDir);
-    } else if (tempHtml && fs.existsSync(tempHtml)) {
-      try {
-        fs.rmSync(tempHtml, { force: true });
-      } catch {}
-    }
+    await cleanupDirWithRetry(userDataDir);
   }
 }
 

@@ -85,6 +85,11 @@ pub const EMBEDDED_RUNTIME_ASSETS: &[EmbeddedAsset] = &[
         bytes: include_bytes!("../docs/teardown/preview.svg"),
         preserve_if_exists: false,
     },
+    EmbeddedAsset {
+        rel_path: "Tests/Verify-UniversalEngine.ps1",
+        bytes: include_bytes!("../Tests/Verify-UniversalEngine.ps1"),
+        preserve_if_exists: false,
+    },
 ];
 
 static RUNTIME_ROOT_CACHE: OnceLock<PathBuf> = OnceLock::new();
@@ -3859,6 +3864,49 @@ pub fn read_services_lists_sync() -> Result<ServicesLists, String> {
     read_services_lists_from_root(&root, cfg!(target_os = "windows"))
 }
 
+pub fn compute_initial_disabled_counts(root: &Path) -> (usize, usize) {
+    let disabled_services = read_services_lists_from_root(root, false)
+        .map(|lists| {
+            lists
+                .blacklist
+                .iter()
+                .filter(|b| {
+                    !is_immutable_core_service(&b.name)
+                        && !lists
+                            .whitelist
+                            .iter()
+                            .any(|w| service_names_match(w, &b.name))
+                })
+                .count()
+        })
+        .unwrap_or(205);
+
+    let disabled_processes = read_process_lists_from_root(root)
+        .map(|cfg| {
+            let prot_set: std::collections::HashSet<String> = cfg
+                .protected_startup_names
+                .iter()
+                .map(|s| strip_exe_suffix(s).trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let mut seen = std::collections::HashSet::new();
+            for raw in &cfg.blacklist_processes {
+                let clean = strip_exe_suffix(raw).trim();
+                let key = clean.to_lowercase();
+                if !key.is_empty()
+                    && !is_protected_process_name(clean)
+                    && !prot_set.contains(&key)
+                {
+                    seen.insert(key);
+                }
+            }
+            seen.len()
+        })
+        .unwrap_or(40);
+
+    (disabled_services, disabled_processes)
+}
+
 pub fn run_powershell_script(
     root: &Path,
     script_path: &Path,
@@ -6289,5 +6337,26 @@ mod tests {
             assert!(cur > 0.0 && max > 0.0);
             let _ = timer::unlock_timer_resolution();
         }
+    }
+
+    #[test]
+    fn test_initial_disabled_counts_and_portable_verify_asset_extraction() {
+        let root = get_workspace_root();
+        let (disabled_services, disabled_processes) = compute_initial_disabled_counts(&root);
+        assert_eq!(
+            disabled_services, 205,
+            "Default config should have 205 disabled services"
+        );
+        assert_eq!(
+            disabled_processes, 40,
+            "Default config should have 40 non-protected disabled processes"
+        );
+
+        assert!(
+            EMBEDDED_RUNTIME_ASSETS
+                .iter()
+                .any(|a| a.rel_path == "Tests/Verify-UniversalEngine.ps1"),
+            "EMBEDDED_RUNTIME_ASSETS must include Tests/Verify-UniversalEngine.ps1 for portable maintenance verification"
+        );
     }
 }

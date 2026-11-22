@@ -22,6 +22,8 @@ export component TitleBar inherits Rectangle {
 
     // Drag region covering the non-button titlebar area
     TouchArea {
+        x: 0px;
+        y: 0px;
         width: parent.width - 260px;
         height: parent.height;
         moved => {
