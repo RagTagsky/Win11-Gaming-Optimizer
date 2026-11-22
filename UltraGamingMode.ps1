@@ -17,18 +17,15 @@
 [CmdletBinding()]
 param (
     [Parameter(Position = 0)]
-    [ValidateSet("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate", "Debloat", "RestoreDebloat", "ApplyTuning", "ServiceControl", "StopProcess")]
     [string]$Action = "Status",
 
     [Parameter()]
-    [ValidateSet("All", "System", "User")]
     [string]$Scope = "All",
 
     [Parameter()]
     [string]$TargetName = "",
 
     [Parameter()]
-    [ValidateSet("Start", "Stop", "Automatic", "Manual", "Disabled")]
     [string]$ServiceOperation = "Stop",
 
     [Parameter()]
@@ -45,11 +42,30 @@ param (
     [switch]$Force
 )
 
-# ── Console UTF-8 Output Encoding (prevents CP866 mojibake in Tauri pipes) ───
+# ── Console UTF-8 Output Encoding (prevents CP866 mojibake in GUI pipes) ─────
 try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch {}
+
+# ── CLI Argument Validation ──────────────────────────────────────────────────
+$validActions = @("Enable", "Restore", "Status", "ApplyBootMode", "Diagnostic", "CleanMemory", "RepairDisplay", "RepairServices", "FlushShaderCache", "ToggleVBS", "GpuMsiStatus", "KernelLatencyStatus", "RestoreUser", "CheckUpdate", "Debloat", "RestoreDebloat", "ApplyTuning", "ServiceControl", "StopProcess")
+if ($validActions -notcontains $Action) {
+    [Console]::Error.WriteLine("ERROR: Invalid -Action '$Action'. Allowed values: $($validActions -join ', ').")
+    exit 1
+}
+
+$validScopes = @("All", "System", "User")
+if ($validScopes -notcontains $Scope) {
+    [Console]::Error.WriteLine("ERROR: Invalid -Scope '$Scope'. Allowed values: $($validScopes -join ', ').")
+    exit 1
+}
+
+$validServiceOps = @("Start", "Stop", "Automatic", "Manual", "Disabled")
+if ($validServiceOps -notcontains $ServiceOperation) {
+    [Console]::Error.WriteLine("ERROR: Invalid -ServiceOperation '$ServiceOperation'. Allowed values: $($validServiceOps -join ', ').")
+    exit 1
+}
 
 # ── Admin Rights & Watchdog Delegation Check ──────────────────────────────────
 $isSystem = [Security.Principal.WindowsIdentity]::GetCurrent().IsSystem
@@ -65,7 +81,7 @@ if (-not $isAdmin) {
         Write-Verbose "Watchdog / User profile restoration running with current user privileges."
     }
     else {
-        Write-Error "Ultra Gaming Mode requires Administrator privileges for '$Action'. Please run as Administrator."
+        [Console]::Error.WriteLine("ERROR: Ultra Gaming Mode requires Administrator privileges for '$Action'. Please run as Administrator.")
         exit 1
     }
 }
@@ -198,7 +214,7 @@ function Unregister-BootTasks {
 # ── Helper: Show Low-Latency Subsystem Status ────────────────────────────────
 function Show-LatencySubsystemStatus {
     $kdpc = Get-KernelDpcConfig
-    $input = Get-InputBufferConfig
+    $inputBufCfg = Get-InputBufferConfig
     $bcd = Get-BcdeditTimerConfig
     $tcp = Get-TcpStackConfig
     $hags = Get-HagsGpuSchedulingConfig
@@ -217,10 +233,10 @@ function Show-LatencySubsystemStatus {
     Write-Host "  PowerThrottlingOff:      $pwrTxt" -ForegroundColor $(if ($kdpc.PowerThrottlingOff -eq 1) { "Green" } else { "Yellow" })
 
     Write-Host "`n[2] Direct Peripheral Input Queues:" -ForegroundColor Yellow
-    $mouVal = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { 100 }
+    $mouVal = if ($null -ne $inputBufCfg.MouseDataQueueSize) { $inputBufCfg.MouseDataQueueSize } else { 100 }
     $isMouOpt = ($mouVal -ge 100)
     $mouTxt = if ($isMouOpt) { "$mouVal packets [OPTIMAL - Zero Packet Loss on 1000Hz+ Gaming Mice]" } else { "$mouVal [Truncated - Risk of Flick Drops]" }
-    $kbdVal = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { 100 }
+    $kbdVal = if ($null -ne $inputBufCfg.KeyboardDataQueueSize) { $inputBufCfg.KeyboardDataQueueSize } else { 100 }
     $isKbdOpt = ($kbdVal -ge 100)
     $kbdTxt = if ($isKbdOpt) { "$kbdVal packets [OPTIMAL - Zero Dropped Key Events]" } else { "$kbdVal [Truncated]" }
     Write-Host "  MouseDataQueueSize:      $mouTxt" -ForegroundColor $(if ($isMouOpt) { "Green" } else { "Yellow" })
@@ -587,14 +603,14 @@ switch ($Action) {
             Write-Host " [!] Pagefile Alert: $($hw.PagefileWarning)" -ForegroundColor Red
         }
 
-        # v2.8 Competitive Latency Badges
+        # AAA Latency Badges
         $kdpc = Get-KernelDpcConfig
-        $input = Get-InputBufferConfig
+        $inputBufCfg = Get-InputBufferConfig
         $bcd = Get-BcdeditTimerConfig
         $hags = Get-HagsGpuSchedulingConfig
 
         $dpcBadge = if ($kdpc.ThreadDpcEnable -ne 0) { "Kernel DPC: Threaded (Optimal)" } else { "Kernel DPC: Direct (Unsafe)" }
-        $mouQueue = if ($input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { 100 }
+        $mouQueue = if ($inputBufCfg.MouseDataQueueSize) { $inputBufCfg.MouseDataQueueSize } else { 100 }
         $inputBadge = "Input Buffer: $mouQueue"
         $timerBadge = if ($bcd.DynamicTick -ne "yes") { "Dynamic Tick: Default (Optimal)" } else { "Dynamic Tick: Off (Overhead)" }
         $hagsBadge = if ($hags.HwSchMode -eq 2) { "HAGS: Active" } else { "HAGS: Inactive" }
@@ -686,8 +702,8 @@ switch ($Action) {
         $dpcText = if ($isDpcOpt) { "Threaded: $dpcDisplay, Paging: $pageDisplay [OPTIMAL - Render Thread Protected]" } else { "Direct (0) [UNSAFE - Interrupts Preempt Game Loop]" }
         Write-Host " Kernel DPC:    $dpcText" -ForegroundColor $(if ($isDpcOpt) { "Green" } else { "Red" })
 
-        $mouDisplay = if ($null -ne $input.MouseDataQueueSize) { $input.MouseDataQueueSize } else { 100 }
-        $kbdDisplay = if ($null -ne $input.KeyboardDataQueueSize) { $input.KeyboardDataQueueSize } else { 100 }
+        $mouDisplay = if ($null -ne $inputBufCfg.MouseDataQueueSize) { $inputBufCfg.MouseDataQueueSize } else { 100 }
+        $kbdDisplay = if ($null -ne $inputBufCfg.KeyboardDataQueueSize) { $inputBufCfg.KeyboardDataQueueSize } else { 100 }
         $isOptimalQueue = ($mouDisplay -ge 100 -and $kbdDisplay -ge 100)
         $inputQueueText = if ($isOptimalQueue) { "$mouDisplay Mouse / $kbdDisplay Keyboard [OPTIMAL - Zero Drop Buffer]" } else { "$mouDisplay Mouse / $kbdDisplay Keyboard [Truncated]" }
         Write-Host " Input Buffers: $inputQueueText" -ForegroundColor $(if ($isOptimalQueue) { "Green" } else { "Yellow" })
@@ -719,7 +735,7 @@ switch ($Action) {
 
     "Debloat" {
         Write-Host "=====================================================" -ForegroundColor Cyan
-        Write-Host "         WINDOWS 11 DEEP DEBLOAT & AI SUPPRESSION    " -ForegroundColor Cyan
+        Write-Host "    WINDOWS 11 DEEP DEBLOAT & AI SUPPRESSION         " -ForegroundColor Cyan
         Write-Host "=====================================================" -ForegroundColor Cyan
         Set-Windows11DebloatOptimizations -All -Whitelist $whitelist -Blacklist $blacklist
         Write-Host "`n[SUCCESS] Windows 11 bloatware, telemetry, and background AI suppressed." -ForegroundColor Green
@@ -1087,67 +1103,39 @@ switch ($Action) {
             break
         }
 
-        Write-Host "[*] Live-applying Config\tuning.json to active gaming session ($($stateData.State))..." -ForegroundColor Cyan
-        $tuningFile = Join-Path (Join-Path $RootDir "Config") "tuning.json"
-        $tuning = $null
-        if (Test-Path -LiteralPath $tuningFile) {
-            try { $tuning = Get-Content -LiteralPath $tuningFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
-        }
+        Write-Host "[*] Live-applying AAA tuning to active gaming session ($($stateData.State))..." -ForegroundColor Cyan
         $qSize = 100
-        if ($tuning -and $null -ne $tuning.InputBufferQueueSize) {
-            try { $qSize = [Math]::Max(32, [int]$tuning.InputBufferQueueSize) } catch { $qSize = 100 }
-        }
         $hw = if ($stateData.HardwareProfile) { $stateData.HardwareProfile } else { Get-HardwareProfile }
 
         try {
             if (-not $isSystem) {
                 Set-DeepGameDVROptimizations | Out-Null
-                if ($tuning -and $tuning.DisableFullscreenOptimizations -eq $false -and $stateData.GameDVRConfig) {
-                    $origFse = if ($stateData.GameDVRConfig -is [hashtable]) {
-                        $stateData.GameDVRConfig["GameDVR_FSEBehaviorMode"]
-                    } elseif ($stateData.GameDVRConfig.PSObject.Properties["GameDVR_FSEBehaviorMode"]) {
-                        $stateData.GameDVRConfig.GameDVR_FSEBehaviorMode
-                    } else { $null }
-                    if ($null -ne $origFse) {
-                        $configStorePath = "HKCU:\System\GameConfigStore"
-                        if (-not (Test-Path -LiteralPath $configStorePath)) { New-Item -Path $configStorePath -Force -ErrorAction SilentlyContinue | Out-Null }
-                        Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value ([int]$origFse) -Type DWord -Force -ErrorAction SilentlyContinue
-                    }
-                }
             }
 
             if ($isAdmin -or $isSystem) {
                 Set-InputBufferOptimizations -QueueSize $qSize | Out-Null
-                if ($tuning -and $tuning.EnableNetAdapterMsi -eq $false) {
-                    if ($stateData.NetAdapterMsiConfig) {
-                        Restore-NetAdapterMsiMode -MsiBackup @($stateData.NetAdapterMsiConfig) | Out-Null
-                    }
-                } else {
-                    $nicMsiBackup = @(Set-NetAdapterMsiMode)
-                    if ((-not $stateData.NetAdapterMsiConfig -or @($stateData.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
-                        Set-StatePropertySafe -StateObject $stateData -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
-                        Set-ActiveStateSafe -Path $stateFile -Data $stateData | Out-Null
-                    }
+                $nicMsiBackup = @(Set-NetAdapterMsiMode)
+                if ((-not $stateData.NetAdapterMsiConfig -or @($stateData.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
+                    Set-StatePropertySafe -StateObject $stateData -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
+                    Set-ActiveStateSafe -Path $stateFile -Data $stateData | Out-Null
                 }
             }
 
             Set-ExtendedGamingOptimizations -HardwareProfile $hw -Whitelist $whitelist | Out-Null
 
             if ($stateData.ExtendedRegistryConfig) {
-                if (-not $tuning -or $tuning.DisableMouseAccel -ne $true) {
-                    $mouseSnap = @($stateData.ExtendedRegistryConfig | Where-Object { $_.Name -in @("MouseSpeed", "MouseThreshold1", "MouseThreshold2") })
-                    if ($mouseSnap.Count -gt 0) {
-                        Restore-RegistryValueSnapshot -Snapshot $mouseSnap -Hive "HKCU" | Out-Null
-                    }
+                $mouseSnap = @($stateData.ExtendedRegistryConfig | Where-Object { $_.Name -in @("MouseSpeed", "MouseThreshold1", "MouseThreshold2") })
+                if ($mouseSnap.Count -gt 0) {
+                    Restore-RegistryValueSnapshot -Snapshot $mouseSnap -Hive "HKCU" | Out-Null
                 }
-                if (($isAdmin -or $isSystem) -and (-not $tuning -or $tuning.DisableNvidiaDynamicPstate -ne $true)) {
+                if ($isAdmin -or $isSystem) {
                     $nvSnap = @($stateData.ExtendedRegistryConfig | Where-Object { $_.Name -eq "DisableDynamicPstate" })
                     if ($nvSnap.Count -gt 0) {
                         Restore-RegistryValueSnapshot -Snapshot $nvSnap -Hive "HKLM" | Out-Null
                     }
                 }
             }
-            Write-Host "[+] Live tuning applied cleanly." -ForegroundColor Green
+            Write-Host "[+] Live AAA tuning applied cleanly." -ForegroundColor Green
         } catch {
             Write-Warning "Live ApplyTuning warning: $($_.Exception.Message)"
         }

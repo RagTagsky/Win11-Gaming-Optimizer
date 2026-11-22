@@ -443,7 +443,7 @@
                            },
                            {
                                "Name":  "WSAIFabricSvc",
-                               "Reason":  "Windows Subsystem for Android / AI Fabric Service"
+                               "Reason":  "Windows Subsystem for Android / Windows AI Fabric Service"
                            },
                            {
                                "Name":  "PeerDistSvc",

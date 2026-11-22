@@ -552,8 +552,8 @@
       "safetyLevel": "safe"
     },
     "WSAIFabricSvc": {
-      "summaryRu": "Служба ИИ-инфраструктуры Windows / подсистемы Android (фоновый ИИ-анализ).",
-      "canDisableRu": "Можно отключать — освобождает ОЗУ и убирает фоновую нагрузку ИИ.",
+      "summaryRu": "Служба инфраструктуры WSAIFabricSvc / подсистемы Android (фоновый анализ данных).",
+      "canDisableRu": "Можно отключать — освобождает ОЗУ и убирает фоновую нагрузку службы.",
       "safetyLevel": "safe"
     },
     "PeerDistSvc": {

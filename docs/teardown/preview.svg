@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="svg-title svg-desc">
+  <title id="svg-title">Ultra Gaming Mode v4.0.0 — 7-слойная архитектура AAA</title>
+  <desc id="svg-desc">Векторная изометрическая разборка 7 архитектурных слоёв Ultra Gaming Mode v4.0.0 для Windows 11: от нативного Slint GUI и Rust-ядра до слоёв ЦП, графики, памяти 0.500 мс, сети и защиты Zapret.</desc>
+  <defs>
+    <style>
+      .bg-card { fill: #0c0f14; stroke: #242b38; stroke-width: 2; }
+      .grid-line { stroke: #1e293b; stroke-width: 1; stroke-opacity: 0.35; }
+      .hdr-title { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 20px; font-weight: 700; fill: #f1f5f9; }
+      .hdr-sub { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 12.5px; fill: #8293ab; }
+      .hdr-badge-bg { fill: #131720; stroke: #3b82f6; stroke-opacity: 0.45; stroke-width: 1; }
+      .hdr-badge-txt { font-family: "Cascadia Code", "Consolas", monospace; font-size: 11.5px; font-weight: 700; fill: #74b4fc; }
+      .plate-edge { stroke: #e2e8f0; stroke-width: 1.45; stroke-linejoin: round; stroke-linecap: round; }
+      .sub-edge { stroke: #cbd5e1; stroke-width: 0.9; stroke-linejoin: round; stroke-linecap: round; }
+      .axis-trail { stroke: #74b4fc; stroke-opacity: 0.52; stroke-width: 1.1; stroke-dasharray: 6 3 2 3; stroke-linecap: butt; }
+      .pill-num { font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px; font-weight: 700; fill: #ffffff; }
+      .pill-title { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; font-size: 13px; font-weight: 700; fill: #f1f5f9; }
+      .pill-sub { font-family: "Cascadia Code", "Consolas", monospace; font-size: 10.5px; fill: #a3b3c9; }
+      .footer-bar { fill: #131720; stroke: #242b38; stroke-width: 1; }
+      .footer-txt { font-family: "Cascadia Code", "Consolas", monospace; font-size: 11.5px; fill: #a3b3c9; }
+    </style>
+    <radialGradient id="stageGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.14"/>
+      <stop offset="65%" stop-color="#06b6d4" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#0c0f14" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="718" rx="16" class="bg-card"/>
+  <rect x="380" y="90" width="440" height="530" fill="url(#stageGlow)"/>
+
+  <!-- Header -->
+  <text x="28" y="42" class="hdr-title">Ultra Gaming Mode v4.0.0 — Интерактивная 3D-архитектура AAA</text>
+  <text x="28" y="63" class="hdr-sub">Послойная изометрическая схема (азимут −128° / подъём 28°) · Windows 11</text>
+  <rect x="938" y="24" width="234" height="32" rx="8" class="hdr-badge-bg"/>
+  <text x="1055" y="44" text-anchor="middle" class="hdr-badge-txt">7 LAYERS · OFFLINE 3D</text>
+
+  <!-- Isometric Exploded 7-Layer Stack -->
+  <g id="isometric-stack">
+    <g id="layer-07">
+      <polygon points="541.28,574.91 786.38,485.01 658.72,408.29 413.62,498.2" fill="rgb(48,51,107)" class="plate-edge"/>
+      <polygon points="541.28,593.5 786.38,503.6 786.38,485.01 541.28,574.91" fill="rgb(38,41,86)" class="plate-edge"/>
+      <polygon points="413.62,516.79 541.28,593.5 541.28,574.91 413.62,498.2" fill="rgb(42,45,94)" class="plate-edge"/>
+      <polygon points="611.89,473.51 701.25,440.73 657.36,414.36 568,447.14" fill="rgb(20,132,123)" class="sub-edge"/>
+      <polygon points="611.89,482.59 701.25,449.82 701.25,440.73 611.89,473.51" fill="rgb(16,106,98)" class="sub-edge"/>
+      <polygon points="568,456.22 611.89,482.59 611.89,473.51 568,447.14" fill="rgb(17,117,108)" class="sub-edge"/>
+      <polygon points="665.75,507.16 755.11,474.38 711.22,448.01 621.86,480.79" fill="rgb(52,45,148)" class="sub-edge"/>
+      <polygon points="665.75,514.96 755.11,482.18 755.11,474.38 665.75,507.16" fill="rgb(41,36,118)" class="sub-edge"/>
+      <polygon points="621.86,488.59 665.75,514.96 665.75,507.16 621.86,480.79" fill="rgb(45,40,130)" class="sub-edge"/>
+      <polygon points="486.78,520.69 599.12,479.48 555.24,453.11 442.9,494.32" fill="rgb(73,77,174)" class="sub-edge"/>
+      <polygon points="486.78,528.48 599.12,487.28 599.12,479.48 486.78,520.69" fill="rgb(59,61,139)" class="sub-edge"/>
+      <polygon points="442.9,502.11 486.78,528.48 486.78,520.69 442.9,494.32" fill="rgb(65,68,153)" class="sub-edge"/>
+      <polygon points="540.64,553.05 652.98,511.84 609.1,485.47 496.76,526.68" fill="rgb(60,55,166)" class="sub-edge"/>
+      <polygon points="540.64,560.84 652.98,519.64 652.98,511.84 540.64,553.05" fill="rgb(48,44,133)" class="sub-edge"/>
+      <polygon points="496.76,534.47 540.64,560.84 540.64,553.05 496.76,526.68" fill="rgb(53,48,146)" class="sub-edge"/>
+    </g>
+    <line x1="655.93" y1="418.97" x2="655.93" y2="388.93" class="axis-trail"/>
+    <line x1="763.64" y1="483.7" x2="763.64" y2="453.66" class="axis-trail"/>
+    <line x1="436.36" y1="499.51" x2="436.36" y2="469.47" class="axis-trail"/>
+    <line x1="544.07" y1="564.23" x2="544.07" y2="534.19" class="axis-trail"/>
+    <g id="layer-06">
+      <polygon points="541.28,526.28 786.38,436.37 658.72,359.66 413.62,449.56" fill="rgb(14,80,97)" class="plate-edge"/>
+      <polygon points="541.28,544.87 786.38,454.97 786.38,436.37 541.28,526.28" fill="rgb(11,64,77)" class="plate-edge"/>
+      <polygon points="413.62,468.16 541.28,544.87 541.28,526.28 413.62,449.56" fill="rgb(13,71,85)" class="plate-edge"/>
+      <polygon points="579.49,427.11 689.28,386.84 659.36,368.86 549.57,409.13" fill="rgb(16,86,108)" class="sub-edge"/>
+      <polygon points="579.49,434.26 689.28,393.99 689.28,386.84 579.49,427.11" fill="rgb(12,69,87)" class="sub-edge"/>
+      <polygon points="549.57,416.28 579.49,434.26 579.49,427.11 549.57,409.13" fill="rgb(14,76,95)" class="sub-edge"/>
+      <polygon points="645.32,465.38 755.11,425.11 699.25,391.55 589.47,431.82" fill="rgb(17,133,98)" class="sub-edge"/>
+      <polygon points="645.32,473.82 755.11,433.55 755.11,425.11 645.32,465.38" fill="rgb(14,107,78)" class="sub-edge"/>
+      <polygon points="589.47,440.25 645.32,473.82 645.32,465.38 589.47,431.82" fill="rgb(15,117,86)" class="sub-edge"/>
+      <polygon points="540.64,503.77 632.55,470.06 536.81,412.52 444.89,446.24" fill="rgb(12,106,131)" class="sub-edge"/>
+      <polygon points="444.89,454.68 540.64,512.21 540.64,503.77 444.89,446.24" fill="rgb(10,93,116)" class="sub-edge"/>
+      <polygon points="540.64,512.21 632.55,478.5 632.55,470.06 540.64,503.77" fill="rgb(9,85,105)" class="sub-edge"/>
+    </g>
+    <line x1="655.93" y1="370.34" x2="655.93" y2="340.3" class="axis-trail"/>
+    <line x1="763.64" y1="435.06" x2="763.64" y2="405.02" class="axis-trail"/>
+    <line x1="436.36" y1="450.87" x2="436.36" y2="420.84" class="axis-trail"/>
+    <line x1="544.07" y1="515.6" x2="544.07" y2="485.56" class="axis-trail"/>
+    <g id="layer-05">
+      <polygon points="541.28,477.64 786.38,387.74 658.72,311.03 413.62,400.93" fill="rgb(97,41,76)" class="plate-edge"/>
+      <polygon points="541.28,496.24 786.38,406.34 786.38,387.74 541.28,477.64" fill="rgb(78,33,60)" class="plate-edge"/>
+      <polygon points="413.62,419.52 541.28,496.24 541.28,477.64 413.62,400.93" fill="rgb(85,36,66)" class="plate-edge"/>
+      <polygon points="599.68,379.44 699.25,342.91 657.36,317.74 557.79,354.27" fill="rgb(172,50,74)" class="sub-edge"/>
+      <polygon points="599.68,387.88 699.25,351.35 699.25,342.91 599.68,379.44" fill="rgb(138,40,59)" class="sub-edge"/>
+      <polygon points="557.79,362.7 599.68,387.88 599.68,379.44 557.79,354.27" fill="rgb(151,44,65)" class="sub-edge"/>
+      <polygon points="688.72,401.47 755.11,377.12 711.22,350.75 644.84,375.1" fill="rgb(135,24,73)" class="sub-edge"/>
+      <polygon points="644.84,382.89 688.72,409.26 688.72,401.47 644.84,375.1" fill="rgb(119,21,65)" class="sub-edge"/>
+      <polygon points="688.72,409.26 755.11,384.91 755.11,377.12 688.72,401.47" fill="rgb(108,19,59)" class="sub-edge"/>
+      <polygon points="484.79,422.22 586.91,384.76 545.03,359.59 442.9,397.05" fill="rgb(167,56,114)" class="sub-edge"/>
+      <polygon points="484.79,430.02 586.91,392.56 586.91,384.76 484.79,422.22" fill="rgb(133,45,91)" class="sub-edge"/>
+      <polygon points="442.9,404.85 484.79,430.02 484.79,422.22 442.9,397.05" fill="rgb(147,50,101)" class="sub-edge"/>
+      <polygon points="540.64,455.78 675.96,406.15 632.07,379.78 496.76,429.41" fill="rgb(155,34,91)" class="sub-edge"/>
+      <polygon points="540.64,463.58 675.96,413.95 675.96,406.15 540.64,455.78" fill="rgb(124,27,73)" class="sub-edge"/>
+      <polygon points="496.76,437.21 540.64,463.58 540.64,455.78 496.76,429.41" fill="rgb(136,30,80)" class="sub-edge"/>
+    </g>
+    <line x1="655.93" y1="321.7" x2="655.93" y2="291.67" class="axis-trail"/>
+    <line x1="763.64" y1="386.43" x2="763.64" y2="356.39" class="axis-trail"/>
+    <line x1="436.36" y1="402.24" x2="436.36" y2="372.2" class="axis-trail"/>
+    <line x1="544.07" y1="466.97" x2="544.07" y2="436.93" class="axis-trail"/>
+    <g id="layer-04">
+      <polygon points="541.28,429.01 786.38,339.11 658.72,262.4 413.62,352.3" fill="rgb(100,72,24)" class="plate-edge"/>
+      <polygon points="541.28,447.6 786.38,357.7 786.38,339.11 541.28,429.01" fill="rgb(80,57,20)" class="plate-edge"/>
+      <polygon points="413.62,370.89 541.28,447.6 541.28,429.01 413.62,352.3" fill="rgb(88,63,22)" class="plate-edge"/>
+      <polygon points="574.63,321.98 676.75,284.52 654.81,271.33 552.68,308.79" fill="rgb(128,64,16)" class="sub-edge"/>
+      <polygon points="574.63,329.13 676.75,291.67 676.75,284.52 574.63,321.98" fill="rgb(103,51,13)" class="sub-edge"/>
+      <polygon points="552.68,315.94 574.63,329.13 574.63,321.98 552.68,308.79" fill="rgb(113,56,14)" class="sub-edge"/>
+      <polygon points="608.54,342.35 710.66,304.9 684.73,289.31 582.61,326.77" fill="rgb(165,67,18)" class="sub-edge"/>
+      <polygon points="608.54,349.51 710.66,312.05 710.66,304.9 608.54,342.35" fill="rgb(132,54,15)" class="sub-edge"/>
+      <polygon points="582.61,333.92 608.54,349.51 608.54,342.35 582.61,326.77" fill="rgb(145,59,16)" class="sub-edge"/>
+      <polygon points="648.43,366.33 750.56,328.87 720.64,310.89 618.51,348.35" fill="rgb(173,115,18)" class="sub-edge"/>
+      <polygon points="648.43,373.48 750.56,336.02 750.56,328.87 648.43,366.33" fill="rgb(138,92,14)" class="sub-edge"/>
+      <polygon points="618.51,355.5 648.43,373.48 648.43,366.33 618.51,348.35" fill="rgb(152,101,16)" class="sub-edge"/>
+      <polygon points="541.2,405.02 633.11,371.3 541.36,316.17 449.44,349.88" fill="rgb(154,88,14)" class="sub-edge"/>
+      <polygon points="449.44,357.67 541.2,412.81 541.2,405.02 449.44,349.88" fill="rgb(135,78,13)" class="sub-edge"/>
+      <polygon points="541.2,412.81 633.11,379.1 633.11,371.3 541.2,405.02" fill="rgb(123,71,11)" class="sub-edge"/>
+    </g>
+    <line x1="655.93" y1="273.07" x2="655.93" y2="243.03" class="axis-trail"/>
+    <line x1="763.64" y1="337.8" x2="763.64" y2="307.76" class="axis-trail"/>
+    <line x1="436.36" y1="353.61" x2="436.36" y2="323.57" class="axis-trail"/>
+    <line x1="544.07" y1="418.33" x2="544.07" y2="388.3" class="axis-trail"/>
+    <g id="layer-03">
+      <polygon points="541.28,380.38 786.38,290.48 658.72,213.76 413.62,303.66" fill="rgb(62,48,109)" class="plate-edge"/>
+      <polygon points="541.28,398.97 786.38,309.07 786.38,290.48 541.28,380.38" fill="rgb(50,38,87)" class="plate-edge"/>
+      <polygon points="413.62,322.26 541.28,398.97 541.28,380.38 413.62,303.66" fill="rgb(55,42,96)" class="plate-edge"/>
+      <polygon points="678.91,271.13 717.21,257.08 659.36,222.32 621.06,236.37" fill="rgb(120,65,178)" class="sub-edge"/>
+      <polygon points="621.06,244.16 678.91,278.92 678.91,271.13 621.06,236.37" fill="rgb(106,57,157)" class="sub-edge"/>
+      <polygon points="678.91,278.92 717.21,264.88 717.21,257.08 678.91,271.13" fill="rgb(96,52,143)" class="sub-edge"/>
+      <polygon points="592.1,302.97 666.14,275.81 608.3,241.05 534.25,268.21" fill="rgb(101,70,178)" class="sub-edge"/>
+      <polygon points="534.25,276 592.1,310.76 592.1,302.97 534.25,268.21" fill="rgb(89,62,156)" class="sub-edge"/>
+      <polygon points="592.1,310.76 666.14,283.6 666.14,275.81 592.1,302.97" fill="rgb(80,56,142)" class="sub-edge"/>
+      <polygon points="502.74,335.74 579.34,307.65 521.49,272.89 444.89,300.98" fill="rgb(80,35,158)" class="sub-edge"/>
+      <polygon points="444.89,308.78 502.74,343.54 502.74,335.74 444.89,300.98" fill="rgb(71,30,139)" class="sub-edge"/>
+      <polygon points="502.74,343.54 579.34,315.44 579.34,307.65 502.74,335.74" fill="rgb(64,28,126)" class="sub-edge"/>
+      <polygon points="540.64,359.16 755.11,280.5 729.17,264.92 514.71,343.58" fill="rgb(90,47,171)" class="sub-edge"/>
+      <polygon points="540.64,366.31 755.11,287.65 755.11,280.5 540.64,359.16" fill="rgb(72,37,137)" class="sub-edge"/>
+      <polygon points="514.71,350.73 540.64,366.31 540.64,359.16 514.71,343.58" fill="rgb(80,41,151)" class="sub-edge"/>
+    </g>
+    <line x1="655.93" y1="224.44" x2="655.93" y2="194.4" class="axis-trail"/>
+    <line x1="763.64" y1="289.16" x2="763.64" y2="259.13" class="axis-trail"/>
+    <line x1="436.36" y1="304.98" x2="436.36" y2="274.94" class="axis-trail"/>
+    <line x1="544.07" y1="369.7" x2="544.07" y2="339.66" class="axis-trail"/>
+    <g id="layer-02">
+      <polygon points="541.28,331.74 786.38,241.84 658.72,165.13 413.62,255.03" fill="rgb(18,81,67)" class="plate-edge"/>
+      <polygon points="541.28,350.34 786.38,260.44 786.38,241.84 541.28,331.74" fill="rgb(14,65,54)" class="plate-edge"/>
+      <polygon points="413.62,273.63 541.28,350.34 541.28,331.74 413.62,255.03" fill="rgb(16,72,59)" class="plate-edge"/>
+      <polygon points="622.1,227.25 698.7,199.15 654.81,172.78 578.22,200.88" fill="rgb(10,131,154)" class="sub-edge"/>
+      <polygon points="622.1,235.68 698.7,207.59 698.7,199.15 622.1,227.25" fill="rgb(8,105,124)" class="sub-edge"/>
+      <polygon points="578.22,209.31 622.1,235.68 622.1,227.25 578.22,200.88" fill="rgb(9,115,136)" class="sub-edge"/>
+      <polygon points="642.77,272.43 752.55,232.16 710.66,206.99 600.88,247.25" fill="rgb(173,115,18)" class="sub-edge"/>
+      <polygon points="642.77,280.22 752.55,239.95 752.55,232.16 642.77,272.43" fill="rgb(138,92,14)" class="sub-edge"/>
+      <polygon points="600.88,255.05 642.77,280.22 642.77,272.43 600.88,247.25" fill="rgb(152,101,16)" class="sub-edge"/>
+      <polygon points="540.64,309.88 630,277.11 578.14,245.94 488.78,278.72" fill="rgb(9,109,82)" class="sub-edge"/>
+      <polygon points="540.64,317.68 630,284.9 630,277.11 540.64,309.88" fill="rgb(8,87,65)" class="sub-edge"/>
+      <polygon points="488.78,286.52 540.64,317.68 540.64,309.88 488.78,278.72" fill="rgb(8,96,72)" class="sub-edge"/>
+    </g>
+    <line x1="655.93" y1="175.81" x2="655.93" y2="145.77" class="axis-trail"/>
+    <line x1="763.64" y1="240.53" x2="763.64" y2="210.49" class="axis-trail"/>
+    <line x1="436.36" y1="256.34" x2="436.36" y2="226.3" class="axis-trail"/>
+    <line x1="544.07" y1="321.07" x2="544.07" y2="291.03" class="axis-trail"/>
+    <g id="layer-01">
+      <polygon points="541.28,283.11 786.38,193.21 658.72,116.5 413.62,206.4" fill="rgb(33,62,109)" class="plate-edge"/>
+      <polygon points="541.28,301.71 786.38,211.8 786.38,193.21 541.28,283.11" fill="rgb(27,49,87)" class="plate-edge"/>
+      <polygon points="413.62,224.99 541.28,301.71 541.28,283.11 413.62,206.4" fill="rgb(29,54,96)" class="plate-edge"/>
+      <polygon points="661.36,188.66 712.42,169.93 670.53,144.76 619.47,163.49" fill="rgb(29,141,74)" class="sub-edge"/>
+      <polygon points="619.47,170.64 661.36,195.82 661.36,188.66 619.47,163.49" fill="rgb(26,124,65)" class="sub-edge"/>
+      <polygon points="661.36,195.82 712.42,177.09 712.42,169.93 661.36,188.66" fill="rgb(23,113,59)" class="sub-edge"/>
+      <polygon points="547.18,264 756.54,187.21 652.82,124.88 443.46,201.67" fill="rgb(31,75,170)" class="sub-edge"/>
+      <polygon points="547.18,270.51 756.54,193.72 756.54,187.21 547.18,264" fill="rgb(25,60,136)" class="sub-edge"/>
+      <polygon points="443.46,208.18 547.18,270.51 547.18,264 443.46,201.67" fill="rgb(27,66,150)" class="sub-edge"/>
+      <polygon points="524.6,236.25 634.39,195.98 584.52,166.02 474.73,206.29" fill="rgb(71,120,180)" class="sub-edge"/>
+      <polygon points="524.6,242.12 634.39,201.85 634.39,195.98 524.6,236.25" fill="rgb(57,96,144)" class="sub-edge"/>
+      <polygon points="474.73,212.15 524.6,242.12 524.6,236.25 474.73,206.29" fill="rgb(63,105,159)" class="sub-edge"/>
+    </g>
+  </g>
+
+  <!-- 1-Elbow Perimeter Annotations -->
+  <g id="annotations">
+    <g class="callout">
+      <polyline points="413.62,215.7 389.62,125 368,125" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-opacity="0.85"/>
+      <circle cx="413.62" cy="215.7" r="4" fill="#3b82f6" stroke="#0c0f14" stroke-width="1.5"/>
+      <rect x="28" y="98" width="340" height="54" rx="10" fill="#131720" stroke="#242b38" stroke-width="1.2"/>
+      <rect x="38" y="109" width="28" height="32" rx="6" fill="#3b82f6"/>
+      <text x="52" y="130" text-anchor="middle" class="pill-num">01</text>
+      <text x="76" y="121" class="pill-title">Нативный GUI и системный трей</text>
+      <text x="76" y="139" class="pill-sub">Slint 1.19 · 8 тем · DWM Dark · 960×680</text>
+    </g>
+    <g class="callout">
+      <polyline points="413.62,312.96 389.62,265 368,265" fill="none" stroke="#a78bfa" stroke-width="1.5" stroke-opacity="0.85"/>
+      <circle cx="413.62" cy="312.96" r="4" fill="#8b5cf6" stroke="#0c0f14" stroke-width="1.5"/>
+      <rect x="28" y="238" width="340" height="54" rx="10" fill="#131720" stroke="#242b38" stroke-width="1.2"/>
+      <rect x="38" y="249" width="28" height="32" rx="6" fill="#8b5cf6"/>
+      <text x="52" y="270" text-anchor="middle" class="pill-num">03</text>
+      <text x="76" y="261" class="pill-title">Движок AAA-оптимизации</text>
+      <text x="76" y="279" class="pill-sub">UltraGamingMode.ps1 · Core/*.ps1 · tuning.json</text>
+    </g>
+    <g class="callout">
+      <polyline points="413.62,410.23 389.62,405 368,405" fill="none" stroke="#f472b6" stroke-width="1.5" stroke-opacity="0.85"/>
+      <circle cx="413.62" cy="410.23" r="4" fill="#ec4899" stroke="#0c0f14" stroke-width="1.5"/>
+      <rect x="28" y="378" width="340" height="54" rx="10" fill="#131720" stroke="#242b38" stroke-width="1.2"/>
+      <rect x="38" y="389" width="28" height="32" rx="6" fill="#ec4899"/>
+      <text x="52" y="410" text-anchor="middle" class="pill-num">05</text>
+      <text x="76" y="401" class="pill-title">Слой графики и вывода кадра</text>
+      <text x="76" y="419" class="pill-sub">AAA Flip Model + HDR/OBS · HAGS · MPO Safe</text>
+    </g>
+    <g class="callout">
+      <polyline points="413.62,507.49 389.62,545 368,545" fill="none" stroke="#818cf8" stroke-width="1.5" stroke-opacity="0.85"/>
+      <circle cx="413.62" cy="507.49" r="4" fill="#6366f1" stroke="#0c0f14" stroke-width="1.5"/>
+      <rect x="28" y="518" width="340" height="54" rx="10" fill="#131720" stroke="#242b38" stroke-width="1.2"/>
+      <rect x="38" y="529" width="28" height="32" rx="6" fill="#6366f1"/>
+      <text x="52" y="550" text-anchor="middle" class="pill-num">07</text>
+      <text x="76" y="541" class="pill-title">Слой сети, служб и процессов</text>
+      <text x="76" y="559" class="pill-sub">AFD 64KB · 328/205/95/27 · 181 проц. · Zapret</text>
+    </g>
+    <g class="callout">
+      <polyline points="786.38,251.14 810.38,195 832,195" fill="none" stroke="#34d399" stroke-width="1.5" stroke-opacity="0.85"/>
+      <circle cx="786.38" cy="251.14" r="4" fill="#10b981" stroke="#0c0f14" stroke-width="1.5"/>
+      <rect x="832" y="168" width="340" height="54" rx="10" fill="#131720" stroke="#242b38" stroke-width="1.2"/>
+      <rect x="842" y="179" width="28" height="32" rx="6" fill="#10b981"/>
+      <text x="856" y="200" text-anchor="middle" class="pill-num">02</text>
+      <text x="880" y="191" class="pill-title">Rust-ядро и сторож безопасности</text>
+      <text x="880" y="209" class="pill-sub">ActiveState · HKLM\RunOnce · Auto-Purge 60s</text>
+    </g>
+    <g class="callout">
+      <polyline points="786.38,348.41 810.38,345 832,345" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-opacity="0.85"/>
+      <circle cx="786.38" cy="348.41" r="4" fill="#f59e0b" stroke="#0c0f14" stroke-width="1.5"/>
+      <rect x="832" y="318" width="340" height="54" rx="10" fill="#131720" stroke="#242b38" stroke-width="1.2"/>
+      <rect x="842" y="329" width="28" height="32" rx="6" fill="#f59e0b"/>
+      <text x="856" y="350" text-anchor="middle" class="pill-num">04</text>
+      <text x="880" y="341" class="pill-title">Слой процессора и планировщика</text>
+      <text x="880" y="359" class="pill-sub">CPMINCORES 100% · MMCSS P=6 · 0x26 · IFEO</text>
+    </g>
+    <g class="callout">
+      <polyline points="786.38,445.67 810.38,495 832,495" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-opacity="0.85"/>
+      <circle cx="786.38" cy="445.67" r="4" fill="#06b6d4" stroke="#0c0f14" stroke-width="1.5"/>
+      <rect x="832" y="468" width="340" height="54" rx="10" fill="#131720" stroke="#242b38" stroke-width="1.2"/>
+      <rect x="842" y="479" width="28" height="32" rx="6" fill="#06b6d4"/>
+      <text x="856" y="500" text-anchor="middle" class="pill-num">06</text>
+      <text x="880" y="491" class="pill-title">Слой памяти и таймера 0.500 мс</text>
+      <text x="880" y="509" class="pill-sub">NtSetTimerResolution · Standby Purge · Low-RAM</text>
+    </g>
+  </g>
+
+  <!-- Bottom Spec Strip -->
+  <rect x="28" y="656" width="1144" height="40" rx="10" class="footer-bar"/>
+  <text x="600" y="680" text-anchor="middle" class="footer-txt">Slint 1.19 (8 тем) · Rust Core + RunOnce · AAA Engine · CPU 100% · Flip Model / HAGS / MPO Safe · 0.500 мс + Standby Purge · Zapret Guard</text>
+</svg>

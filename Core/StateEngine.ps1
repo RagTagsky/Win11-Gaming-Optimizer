@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "3.6.0"
+$Script:APP_VERSION = "4.0.0"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -766,8 +766,8 @@ function New-SystemStateBackup {
     # 17. HAGS GPU Scheduling Snapshot
     $snapshot.HagsConfig = Get-HagsGpuSchedulingConfig
 
-    # 18-21. v2.8 extended registry tweaks, USB/NVMe/EPP power latency, memory compression, PCIe NIC MSI mode
-    $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true; DisableNvidiaDynamicPstate = $true })))
+    # 18-21. AAA extended registry tweaks, USB/NVMe/EPP power latency, memory compression, PCIe NIC MSI mode
+    $snapshot.ExtendedRegistryConfig  = @(Get-RegistryValueSnapshot -Targets @(Get-ExtendedGamingTargets -HardwareProfile $hwProfile -Whitelist $Whitelist))
     $snapshot.PowerLatencyConfig      = Get-PowerLatencyConfig
     $snapshot.MemoryCompressionConfig = Get-MemoryCompressionConfig
     $snapshot.DebloatConfig           = Get-Windows11DebloatConfig
@@ -996,31 +996,14 @@ function Disable-UserStateAggressive {
         }
     }
 
-    # Load user tuning preferences
-    $tuningPath = Join-Path $Script:ProjectRoot "Config\tuning.json"
-    $tuning = $null
-    if (Test-Path -LiteralPath $tuningPath) {
-        try { $tuning = Get-Content -LiteralPath $tuningPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
-    }
-    $inputQueueSize = 100
-    if ($tuning -and ($null -ne $tuning.InputBufferQueueSize)) {
-        try { $inputQueueSize = [int]$tuning.InputBufferQueueSize } catch { $inputQueueSize = 100 }
-    }
-    $enableNetMsi = $true
-    if ($tuning -and ($null -ne $tuning.EnableNetAdapterMsi)) {
-        $enableNetMsi = [bool]$tuning.EnableNetAdapterMsi
-    }
-
     # 7. Apply Deep GameDVR and Ultra Low Latency Network (TCPNoDelay, FlowControl=0, InterruptModeration=0, PCIe NIC MSI)
     Set-DeepGameDVROptimizations | Out-Null
     Set-NetworkGamingOptimizations | Out-Null
-    if ($enableNetMsi) {
-        $nicMsiBackup = @(Set-NetAdapterMsiMode)
-        $curState = Get-ActiveStateSafe
-        if ($curState -and (-not $curState.NetAdapterMsiConfig -or @($curState.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
-            Set-StatePropertySafe -StateObject $curState -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
-            Set-ActiveStateSafe -Data $curState | Out-Null
-        }
+    $nicMsiBackup = @(Set-NetAdapterMsiMode)
+    $curState = Get-ActiveStateSafe
+    if ($curState -and (-not $curState.NetAdapterMsiConfig -or @($curState.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
+        Set-StatePropertySafe -StateObject $curState -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
+        Set-ActiveStateSafe -Data $curState | Out-Null
     }
 
     # 8. Apply Defender, Widgets & Focus Assist optimizations (Widgets strictly obeys process rule)
@@ -1037,14 +1020,14 @@ function Disable-UserStateAggressive {
 
     # 10. Apply Low-Latency Kernel DPC, Input Buffer Queues, Timers & HAGS (takes effect on reboot)
     Set-KernelDpcOptimizations -IsLowRam:$hw.LowRamProfile | Out-Null
-    Set-InputBufferOptimizations -QueueSize $inputQueueSize | Out-Null
+    Set-InputBufferOptimizations -QueueSize 100 | Out-Null
     Set-BcdeditTimerOptimizations | Out-Null
     Set-HagsGpuScheduling -GpuVendor $hw.GpuVendor | Out-Null
 
     # 11. Repair legacy optimizer leftovers (priority inversion on fontdrvhost/sihost/lsass/ctfmon, orphaned tasks)
     Repair-LegacyOptimizerLeftovers | Out-Null
 
-    # 12. Apply v2.8 Extended Gaming Optimizations (FSE/VRR, MPO off, IFEO game boost, IRQ, USB HID, AMD ASPM, VBS, ETW, Maintenance)
+    # 12. Apply AAA Extended Gaming Optimizations (Flip Model/VRR, MPO-safe, IFEO game boost, IRQ, USB HID, AMD ASPM, VBS, ETW, Maintenance)
     $wlFile = Join-Path $Script:ProjectRoot "Config\services_whitelist.json"
     $wlList = if (Test-Path -LiteralPath $wlFile) { @((Get-Content -LiteralPath $wlFile -Raw -Encoding UTF8 | ConvertFrom-Json).ProtectedServices) } else { @() }
     Set-ExtendedGamingOptimizations -HardwareProfile $hw -Whitelist $wlList | Out-Null
@@ -1067,24 +1050,12 @@ function Apply-SystemStateBootMode {
         $StateData = $null
     )
 
-    $tuningPath = Join-Path $Script:ProjectRoot "Config\tuning.json"
-    $tuning = $null
-    if (Test-Path -LiteralPath $tuningPath) {
-        try { $tuning = Get-Content -LiteralPath $tuningPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch {}
-    }
+    Set-InputBufferOptimizations -QueueSize 100 | Out-Null
 
-    $inputQueueSize = 100
-    if ($tuning -and ($null -ne $tuning.InputBufferQueueSize)) {
-        try { $inputQueueSize = [int]$tuning.InputBufferQueueSize } catch { $inputQueueSize = 100 }
-    }
-    Set-InputBufferOptimizations -QueueSize $inputQueueSize | Out-Null
-
-    if (-not $tuning -or ($tuning.EnableNetAdapterMsi -ne $false)) {
-        $nicMsiBackup = @(Set-NetAdapterMsiMode)
-        if ($StateData -and (-not $StateData.NetAdapterMsiConfig -or @($StateData.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
-            Set-StatePropertySafe -StateObject $StateData -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
-            Set-ActiveStateSafe -Data $StateData | Out-Null
-        }
+    $nicMsiBackup = @(Set-NetAdapterMsiMode)
+    if ($StateData -and (-not $StateData.NetAdapterMsiConfig -or @($StateData.NetAdapterMsiConfig).Count -eq 0) -and $nicMsiBackup.Count -gt 0) {
+        Set-StatePropertySafe -StateObject $StateData -Name "NetAdapterMsiConfig" -Value $nicMsiBackup
+        Set-ActiveStateSafe -Data $StateData | Out-Null
     }
 }
 

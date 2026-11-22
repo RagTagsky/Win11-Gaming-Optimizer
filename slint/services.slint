@@ -1,0 +1,532 @@
+import { ScrollView, LineEdit } from "std-widgets.slint";
+import { ThemeTokens } from "theme.slint";
+
+export struct ServiceRowItem {
+    name: string,
+    display-name: string,
+    status-label: string,
+    is-running: bool,
+    is-core-locked: bool,
+    disable-in-gaming: bool,
+    summary-ru: string,
+    can-disable-hint: string,
+    safety-level: string,
+}
+
+export struct FeaturePackItem {
+    id: string,
+    title: string,
+    short-title: string,
+    description: string,
+    keep-enabled-in-game: bool,
+}
+
+export component ServicesView inherits Rectangle {
+    in property <[ServiceRowItem]> items: [];
+    in property <[FeaturePackItem]> feature-packs: [];
+    in property <string> filter-mode: "all";
+    in-out property <string> search-query: "";
+    in property <bool> show-wifi-warning: false;
+    in property <int> total-count: 0;
+    in property <int> disabled-count: 0;
+    in property <int> normal-count: 0;
+    in property <int> running-count: 0;
+
+    callback filter-changed(string);
+    callback search-changed(string);
+    callback refresh-services();
+    callback toggle-feature-pack(string, bool);
+    callback set-service-mode(string, bool);
+    callback show-service-tooltip(string, string, string, string, string, string);
+
+    background: transparent;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        // Top Filter & Feature Packs Card
+        Rectangle {
+            border-radius: 14px;
+            background: ThemeTokens.bg-surface;
+            border-width: 1px;
+            border-color: ThemeTokens.border-subtle;
+            drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+            drop-shadow-blur: ThemeTokens.shadow-card-blur;
+            drop-shadow-color: ThemeTokens.shadow-card-color;
+
+            VerticalLayout {
+                padding: 14px;
+                spacing: 10px;
+
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+
+                        Text {
+                            text: "Службы Windows";
+                            font-size: 15px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            text: "Выберите для каждой службы: работает «Без утилки» или временно «Выкл. в Gaming Mode». Нажмите (i), чтобы открыть описание из справочника.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    Rectangle {
+                        width: 96px;
+                        height: 32px;
+                        border-radius: 8px;
+                        background: ref-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                        border-width: 1px;
+                        border-color: ThemeTokens.border-strong;
+
+                        ref-ta := TouchArea {
+                            accessible-role: button;
+                            accessible-label: "Обновить список служб";
+                            clicked => {
+                                root.refresh-services();
+                            }
+                        }
+
+                        Text {
+                            text: "Обновить";
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: ThemeTokens.text-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Active Wi-Fi Warning Banner
+                if root.show-wifi-warning : Rectangle {
+                    height: 44px;
+                    border-radius: 10px;
+                    background: ThemeTokens.status-warn-soft;
+                    border-width: 1px;
+                    border-color: ThemeTokens.status-warn-border;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+
+                        Text {
+                            horizontal-stretch: 1;
+                            text: "Сейчас ПК подключён по Wi-Fi, но служба Wi-Fi отмечена как «Выкл. в Gaming Mode».";
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: ThemeTokens.status-warn-text;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            y: 7px;
+                            width: 176px;
+                            height: 30px;
+                            border-radius: 8px;
+                            background: ThemeTokens.bg-surface;
+                            border-width: 1px;
+                            border-color: ThemeTokens.status-warn-border;
+
+                            TouchArea {
+                                accessible-role: button;
+                                clicked => {
+                                    root.toggle-feature-pack("wifi", true);
+                                }
+                            }
+
+                            Text {
+                                text: "Оставить Wi-Fi включённым";
+                                font-size: 11px;
+                                font-weight: 700;
+                                color: ThemeTokens.status-warn-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // Feature Packs Bar
+                HorizontalLayout {
+                    spacing: 6px;
+
+                    Text {
+                        text: "Пресеты:";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: ThemeTokens.text-muted;
+                        vertical-alignment: center;
+                    }
+
+                    for pack in root.feature-packs : Rectangle {
+                        horizontal-stretch: 1;
+                        height: 28px;
+                        border-radius: 7px;
+                        background: pack.keep-enabled-in-game ? ThemeTokens.status-active-soft : ThemeTokens.bg-elevated;
+                        border-width: 1px;
+                        border-color: pack.keep-enabled-in-game ? ThemeTokens.status-active-border : ThemeTokens.border-subtle;
+
+                        TouchArea {
+                            accessible-role: button;
+                            accessible-label: pack.title;
+                            clicked => {
+                                root.toggle-feature-pack(pack.id, !pack.keep-enabled-in-game);
+                            }
+                        }
+
+                        Text {
+                            text: pack.short-title + (pack.keep-enabled-in-game ? " · Вкл" : " · Выкл");
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: pack.keep-enabled-in-game ? ThemeTokens.status-active-text : ThemeTokens.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                // Filter Pills + Search Input
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        spacing: 4px;
+
+                        Rectangle {
+                            width: 92px;
+                            height: 32px;
+                            border-radius: 8px;
+                            background: root.filter-mode == "all" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: root.filter-mode == "all" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+
+                            TouchArea {
+                                accessible-role: button;
+                                clicked => { root.filter-changed("all"); }
+                            }
+
+                            Text {
+                                text: "Все (" + root.total-count + ")";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: root.filter-mode == "all" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle {
+                            width: 178px;
+                            height: 32px;
+                            border-radius: 8px;
+                            background: root.filter-mode == "disable" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: root.filter-mode == "disable" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+
+                            TouchArea {
+                                accessible-role: button;
+                                clicked => { root.filter-changed("disable"); }
+                            }
+
+                            Text {
+                                text: "Выкл. в Gaming Mode (" + root.disabled-count + ")";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: root.filter-mode == "disable" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle {
+                            width: 130px;
+                            height: 32px;
+                            border-radius: 8px;
+                            background: root.filter-mode == "normal" ? ThemeTokens.accent-solid : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: root.filter-mode == "normal" ? ThemeTokens.accent-solid : ThemeTokens.border-subtle;
+
+                            TouchArea {
+                                accessible-role: button;
+                                clicked => { root.filter-changed("normal"); }
+                            }
+
+                            Text {
+                                text: "Без утилки (" + root.normal-count + ")";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: root.filter-mode == "normal" ? ThemeTokens.text-on-solid : ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    LineEdit {
+                        horizontal-stretch: 1;
+                        height: 32px;
+                        placeholder-text: "Найти службу по названию, системному имени или описанию…";
+                        text <=> root.search-query;
+                        edited(val) => {
+                            root.search-changed(val);
+                        }
+                    }
+                }
+
+                // Legend + Running Counter
+                HorizontalLayout {
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-active-text; }
+                        Text { text: "Можно выключить"; font-size: 11px; color: ThemeTokens.text-muted; }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-warn-text; }
+                        Text { text: "По желанию"; font-size: 11px; color: ThemeTokens.text-muted; }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Rectangle { y: 4px; width: 8px; height: 8px; border-radius: 4px; background: ThemeTokens.status-danger-text; }
+                        Text { text: "Нельзя выключать"; font-size: 11px; color: ThemeTokens.text-muted; }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    Text {
+                        text: "Работает в фоне: " + root.running-count;
+                        font-size: 11px;
+                        color: ThemeTokens.text-muted;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Scrollable Services List
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 14px;
+            background: ThemeTokens.bg-surface;
+            border-width: 1px;
+            border-color: ThemeTokens.border-subtle;
+
+            ScrollView {
+                width: 100%;
+                height: 100%;
+
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+
+                    for svc in root.items : Rectangle {
+                        height: 54px;
+                        border-radius: 10px;
+                        background: ThemeTokens.bg-elevated;
+                        border-width: 1px;
+                        border-color: ThemeTokens.border-subtle;
+
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 10px;
+
+                            // Safety dot
+                            Rectangle {
+                                y: 22px;
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: svc.safety-level == "safe" ? ThemeTokens.status-active-text : (svc.safety-level == "protected" ? ThemeTokens.status-danger-text : ThemeTokens.status-warn-text);
+                            }
+
+                            // Name + Summary
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+
+                                    Text {
+                                        text: svc.display-name;
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                        color: ThemeTokens.text-primary;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: svc.name;
+                                        font-size: 11px;
+                                        color: ThemeTokens.text-muted;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if svc.status-label != "" : Rectangle {
+                                        height: 18px;
+                                        width: 86px;
+                                        border-radius: 9px;
+                                        background: svc.is-running ? ThemeTokens.status-active-soft : ThemeTokens.bg-surface;
+                                        border-width: 1px;
+                                        border-color: svc.is-running ? ThemeTokens.status-active-border : ThemeTokens.border-subtle;
+
+                                        Text {
+                                            text: svc.status-label;
+                                            font-size: 10px;
+                                            font-weight: 600;
+                                            color: svc.is-running ? ThemeTokens.status-active-text : ThemeTokens.text-muted;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: svc.summary-ru;
+                                    font-size: 11px;
+                                    color: ThemeTokens.text-secondary;
+                                    overflow: elide;
+                                }
+                            }
+
+                            // Tooltip (i) Button
+                            Rectangle {
+                                y: 13px;
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 6px;
+                                background: info-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface;
+                                border-width: 1px;
+                                border-color: ThemeTokens.border-subtle;
+
+                                info-ta := TouchArea {
+                                    accessible-role: button;
+                                    accessible-label: "Описание службы " + svc.display-name;
+                                    clicked => {
+                                        root.show-service-tooltip(
+                                            svc.display-name,
+                                            svc.name,
+                                            svc.safety-level,
+                                            svc.summary-ru,
+                                            svc.can-disable-hint,
+                                            svc.status-label != "" ? ("Статус: " + svc.status-label) : "Служба Windows"
+                                        );
+                                    }
+                                }
+
+                                Text {
+                                    text: "i";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.accent-text;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // 2-Mode Control or Core Lock Badge
+                            if svc.is-core-locked : Rectangle {
+                                y: 12px;
+                                width: 136px;
+                                height: 30px;
+                                border-radius: 8px;
+                                background: ThemeTokens.bg-surface;
+                                border-width: 1px;
+                                border-color: ThemeTokens.border-subtle;
+
+                                Text {
+                                    text: "🔒 Защищено ОС";
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if !svc.is-core-locked : HorizontalLayout {
+                                spacing: 4px;
+
+                                Rectangle {
+                                    y: 12px;
+                                    width: 96px;
+                                    height: 30px;
+                                    border-radius: 8px;
+                                    background: !svc.disable-in-gaming ? ThemeTokens.bg-surface : transparent;
+                                    border-width: 1px;
+                                    border-color: !svc.disable-in-gaming ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
+
+                                    TouchArea {
+                                        accessible-role: button;
+                                        clicked => {
+                                            if (svc.disable-in-gaming) {
+                                                root.set-service-mode(svc.name, false);
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "Без утилки";
+                                        font-size: 11px;
+                                        font-weight: !svc.disable-in-gaming ? 700 : 500;
+                                        color: !svc.disable-in-gaming ? ThemeTokens.text-primary : ThemeTokens.text-muted;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                Rectangle {
+                                    y: 12px;
+                                    width: 142px;
+                                    height: 30px;
+                                    border-radius: 8px;
+                                    background: svc.disable-in-gaming ? ThemeTokens.status-warn-soft : transparent;
+                                    border-width: 1px;
+                                    border-color: svc.disable-in-gaming ? ThemeTokens.status-warn-border : ThemeTokens.border-subtle;
+
+                                    TouchArea {
+                                        accessible-role: button;
+                                        clicked => {
+                                            if (!svc.disable-in-gaming) {
+                                                root.set-service-mode(svc.name, true);
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "Выкл. в Gaming Mode";
+                                        font-size: 11px;
+                                        font-weight: svc.disable-in-gaming ? 700 : 500;
+                                        color: svc.disable-in-gaming ? ThemeTokens.status-warn-text : ThemeTokens.text-muted;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

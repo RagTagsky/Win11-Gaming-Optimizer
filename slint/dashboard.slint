@@ -1,0 +1,775 @@
+import { ScrollView } from "std-widgets.slint";
+import { ThemeTokens } from "theme.slint";
+
+export component DashboardView inherits Rectangle {
+    in property <string> mode: "Normal";
+    in property <string> active-since: "";
+    in property <bool> is-busy: false;
+    in property <bool> timer-locked: false;
+    in property <string> cpu-name: "Определение процессора…";
+    in property <string> gpu-name: "Определение видеоадаптера…";
+    in property <string> ram-summary: "Определение объёма ОЗУ…";
+    in property <string> display-summary: "Основной дисплей";
+    in property <string> dpc-latency: "Потоковый DPC (оптимально)";
+    in property <string> mpo-status: "Штатный конвейер DWM (без мерцания)";
+    in property <string> timer-resolution: "1.000 мс (штатный)";
+    in property <string> app-version: "4.0.0";
+    in property <string> latest-version: "4.0.0";
+    in property <bool> has-update: false;
+    in property <string> update-status-text: "Установлена актуальная версия v4.0.0.";
+    in property <int> disabled-services-count: 205;
+    in property <int> disabled-processes-count: 42;
+
+    callback toggle-mode();
+    callback finish-pending-restore();
+    callback reboot-pc();
+    callback toggle-timer-lock();
+    callback unlock-timer();
+    callback check-updates();
+    callback open-releases-page();
+    callback open-teardown();
+
+    background: transparent;
+
+    ScrollView {
+        width: 100%;
+        height: 100%;
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 14px;
+
+            // 1. Hero Status Card
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: root.mode == "Gaming" ? ThemeTokens.status-active-border : (root.mode == "Armed" || root.mode == "RestoringPending" ? ThemeTokens.status-warn-border : ThemeTokens.border-subtle);
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 14px;
+
+                        // Mode Status Icon Pill
+                        Rectangle {
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 12px;
+                            background: root.mode == "Gaming" ? ThemeTokens.status-active-soft : (root.mode == "Armed" || root.mode == "RestoringPending" ? ThemeTokens.status-warn-soft : ThemeTokens.bg-elevated);
+                            border-width: 1px;
+                            border-color: root.mode == "Gaming" ? ThemeTokens.status-active-border : (root.mode == "Armed" || root.mode == "RestoringPending" ? ThemeTokens.status-warn-border : ThemeTokens.border-strong);
+
+                            Text {
+                                text: root.mode == "Gaming" ? "✓" : (root.mode == "Armed" || root.mode == "RestoringPending" ? "⏱" : "⚡");
+                                font-size: 20px;
+                                font-weight: 700;
+                                color: root.mode == "Gaming" ? ThemeTokens.status-active-text : (root.mode == "Armed" || root.mode == "RestoringPending" ? ThemeTokens.status-warn-text : ThemeTokens.accent-text);
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 6px;
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                alignment: start;
+
+                                Text {
+                                    text: root.mode == "Gaming" ? "Игровой режим AAA активен" : (root.mode == "Armed" ? "Ожидает перезагрузки ПК" : (root.mode == "RestoringPending" ? "Ожидает завершения возврата" : "Штатный режим Windows"));
+                                    font-size: 17px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.text-primary;
+                                    vertical-alignment: center;
+                                }
+
+                                Rectangle {
+                                    height: 22px;
+                                    width: root.mode == "Armed" ? 132px : (root.mode == "RestoringPending" ? 110px : 84px);
+                                    border-radius: 11px;
+                                    background: root.mode == "Gaming" ? ThemeTokens.status-active-soft : (root.mode == "Armed" || root.mode == "RestoringPending" ? ThemeTokens.status-warn-soft : ThemeTokens.bg-elevated);
+                                    border-width: 1px;
+                                    border-color: root.mode == "Gaming" ? ThemeTokens.status-active-border : (root.mode == "Armed" || root.mode == "RestoringPending" ? ThemeTokens.status-warn-border : ThemeTokens.border-strong);
+
+                                    Text {
+                                        text: root.mode == "Gaming" ? "Активен" : (root.mode == "Armed" ? "Ждёт перезагрузки" : (root.mode == "RestoringPending" ? "Не завершено" : "Штатный"));
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: root.mode == "Gaming" ? ThemeTokens.status-active-text : (root.mode == "Armed" || root.mode == "RestoringPending" ? ThemeTokens.status-warn-text : ThemeTokens.text-secondary);
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.mode == "Gaming" ? "Фоновые службы приостановлены, активен профиль AAA с низкой задержкой и защитой сетевых фильтров." : (root.mode == "Armed" ? "Игровой профиль AAA подготовлен к следующему запуску Windows. Перезагрузите ПК для активации." : (root.mode == "RestoringPending" ? "Системные службы восстановлены, требуется вернуть пользовательские ярлыки автозагрузки." : "Все службы работают в обычном порядке. Включите игровой режим AAA перед запуском игры."));
+                                font-size: 13px;
+                                color: ThemeTokens.text-secondary;
+                                wrap: word-wrap;
+                            }
+
+                            if root.active-since != "" : Text {
+                                text: "Активен с " + root.active-since + " · Профиль AAA (Flip Model + VRR + 100 HID)";
+                                font-size: 11px;
+                                color: ThemeTokens.text-muted;
+                            }
+                        }
+
+                        // Action Buttons
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: end;
+
+                            // Main Toggle Mode Button
+                            Rectangle {
+                                width: 210px;
+                                height: 42px;
+                                border-radius: 10px;
+                                background: root.is-busy ? ThemeTokens.bg-elevated : ((root.mode == "Gaming" || root.mode == "Armed") ? (toggle-ta.has-hover ? ThemeTokens.status-danger-solid-hover : ThemeTokens.status-danger-solid) : (toggle-ta.pressed ? ThemeTokens.accent-solid-active : (toggle-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid)));
+
+                                toggle-ta := TouchArea {
+                                    enabled: !root.is-busy;
+                                    accessible-role: button;
+                                    accessible-label: (root.mode == "Gaming" || root.mode == "Armed") ? "Вернуть штатный режим" : "Включить игровой режим";
+                                    clicked => {
+                                        root.toggle-mode();
+                                    }
+                                }
+
+                                Text {
+                                    text: root.is-busy ? "Выполняется…" : ((root.mode == "Gaming" || root.mode == "Armed") ? "Вернуть штатный режим" : "Включить игровой режим");
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: root.is-busy ? ThemeTokens.text-muted : ThemeTokens.text-on-solid;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Reboot PC Button
+                            Rectangle {
+                                width: 152px;
+                                height: 42px;
+                                border-radius: 10px;
+                                background: root.mode == "Armed" ? ThemeTokens.status-warn-soft : (reboot-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
+                                border-width: 1px;
+                                border-color: root.mode == "Armed" ? ThemeTokens.status-warn-border : ThemeTokens.border-strong;
+
+                                reboot-ta := TouchArea {
+                                    enabled: !root.is-busy;
+                                    accessible-role: button;
+                                    accessible-label: "Перезагрузить ПК";
+                                    clicked => {
+                                        root.reboot-pc();
+                                    }
+                                }
+
+                                Text {
+                                    text: "Перезагрузить ПК";
+                                    font-size: 13px;
+                                    font-weight: 600;
+                                    color: root.mode == "Armed" ? ThemeTokens.status-warn-text : ThemeTokens.text-primary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // RestoringPending Banner
+                    if root.mode == "RestoringPending" : Rectangle {
+                        height: 54px;
+                        border-radius: 10px;
+                        background: ThemeTokens.status-warn-soft;
+                        border-width: 1px;
+                        border-color: ThemeTokens.status-warn-border;
+
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 12px;
+
+                            Text {
+                                horizontal-stretch: 1;
+                                text: "Требуется завершить восстановление ярлыков автозагрузки и параметров профиля пользователя после перезагрузки.";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: ThemeTokens.status-warn-text;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                            }
+
+                            Rectangle {
+                                y: 9px;
+                                width: 196px;
+                                height: 36px;
+                                border-radius: 8px;
+                                background: fin-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-surface;
+                                border-width: 1px;
+                                border-color: ThemeTokens.status-warn-border;
+
+                                fin-ta := TouchArea {
+                                    enabled: !root.is-busy;
+                                    accessible-role: button;
+                                    accessible-label: "Завершить восстановление";
+                                    clicked => {
+                                        root.finish-pending-restore();
+                                    }
+                                }
+
+                                Text {
+                                    text: "Завершить восстановление";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.status-warn-text;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Unified AAA Profile Card & Interactive 3D Architecture Teardown
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.accent-border;
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        spacing: 12px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 4px;
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                Text {
+                                    text: "Единый игровой конвейер AAA для Windows 11";
+                                    font-size: 15px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.text-primary;
+                                    vertical-alignment: center;
+                                }
+
+                                Rectangle {
+                                    width: 112px;
+                                    height: 20px;
+                                    border-radius: 10px;
+                                    background: ThemeTokens.accent-soft;
+                                    border-width: 1px;
+                                    border-color: ThemeTokens.accent-border;
+
+                                    Text {
+                                        text: "AAA · Flip + VRR";
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: ThemeTokens.accent-text;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "Оптимальные параметры кадра, ядра и сети работают автоматически без лишних переключателей: DirectX Flip Model + VRR, буфер HID 100 пакетов, MSI-прерывания PCIe, выгрузка " + root.disabled-services-count + " фоновых служб и " + root.disabled-processes-count + " процессов с полной защитой Zapret / WinDivert / winws.";
+                                font-size: 12px;
+                                color: ThemeTokens.text-secondary;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // Open 3D Architecture Teardown Button
+                        Rectangle {
+                            width: 244px;
+                            height: 38px;
+                            border-radius: 10px;
+                            background: td-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.accent-border;
+
+                            td-ta := TouchArea {
+                                accessible-role: button;
+                                accessible-label: "Открыть 3D-разборку архитектуры";
+                                clicked => {
+                                    root.open-teardown();
+                                }
+                            }
+
+                            Text {
+                                text: "◈ Открыть 3D-разборку архитектуры";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: ThemeTokens.accent-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // 4 AAA Pillars Mini-Grid
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.border-subtle;
+
+                            VerticalLayout {
+                                padding: 8px;
+                                spacing: 2px;
+                                Text {
+                                    text: "Графика и DWM";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.accent-text;
+                                }
+                                Text {
+                                    text: "Flip Model + VRR · HAGS · Штатный MPO";
+                                    font-size: 11px;
+                                    color: ThemeTokens.text-secondary;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.border-subtle;
+
+                            VerticalLayout {
+                                padding: 8px;
+                                spacing: 2px;
+                                Text {
+                                    text: "Ядро и ввод HID";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.accent-text;
+                                }
+                                Text {
+                                    text: "Квант 0x26 · Очередь 100 · Мышь 1:1";
+                                    font-size: 11px;
+                                    color: ThemeTokens.text-secondary;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.border-subtle;
+
+                            VerticalLayout {
+                                padding: 8px;
+                                spacing: 2px;
+                                Text {
+                                    text: "Память и таймер";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.accent-text;
+                                }
+                                Text {
+                                    text: "Таймер 0.500 мс · Автоочистка Standby";
+                                    font-size: 11px;
+                                    color: ThemeTokens.text-secondary;
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.border-subtle;
+
+                            VerticalLayout {
+                                padding: 8px;
+                                spacing: 2px;
+                                Text {
+                                    text: "Сеть и защита DPI";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.status-active-text;
+                                }
+                                Text {
+                                    text: "MSI PCIe · Zapret / WinDivert · RFC 1323";
+                                    font-size: 11px;
+                                    color: ThemeTokens.text-secondary;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Hardware Telemetry & 0.500 ms System Timer Card
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-subtle;
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            Text {
+                                text: "Оборудование и системный таймер";
+                                font-size: 15px;
+                                font-weight: 700;
+                                color: ThemeTokens.text-primary;
+                            }
+
+                            Text {
+                                text: "Актуальная телеметрия процессора, видеокарты, дисплея, DPC и разрешения таймера Windows.";
+                                font-size: 12px;
+                                color: ThemeTokens.text-secondary;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: end;
+
+                            Rectangle {
+                                width: 150px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.timer-locked ? ThemeTokens.status-active-soft : ThemeTokens.bg-elevated;
+                                border-width: 1px;
+                                border-color: root.timer-locked ? ThemeTokens.status-active-border : ThemeTokens.border-subtle;
+
+                                Text {
+                                    text: root.timer-locked ? "Таймер 0.5 мс активен" : "Штатный таймер";
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    color: root.timer-locked ? ThemeTokens.status-active-text : ThemeTokens.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Rectangle {
+                                width: 170px;
+                                height: 32px;
+                                border-radius: 8px;
+                                background: root.timer-locked ? (tm-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated) : (tm-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid);
+                                border-width: 1px;
+                                border-color: root.timer-locked ? ThemeTokens.border-strong : ThemeTokens.accent-solid;
+
+                                tm-ta := TouchArea {
+                                    accessible-role: button;
+                                    accessible-label: root.timer-locked ? "Переприменить 0.5 мс" : "Зафиксировать 0.5 мс";
+                                    clicked => {
+                                        root.toggle-timer-lock();
+                                    }
+                                }
+
+                                Text {
+                                    text: root.timer-locked ? "Переприменить 0.5 мс" : "Зафиксировать 0.5 мс";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.timer-locked ? ThemeTokens.text-primary : ThemeTokens.text-on-solid;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.timer-locked : Rectangle {
+                                width: 86px;
+                                height: 32px;
+                                border-radius: 8px;
+                                background: un-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                                border-width: 1px;
+                                border-color: ThemeTokens.border-subtle;
+
+                                un-ta := TouchArea {
+                                    accessible-role: button;
+                                    accessible-label: "Сбросить удержание системного таймера";
+                                    clicked => {
+                                        root.unlock-timer();
+                                    }
+                                }
+
+                                Text {
+                                    text: "Сбросить";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // 2x3 + 1 Hardware Telemetry Grid
+                    GridLayout {
+                        spacing: 10px;
+
+                        Rectangle {
+                            row: 0;
+                            col: 0;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 2px;
+                                Text { text: "Процессор"; font-size: 11px; color: ThemeTokens.text-muted; }
+                                Text { text: root.cpu-name; font-size: 13px; font-weight: 600; color: ThemeTokens.text-primary; overflow: elide; }
+                            }
+                        }
+
+                        Rectangle {
+                            row: 0;
+                            col: 1;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 2px;
+                                Text { text: "Видеоадаптер"; font-size: 11px; color: ThemeTokens.text-muted; }
+                                Text { text: root.gpu-name; font-size: 13px; font-weight: 600; color: ThemeTokens.text-primary; overflow: elide; }
+                            }
+                        }
+
+                        Rectangle {
+                            row: 1;
+                            col: 0;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 2px;
+                                Text { text: "Оперативная память"; font-size: 11px; color: ThemeTokens.text-muted; }
+                                Text { text: root.ram-summary; font-size: 13px; font-weight: 600; color: ThemeTokens.text-primary; overflow: elide; }
+                            }
+                        }
+
+                        Rectangle {
+                            row: 1;
+                            col: 1;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 2px;
+                                Text { text: "Дисплей и композитор DWM"; font-size: 11px; color: ThemeTokens.text-muted; }
+                                Text { text: root.display-summary; font-size: 13px; font-weight: 600; color: ThemeTokens.text-primary; overflow: elide; }
+                            }
+                        }
+
+                        Rectangle {
+                            row: 2;
+                            col: 0;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 2px;
+                                Text { text: "Планировщик ядра и DPC"; font-size: 11px; color: ThemeTokens.text-muted; }
+                                Text { text: root.dpc-latency; font-size: 13px; font-weight: 600; color: ThemeTokens.text-primary; overflow: elide; }
+                            }
+                        }
+
+                        Rectangle {
+                            row: 2;
+                            col: 1;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 2px;
+                                Text { text: "Мультиплейн-оверлеи (MPO)"; font-size: 11px; color: ThemeTokens.text-muted; }
+                                Text { text: root.mpo-status; font-size: 13px; font-weight: 600; color: ThemeTokens.text-primary; overflow: elide; }
+                            }
+                        }
+
+                        Rectangle {
+                            row: 3;
+                            col: 0;
+                            colspan: 2;
+                            height: 54px;
+                            border-radius: 10px;
+                            background: ThemeTokens.bg-elevated;
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 2px;
+                                Text { text: "Разрешение системного таймера Windows"; font-size: 11px; color: ThemeTokens.text-muted; }
+                                Text { text: root.timer-resolution; font-size: 13px; font-weight: 600; color: ThemeTokens.text-primary; }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. GitHub Releases Updates Card
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-subtle;
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        spacing: 12px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                Text {
+                                    text: "Обновления приложения";
+                                    font-size: 15px;
+                                    font-weight: 700;
+                                    color: ThemeTokens.text-primary;
+                                }
+
+                                Rectangle {
+                                    width: 58px;
+                                    height: 20px;
+                                    border-radius: 6px;
+                                    background: ThemeTokens.accent-soft;
+                                    border-width: 1px;
+                                    border-color: ThemeTokens.accent-border;
+
+                                    Text {
+                                        text: "v" + root.app-version;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: ThemeTokens.accent-text;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.update-status-text;
+                                font-size: 12px;
+                                color: root.has-update ? ThemeTokens.accent-text : ThemeTokens.status-active-text;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: end;
+
+                            Rectangle {
+                                width: 168px;
+                                height: 34px;
+                                border-radius: 8px;
+                                background: upd-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                                border-width: 1px;
+                                border-color: ThemeTokens.border-strong;
+
+                                upd-ta := TouchArea {
+                                    accessible-role: button;
+                                    accessible-label: "Проверить обновления";
+                                    clicked => {
+                                        root.check-updates();
+                                    }
+                                }
+
+                                Text {
+                                    text: "Проверить обновления";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-primary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Rectangle {
+                                width: 136px;
+                                height: 34px;
+                                border-radius: 8px;
+                                background: rel-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                                border-width: 1px;
+                                border-color: ThemeTokens.border-subtle;
+
+                                rel-ta := TouchArea {
+                                    accessible-role: button;
+                                    accessible-label: "Открыть страницу GitHub Releases";
+                                    clicked => {
+                                        root.open-releases-page();
+                                    }
+                                }
+
+                                Text {
+                                    text: "GitHub Releases ↗";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: ThemeTokens.text-secondary;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

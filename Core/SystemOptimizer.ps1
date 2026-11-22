@@ -959,14 +959,8 @@ function Set-DeepGameDVROptimizations {
     $configStorePath = "HKCU:\System\GameConfigStore"
     if (-not (Test-Path $configStorePath)) { New-Item -Path $configStorePath -Force -ErrorAction SilentlyContinue | Out-Null }
     Set-ItemProperty -Path $configStorePath -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-    # Classic exclusive-fullscreen behaviour (present in every release up to v2.7). Switch: Config\tuning.json
-    $tuningFile = Join-Path $PSScriptRoot "..\Config\tuning.json"
-    $tuning = if (Test-Path -LiteralPath $tuningFile) { Get-Content -LiteralPath $tuningFile -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
-    if ($null -eq $tuning -or $tuning.DisableFullscreenOptimizations -ne $false) {
-        Set-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -Value 2 -Type DWord -Force -ErrorAction SilentlyContinue
-    } else {
-        Remove-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
-    }
+    # Keep Windows 11 Fullscreen Optimizations active (AAA Flip Model + HDR + OBS + MPO-safe)
+    Remove-ItemProperty -Path $configStorePath -Name "GameDVR_FSEBehaviorMode" -ErrorAction SilentlyContinue
 
     $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\GameDVR"
     if (-not (Test-Path $policyPath)) { New-Item -Path $policyPath -Force -ErrorAction SilentlyContinue | Out-Null }
@@ -3051,7 +3045,7 @@ function Restore-HagsGpuScheduling {
 
 
 
-# ── v2.8 Extended Gaming Optimizations (data-driven, fully reversible) ──────
+# ── AAA Extended Gaming Optimizations (data-driven, fully reversible) ───────
 # Every registry tweak below is described as a target @{ Path; Name; Value; Kind }.
 # The same target list is snapshotted (Get-RegistryValueSnapshot), applied (Set-RegistryTargets)
 # and reverted (Restore-RegistryValueSnapshot). Value = $null means "delete value while gaming".
@@ -3246,14 +3240,7 @@ function Get-ExtendedGamingTargets {
         }
     }
 
-    $tuning = if ($null -ne $TuningConfig) {
-        $TuningConfig
-    } else {
-        $tuningFile = Join-Path $PSScriptRoot "..\Config\tuning.json"
-        if (Test-Path -LiteralPath $tuningFile) {
-            try { Get-Content -LiteralPath $tuningFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $null }
-        } else { $null }
-    }
+    $null = $TuningConfig
 
     $targets = [System.Collections.Generic.List[object]]::new()
     function Add-T($Path, $Name, $Value, $Kind = "DWord", $Group = "") {
@@ -3308,9 +3295,6 @@ function Get-ExtendedGamingTargets {
             $kp = if ($k -is [hashtable]) { $k["Path"] } else { $k.Path }
             if ($kp) {
                 Add-T $kp "RmGpsPsEnablePerCpuCoreDpc" 1 "DWord" "NVIDIA"
-                if ($tuning -and $tuning.DisableNvidiaDynamicPstate -eq $true) {
-                    Add-T $kp "DisableDynamicPstate" 1 "DWord" "NVIDIA"
-                }
             }
         }
     }
@@ -3390,11 +3374,6 @@ function Get-ExtendedGamingTargets {
     Add-T "HKCU:\Control Panel\Desktop" "LowLevelHooksTimeout" 5000 "DWord" "Desktop"
     Add-T "HKCU:\Control Panel\Mouse" "MouseHoverTime" "10" "String" "Input"
     Add-T "HKCU:\Software\Microsoft\DirectX\UserGpuPreferences" "DirectXUserGlobalSettings" "SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;" "String" "Graphics"
-    if ($tuning -and $tuning.DisableMouseAccel -eq $true) {
-        Add-T "HKCU:\Control Panel\Mouse" "MouseSpeed" "0" "String" "Input"
-        Add-T "HKCU:\Control Panel\Mouse" "MouseThreshold1" "0" "String" "Input"
-        Add-T "HKCU:\Control Panel\Mouse" "MouseThreshold2" "0" "String" "Input"
-    }
 
     # 12. Storage Sense & Reserve Manager I/O Prevention
     Add-T "HKCU:\Software\Microsoft\Windows\CurrentVersion\StorageSense\Parameters\StoragePolicy" "01" 0 "DWord" "Storage"
@@ -3425,7 +3404,7 @@ function Set-ExtendedGamingOptimizations {
         [Parameter(Mandatory = $false)] [string[]]$Whitelist
     )
 
-    Write-Host "[*] Applying v3.6.0 extended optimizations (FSE/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
+    Write-Host "[*] Applying v4.0.0 AAA extended optimizations (Flip Model/VRR, DirectX Flip/Preemption, NVIDIA/AMD DPC, IRQ, USB Hub/HID, AFD/NDIS, MMCSS Audio, ETW)..." -ForegroundColor Cyan
     $targets = @(Get-ExtendedGamingTargets -HardwareProfile $HardwareProfile -Whitelist $Whitelist)
     $applied = Set-RegistryTargets -Targets $targets
     $groups = ($targets | ForEach-Object { $_.Group } | Sort-Object -Unique) -join ", "
@@ -3699,7 +3678,7 @@ function Repair-LegacyOptimizerLeftovers {
 }
 
 # ==============================================================================
-# ── Windows 11 Deep Debloat & Background AI / Telemetry Suppression ──────────
+# ── Windows 11 Deep Debloat & Background Telemetry Suppression ───────────────
 # ==============================================================================
 
 function Get-Windows11DebloatConfig {
@@ -3886,7 +3865,7 @@ function Set-Windows11DebloatOptimizations {
             } elseif (-not $allowDisableWsai) {
                 Write-Host "  [v] Retained 'WSAIFabricSvc' per user service configuration." -ForegroundColor Green
             }
-            Write-Host "  [+] Windows Copilot & AI telemetry background analysis disabled." -ForegroundColor Green
+            Write-Host "  [+] Windows Copilot & Recall AI telemetry background analysis disabled." -ForegroundColor Green
         } catch {
             Write-Warning "Failed to disable Windows AI: $($_.Exception.Message)"
         }
@@ -3988,7 +3967,7 @@ function Restore-Windows11DebloatOptimizations {
     }
 
     try {
-        # 1. Restore GameDVR & Taskbar / Search / Copilot user hive settings
+        # 1. Restore GameDVR & Taskbar / Search user hive settings
         if (-not $isSystem) {
             $gdvr = & $getCfgVal "GameDVR_Enabled"
             if ($null -ne $gdvr) {
@@ -4032,7 +4011,7 @@ function Restore-Windows11DebloatOptimizations {
             Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended" -Name "StartupBoostEnabled" -Force -ErrorAction SilentlyContinue
             Remove-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended" -Name "BackgroundModeEnabled" -Force -ErrorAction SilentlyContinue
 
-            # 4. Restore AI / Copilot policies & WSAIFabricSvc startup
+            # 4. Restore Windows AI policies & WSAIFabricSvc startup
             & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" "DisableAIDataAnalysis" (& $getCfgVal "DisableAIDataAnalysis")
             & $restoreDwordOrRemove "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" "TurnOffWindowsCopilot" (& $getCfgVal "TurnOffWindowsCopilotMachine")
 

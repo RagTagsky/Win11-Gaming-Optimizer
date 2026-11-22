@@ -1,0 +1,704 @@
+import { ScrollView } from "std-widgets.slint";
+import { ThemeTokens, ThemeCardItem } from "theme.slint";
+
+component ThemePreviewCard inherits Rectangle {
+    in property <ThemeCardItem> card;
+    callback clicked-theme(string);
+
+    height: 112px;
+    border-radius: 12px;
+    background: card.is-active ? ThemeTokens.accent-card-tint : ThemeTokens.bg-elevated;
+    border-width: card.is-active ? 2px : 1px;
+    border-color: card.is-active ? ThemeTokens.accent-solid : (ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") {
+                root.clicked-theme(root.card.id);
+                return accept;
+            }
+            return reject;
+        }
+
+        ta := TouchArea {
+            accessible-role: button;
+            accessible-label: root.card.name-ru;
+            clicked => {
+                fs.focus();
+                root.clicked-theme(root.card.id);
+            }
+        }
+    }
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        // Mini-Preview Window Canvas (bg / surface / elevated / border / accent / text)
+        Rectangle {
+            height: 52px;
+            border-radius: 8px;
+            background: card.preview-bg;
+            border-width: 1px;
+            border-color: card.preview-border;
+
+            VerticalLayout {
+                padding: 6px;
+                spacing: 5px;
+
+                // Mini Header Bar
+                HorizontalLayout {
+                    spacing: 5px;
+                    Rectangle {
+                        width: 12px;
+                        height: 8px;
+                        border-radius: 3px;
+                        background: card.preview-accent;
+                    }
+                    Rectangle {
+                        width: 44px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: card.preview-text;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Rectangle {
+                        width: 18px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: card.preview-accent-text;
+                    }
+                }
+
+                // Mini Surface & Elevated Cards
+                HorizontalLayout {
+                    spacing: 5px;
+
+                    Rectangle {
+                        horizontal-stretch: 2;
+                        height: 24px;
+                        border-radius: 5px;
+                        background: card.preview-surface;
+                        border-width: 1px;
+                        border-color: card.preview-border;
+
+                        HorizontalLayout {
+                            padding: 5px;
+                            spacing: 4px;
+                            Rectangle {
+                                width: 10px;
+                                height: 10px;
+                                border-radius: 3px;
+                                background: card.preview-accent;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: card.preview-text;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 24px;
+                        border-radius: 5px;
+                        background: card.preview-elevated;
+                        border-width: 1px;
+                        border-color: card.preview-border;
+                    }
+                }
+            }
+        }
+
+        // Theme Title + Polarity + Active Badge
+        HorizontalLayout {
+            spacing: 6px;
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 1px;
+
+                Text {
+                    text: card.name-ru;
+                    font-size: 12px;
+                    font-weight: 700;
+                    color: ThemeTokens.text-primary;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: card.is-dark ? "Тёмная палитра" : "Светлая палитра";
+                    font-size: 10px;
+                    color: ThemeTokens.text-muted;
+                }
+            }
+
+            if card.is-active : Rectangle {
+                y: 4px;
+                width: 58px;
+                height: 20px;
+                border-radius: 10px;
+                background: ThemeTokens.accent-solid;
+
+                Text {
+                    text: "✓ Активна";
+                    font-size: 10px;
+                    font-weight: 700;
+                    color: ThemeTokens.text-on-solid;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component SettingsView inherits Rectangle {
+    in property <ThemeCardItem> theme-card-0;
+    in property <ThemeCardItem> theme-card-1;
+    in property <ThemeCardItem> theme-card-2;
+    in property <ThemeCardItem> theme-card-3;
+    in property <ThemeCardItem> theme-card-4;
+    in property <ThemeCardItem> theme-card-5;
+    in property <ThemeCardItem> theme-card-6;
+    in property <ThemeCardItem> theme-card-7;
+
+    in property <bool> autostart-enabled: false;
+    in property <bool> autostart-start-in-tray: true;
+    in property <bool> autostart-path-mismatch: false;
+    in property <string> autostart-warning: "";
+
+    in property <bool> auto-lock-timer-in-gaming: true;
+    in property <bool> auto-purge-ram-in-gaming: true;
+    in property <int> auto-purge-ram-threshold-mb: 2048;
+
+    callback select-theme(string);
+    callback toggle-autostart(bool, bool);
+    callback toggle-auto-lock-timer();
+    callback toggle-auto-purge-ram();
+    callback set-ram-threshold(int);
+    callback open-teardown();
+
+    background: transparent;
+
+    ScrollView {
+        width: 100%;
+        height: 100%;
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 14px;
+
+            // 1. 4x2 Theme Selector Grid Card
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-subtle;
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            Text {
+                                text: "Тема оформления (8 палитр · 5 тёмных и 3 светлых)";
+                                font-size: 15px;
+                                font-weight: 700;
+                                color: ThemeTokens.text-primary;
+                            }
+
+                            Text {
+                                text: "Мгновенное переключение всех 43 дизайн-токенов и синхронизация рамки окна Windows DWM. Умный тумблер в шапке запоминает последнюю выбранную тёмную и светлую тему.";
+                                font-size: 12px;
+                                color: ThemeTokens.text-secondary;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        Rectangle {
+                            width: 154px;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: ThemeTokens.accent-soft;
+                            border-width: 1px;
+                            border-color: ThemeTokens.accent-border;
+
+                            Text {
+                                text: ThemeTokens.active-theme-name;
+                                font-size: 11px;
+                                font-weight: 700;
+                                color: ThemeTokens.accent-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // 4x2 Theme GridLayout
+                    GridLayout {
+                        spacing: 10px;
+
+                        ThemePreviewCard {
+                            row: 0;
+                            col: 0;
+                            card: root.theme-card-0;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+
+                        ThemePreviewCard {
+                            row: 0;
+                            col: 1;
+                            card: root.theme-card-1;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+
+                        ThemePreviewCard {
+                            row: 0;
+                            col: 2;
+                            card: root.theme-card-2;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+
+                        ThemePreviewCard {
+                            row: 0;
+                            col: 3;
+                            card: root.theme-card-3;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+
+                        ThemePreviewCard {
+                            row: 1;
+                            col: 0;
+                            card: root.theme-card-4;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+
+                        ThemePreviewCard {
+                            row: 1;
+                            col: 1;
+                            card: root.theme-card-5;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+
+                        ThemePreviewCard {
+                            row: 1;
+                            col: 2;
+                            card: root.theme-card-6;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+
+                        ThemePreviewCard {
+                            row: 1;
+                            col: 3;
+                            card: root.theme-card-7;
+                            clicked-theme(id) => { root.select-theme(id); }
+                        }
+                    }
+                }
+            }
+
+            // 2. Autostart & Background Mode Card
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-subtle;
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    HorizontalLayout {
+                        spacing: 14px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            Text {
+                                text: "Запускать вместе с Windows (Планировщик задач)";
+                                font-size: 14px;
+                                font-weight: 700;
+                                color: ThemeTokens.text-primary;
+                            }
+
+                            Text {
+                                text: "Регистрирует задачу Планировщика Windows с повышенными правами без лишних запросов UAC при входе в систему.";
+                                font-size: 12px;
+                                color: ThemeTokens.text-secondary;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // Switch
+                        Rectangle {
+                            y: 6px;
+                            width: 48px;
+                            height: 26px;
+                            border-radius: 13px;
+                            background: root.autostart-enabled ? ThemeTokens.accent-solid : ThemeTokens.switch-off-bg;
+                            border-width: 1px;
+                            border-color: root.autostart-enabled ? ThemeTokens.accent-solid : ThemeTokens.switch-off-border;
+
+                            TouchArea {
+                                accessible-role: checkbox;
+                                accessible-label: "Запускать вместе с Windows";
+                                clicked => {
+                                    root.toggle-autostart(!root.autostart-enabled, root.autostart-start-in-tray);
+                                }
+                            }
+
+                            Rectangle {
+                                x: root.autostart-enabled ? 24px : 3px;
+                                y: 3px;
+                                width: 20px;
+                                height: 20px;
+                                border-radius: 10px;
+                                background: root.autostart-enabled ? ThemeTokens.text-on-solid : ThemeTokens.switch-off-thumb;
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        Text {
+                            text: "При входе в Windows:";
+                            font-size: 12px;
+                            color: ThemeTokens.text-muted;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            width: 184px;
+                            height: 30px;
+                            border-radius: 8px;
+                            background: root.autostart-start-in-tray ? ThemeTokens.accent-soft : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: root.autostart-start-in-tray ? ThemeTokens.accent-border : ThemeTokens.border-input;
+
+                            TouchArea {
+                                accessible-role: button;
+                                clicked => {
+                                    root.toggle-autostart(root.autostart-enabled, true);
+                                }
+                            }
+
+                            Text {
+                                text: "Сразу в трей (фоновый режим)";
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: root.autostart-start-in-tray ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle {
+                            width: 132px;
+                            height: 30px;
+                            border-radius: 8px;
+                            background: !root.autostart-start-in-tray ? ThemeTokens.accent-soft : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: !root.autostart-start-in-tray ? ThemeTokens.accent-border : ThemeTokens.border-input;
+
+                            TouchArea {
+                                accessible-role: button;
+                                clicked => {
+                                    root.toggle-autostart(root.autostart-enabled, false);
+                                }
+                            }
+
+                            Text {
+                                text: "Открывать окно";
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: !root.autostart-start-in-tray ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        if root.autostart-path-mismatch : Rectangle {
+                            width: 128px;
+                            height: 30px;
+                            border-radius: 8px;
+                            background: ThemeTokens.status-warn-soft;
+                            border-width: 1px;
+                            border-color: ThemeTokens.status-warn-border;
+
+                            TouchArea {
+                                accessible-role: button;
+                                clicked => {
+                                    root.toggle-autostart(true, root.autostart-start-in-tray);
+                                }
+                            }
+
+                            Text {
+                                text: "Исправить путь";
+                                font-size: 11px;
+                                font-weight: 700;
+                                color: ThemeTokens.status-warn-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    if root.autostart-warning != "" : Text {
+                        text: root.autostart-warning;
+                        font-size: 11px;
+                        color: ThemeTokens.status-warn-text;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // 3. AAA Background Automation (0.500ms Timer + Standby RAM Auto-Purge)
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-subtle;
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 14px;
+
+                    Text {
+                        text: "Фоновая автоматика игрового режима AAA (Config/tuning.json)";
+                        font-size: 15px;
+                        font-weight: 700;
+                        color: ThemeTokens.text-primary;
+                    }
+
+                    // AutoLockTimerInGaming
+                    HorizontalLayout {
+                        spacing: 14px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            Text {
+                                text: "Автоматически фиксировать таймер 0.500 мс в игровом режиме";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: ThemeTokens.text-primary;
+                            }
+
+                            Text {
+                                text: "При запуске в активном режиме AAA автоматически удерживает системный таймер NtSetTimerResolution(0.500 мс) и снимает фиксацию при выходе в штатный режим.";
+                                font-size: 12px;
+                                color: ThemeTokens.text-secondary;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        Rectangle {
+                            y: 6px;
+                            width: 48px;
+                            height: 26px;
+                            border-radius: 13px;
+                            background: root.auto-lock-timer-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-bg;
+                            border-width: 1px;
+                            border-color: root.auto-lock-timer-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-border;
+
+                            TouchArea {
+                                accessible-role: checkbox;
+                                accessible-label: "Автоматически фиксировать таймер 0.500 мс";
+                                clicked => {
+                                    root.toggle-auto-lock-timer();
+                                }
+                            }
+
+                            Rectangle {
+                                x: root.auto-lock-timer-in-gaming ? 24px : 3px;
+                                y: 3px;
+                                width: 20px;
+                                height: 20px;
+                                border-radius: 10px;
+                                background: root.auto-lock-timer-in-gaming ? ThemeTokens.text-on-solid : ThemeTokens.switch-off-thumb;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: ThemeTokens.border-subtle;
+                    }
+
+                    // AutoPurgeRamInGaming
+                    HorizontalLayout {
+                        spacing: 14px;
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+
+                            Text {
+                                text: "Умная фоновая автоочистка Standby-кэша ОЗУ в игровом режиме";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: ThemeTokens.text-primary;
+                            }
+
+                            Text {
+                                text: "Раз в 60 секунд в активном игровом режиме проверяет свободную физическую память и автоматически очищает Standby List, если доступно меньше выбранного порога (пауза между очистками — 180 сек).";
+                                font-size: 12px;
+                                color: ThemeTokens.text-secondary;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        Rectangle {
+                            y: 6px;
+                            width: 48px;
+                            height: 26px;
+                            border-radius: 13px;
+                            background: root.auto-purge-ram-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-bg;
+                            border-width: 1px;
+                            border-color: root.auto-purge-ram-in-gaming ? ThemeTokens.accent-solid : ThemeTokens.switch-off-border;
+
+                            TouchArea {
+                                accessible-role: checkbox;
+                                accessible-label: "Умная фоновая автоочистка Standby-кэша ОЗУ";
+                                clicked => {
+                                    root.toggle-auto-purge-ram();
+                                }
+                            }
+
+                            Rectangle {
+                                x: root.auto-purge-ram-in-gaming ? 24px : 3px;
+                                y: 3px;
+                                width: 20px;
+                                height: 20px;
+                                border-radius: 10px;
+                                background: root.auto-purge-ram-in-gaming ? ThemeTokens.text-on-solid : ThemeTokens.switch-off-thumb;
+                            }
+                        }
+                    }
+
+                    // RAM Threshold Selector
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        Text {
+                            text: "Порог свободной ОЗУ:";
+                            font-size: 12px;
+                            color: ThemeTokens.text-muted;
+                            vertical-alignment: center;
+                        }
+
+                        for thresh in [
+                            { val: 1024, label: "1 ГБ (1024 МБ)" },
+                            { val: 2048, label: "2 ГБ (2048 МБ)" },
+                            { val: 3072, label: "3 ГБ (3072 МБ)" },
+                            { val: 4096, label: "4 ГБ (4096 МБ)" },
+                        ] : Rectangle {
+                            width: 126px;
+                            height: 30px;
+                            border-radius: 8px;
+                            background: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-soft : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-border : ThemeTokens.border-input;
+
+                            TouchArea {
+                                enabled: root.auto-purge-ram-in-gaming;
+                                accessible-role: button;
+                                clicked => {
+                                    root.set-ram-threshold(thresh.val);
+                                }
+                            }
+
+                            Text {
+                                text: thresh.label;
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: root.auto-purge-ram-threshold-mb == thresh.val ? ThemeTokens.accent-text : ThemeTokens.text-secondary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Interactive 3D Architecture Teardown Reference Card
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-subtle;
+
+                HorizontalLayout {
+                    padding: 16px;
+                    spacing: 12px;
+
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+
+                        Text {
+                            text: "Интерактивная 3D-разборка архитектуры Ultra Gaming Mode v4.0.0";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            text: "Послойная автономная 3D-сцена конвейера оптимизации: GUI/Трей → PowerShell-движок → Ядро/CPU → GPU/DWM → ОЗУ → Сеть и защита Zapret/WinDivert → Службы.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    Rectangle {
+                        width: 244px;
+                        height: 36px;
+                        border-radius: 8px;
+                        background: td2-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid;
+
+                        td2-ta := TouchArea {
+                            accessible-role: button;
+                            accessible-label: "Открыть 3D-разборку архитектуры";
+                            clicked => {
+                                root.open-teardown();
+                            }
+                        }
+
+                        Text {
+                            text: "◈ Открыть 3D-разборку архитектуры";
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-on-solid;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

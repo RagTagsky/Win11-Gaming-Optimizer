@@ -36,7 +36,7 @@ foreach ($s in $scripts) {
     Assert-Test ($errs.Count -eq 0) "Script '$($s.Name)' parses with 0 AST errors"
 }
 
-$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/](Backups|node_modules|target|\.git|EBWebView|dist)[\\/]' }
+$allConfigFiles = Get-ChildItem -Path $repoRoot -Recurse -Include "*.ps1", "*.json" | Where-Object { $_.FullName -notmatch '[\\/](Backups|node_modules|target|\.git|\.bin|dist)[\\/]' }
 $hasBom = $false
 foreach ($f in $allConfigFiles) {
     $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
@@ -212,16 +212,18 @@ foreach ($pName in (@($stConfig.BlacklistProcesses) + @($stConfig.ProtectedStart
 Assert-Test ($missingProcDesc.Count -eq 0 -and $invalidProcSafety.Count -eq 0) "process_descriptions.json covers all configured processes with valid Russian metadata and safetyLevel (missing: $($missingProcDesc.Count), invalid: $($invalidProcSafety.Count))"
 
 Assert-Test ($stConfig.BlacklistProcesses -notcontains "SearchHost" -and $stConfig.BlacklistProcesses -notcontains "TextInputHost" -and $stConfig.BlacklistProcesses -notcontains "UltraGamingMode") "startup_apps.json excludes SearchHost, TextInputHost, and UltraGamingMode from BlacklistProcesses"
+$tuningProps = @($tunConfig.PSObject.Properties.Name)
+$legacyTuningKeys = @("DisableFullscreenOptimizations", "DisableMouseAccel", "DisableNvidiaDynamicPstate", "EnableNetAdapterMsi", "InputBufferQueueSize")
+$presentLegacyKeys = @($legacyTuningKeys | Where-Object { $tuningProps -contains $_ })
 Assert-Test (
+    $tuningProps.Count -eq 3 -and
+    $presentLegacyKeys.Count -eq 0 -and
     $tunConfig.AutoLockTimerInGaming -is [bool] -and
     $tunConfig.AutoPurgeRamInGaming -is [bool] -and
+    ($tunConfig.AutoPurgeRamThresholdMB -is [int] -or $tunConfig.AutoPurgeRamThresholdMB -is [long]) -and
     $tunConfig.AutoPurgeRamThresholdMB -ge 512 -and
-    $tunConfig.DisableFullscreenOptimizations -is [bool] -and
-    $tunConfig.DisableMouseAccel -is [bool] -and
-    $tunConfig.DisableNvidiaDynamicPstate -is [bool] -and
-    $tunConfig.EnableNetAdapterMsi -is [bool] -and
-    $tunConfig.InputBufferQueueSize -ge 32
-) "tuning.json defines all 6 boolean switches, AutoPurgeRamThresholdMB >= 512, and InputBufferQueueSize >= 32"
+    $tunConfig.AutoPurgeRamThresholdMB -le 16384
+) "tuning.json contains strictly the 3 AAA automation keys (AutoLockTimerInGaming, AutoPurgeRamInGaming, AutoPurgeRamThresholdMB in 512..16384) and no legacy switches"
 
 # -- 5. Low-Latency Kernel, DPC, BCDedit, TCP, HAGS & Extended Targets --------
 Write-Host "`n[Test Group 5] Low-Latency Kernel, DPC, Timers, TCP & Extended Targets:" -ForegroundColor Cyan
@@ -258,18 +260,29 @@ Assert-Test ($null -ne $powerCfg -and $powerCfg.Settings.Count -eq 9) "Get-Power
 $schedTasks = Get-GamingScheduledTaskTargets -HddProfile $true
 Assert-Test (@($schedTasks | Where-Object { $_.Name -eq "ScheduledDefrag" }).Count -gt 0) "Get-GamingScheduledTaskTargets includes ScheduledDefrag on HddProfile"
 
+$legacyOverrideTuning = [PSCustomObject]@{
+    DisableFullscreenOptimizations = $true
+    DisableMouseAccel              = $true
+    DisableNvidiaDynamicPstate     = $true
+    EnableNetAdapterMsi            = $false
+    InputBufferQueueSize           = 250
+    AutoLockTimerInGaming          = $true
+    AutoPurgeRamInGaming           = $true
+    AutoPurgeRamThresholdMB        = 2048
+}
 $highRamTargets = Get-ExtendedGamingTargets `
     -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "NVIDIA"; LowRamProfile = $false; HddProfile = $false }) `
-    -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $true; DisableNvidiaDynamicPstate = $true })
+    -TuningConfig $legacyOverrideTuning
 $lowRamTargets = Get-ExtendedGamingTargets `
     -HardwareProfile ([PSCustomObject]@{ CpuVendor = "AMD"; GpuVendor = "AMD"; LowRamProfile = $true; HddProfile = $false }) `
-    -TuningConfig ([PSCustomObject]@{ DisableMouseAccel = $false; DisableNvidiaDynamicPstate = $false })
+    -TuningConfig $null
 
 Assert-Test ($highRamTargets.Count -ge 25) "Get-ExtendedGamingTargets generates full registry optimization target set ($($highRamTargets.Count) targets)"
 Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Name -eq 'SvcHostSplitThresholdInKB' -and $_.Value -eq 67108864 }) -and $null -eq ($lowRamTargets | Where-Object { $_.Name -eq 'SvcHostSplitThresholdInKB' })) "SvcHostSplitThresholdInKB is applied on >=16 GB RAM and skipped on LowRamProfile"
 Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Path -match 'cs2\.exe\\PerfOptions' -and $_.Value -eq 3 }) -and $null -eq ($highRamTargets | Where-Object { $_.Path -match 'RDR2\.exe\\PerfOptions' })) "IFEO PerfOptions configures CS2 High Priority (3) and excludes RDR2"
-Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Name -eq 'SendTelemetryData' -and $_.Value -eq 0 }) -and @($highRamTargets | Where-Object { $_.Name -eq 'RmGpsPsEnablePerCpuCoreDpc' -and $_.Value -eq 1 }).Count -ge 3) "NVIDIA targets disable driver telemetry and enable per-core DPC"
-Assert-Test (@($highRamTargets | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') }).Count -eq 3 -and @($lowRamTargets | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -eq 'MouseSpeed' }).Count -eq 0) "Get-ExtendedGamingTargets gates 1:1 mouse curve on DisableMouseAccel"
+Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Name -eq 'SendTelemetryData' -and $_.Value -eq 0 }) -and @($highRamTargets | Where-Object { $_.Name -eq 'RmGpsPsEnablePerCpuCoreDpc' -and $_.Value -eq 1 }).Count -ge 3 -and @($highRamTargets | Where-Object { $_.Name -eq 'DisableDynamicPstate' }).Count -eq 0) "NVIDIA targets disable telemetry, enable per-core DPC, and ignore legacy DisableNvidiaDynamicPstate"
+Assert-Test (@($highRamTargets | Where-Object { $_.Path -eq 'HKCU:\Control Panel\Mouse' -and $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2') }).Count -eq 0) "AAA engine ignores legacy DisableMouseAccel and preserves stock mouse curve"
+Assert-Test ($null -ne ($highRamTargets | Where-Object { $_.Path -eq 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences' -and $_.Name -eq 'DirectXUserGlobalSettings' -and $_.Value -eq 'SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;' })) "AAA Flip-Model & VRR DirectXUserGlobalSettings target is always configured"
 
 # -- 6. Multi-Directory Shortcut Quarantine & Two-Phase Restoration -----------
 Write-Host "`n[Test Group 6] Multi-Directory Shortcut Quarantine & Two-Phase Restore:" -ForegroundColor Cyan
@@ -391,22 +404,25 @@ Assert-Test ($debloatSnap -is [hashtable] -and $debloatSnap.Count -eq 14) "Get-W
 
 # -- 9. SemVer Parser, Suite Version & URL/Tag Injection Guards ---------------
 Write-Host "`n[Test Group 9] SemVer Engine, Suite Version & URL Security Guards:" -ForegroundColor Cyan
-Assert-Test ((Get-AppCurrentVersion) -eq "3.6.0") "Get-AppCurrentVersion returns '3.6.0'"
+Assert-Test ((Get-AppCurrentVersion) -eq "4.0.0") "Get-AppCurrentVersion returns '4.0.0'"
 
 $vBase  = ConvertTo-SemVer "v2.8"
 $vPad   = ConvertTo-SemVer "2.8.0"
 $vPatch = ConvertTo-SemVer "v2.8.1"
-$vCurr  = ConvertTo-SemVer "v3.6.0"
+$vCurr  = ConvertTo-SemVer "v4.0.0"
 Assert-Test ($vBase -eq $vPad -and $vPatch -gt $vBase -and $vCurr -gt $vPatch) "ConvertTo-SemVer normalizes and compares versions accurately"
 Assert-Test ($null -eq (ConvertTo-SemVer "") -and $null -eq (ConvertTo-SemVer "invalid")) "ConvertTo-SemVer returns null on invalid version input"
 
-Assert-Test ((Test-SafeVersionTag -Tag "v3.6.0") -and -not (Test-SafeVersionTag -Tag 'v3.6.0"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
+Assert-Test ((Test-SafeVersionTag -Tag "v4.0.0") -and -not (Test-SafeVersionTag -Tag 'v4.0.0"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
 Assert-Test (
-    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.6.0") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.6.0") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v3.6.0") -and
+    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.0") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.0") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.0") -and
     -not (Test-SafeGitHubReleaseUrl -Url "file:///C:/Windows/System32/calc.exe")
 ) "Test-SafeGitHubReleaseUrl enforces HTTPS and github.com repository allowlist"
+
+$batContent = Get-Content -LiteralPath (Join-Path $repoRoot "UltraGamingMode.bat") -Raw -Encoding UTF8
+Assert-Test ($batContent -match 'v4\.0\.0' -and $batContent -notmatch '3\.6\.0') "UltraGamingMode.bat reports version v4.0.0 without stale 3.6.0 references"
 
 # -- 10. Process, WebView2 & Service Security Guards --------------------------
 Write-Host "`n[Test Group 10] Process, WebView2 & Service Security Guards:" -ForegroundColor Cyan
@@ -433,7 +449,7 @@ $svcBlockedCore = $false
 try { $null = Invoke-ServiceControlSafe -ServiceName "RpcSs" -Operation "Disabled" -Whitelist @() } catch { $svcBlockedCore = $true }
 Assert-Test ($svcBlockedAudio -and $svcBlockedCore) "Invoke-ServiceControlSafe throws on stopping whitelisted or disabling immutable core services"
 
-# -- 11. Two-Mode Service/Process Rules & Canonical Name Matching (v3.6.0) ----
+# -- 11. Two-Mode Service/Process Rules & Canonical Name Matching (v4.0.0) ----
 Write-Host "`n[Test Group 11] Two-Mode Service/Process Rules & Canonical Name Matching:" -ForegroundColor Cyan
 Assert-Test (
     (Get-CanonicalServiceName -ServiceName "WpnUserService_5e3a4") -eq "WpnUserService" -and
@@ -506,6 +522,105 @@ try {
     $stopSafeNoKill = $false
 }
 Assert-Test ($stopHasProtParam -and $stopSafeNoKill) "Stop-BlacklistedProcesses enforces ProtectedNames override alongside critical process protection"
+
+# -- 12. AAA-Only Engine Invariants, Legacy Resilience & Repo Hygiene ---------
+Write-Host "`n[Test Group 12] AAA-Only Engine Invariants, Legacy Resilience & Hygiene:" -ForegroundColor Cyan
+$fseFnText = (Get-Command Set-DeepGameDVROptimizations).ScriptBlock.Ast.Extent.Text
+Assert-Test (
+    ($fseFnText -match 'Remove-ItemProperty[^\r\n]*GameDVR_FSEBehaviorMode') -and
+    ($fseFnText -notmatch 'GameDVR_FSEBehaviorMode"\s+-Value\s+2') -and
+    ($fseFnText -notmatch 'DisableFullscreenOptimizations')
+) "Set-DeepGameDVROptimizations keeps Fullscreen Optimizations active (removes GameDVR_FSEBehaviorMode and never sets Value 2)"
+
+$stateEngText = Get-Content -LiteralPath (Join-Path $repoRoot "Core\StateEngine.ps1") -Raw -Encoding UTF8
+$sysOptText   = Get-Content -LiteralPath (Join-Path $repoRoot "Core\SystemOptimizer.ps1") -Raw -Encoding UTF8
+$svcMgrText   = Get-Content -LiteralPath (Join-Path $repoRoot "Core\ServiceManager.ps1") -Raw -Encoding UTF8
+$mainPsText   = Get-Content -LiteralPath (Join-Path $repoRoot "UltraGamingMode.ps1") -Raw -Encoding UTF8
+
+$legacySwitchPattern = 'DisableFullscreenOptimizations|DisableMouseAccel|DisableNvidiaDynamicPstate|EnableNetAdapterMsi|InputBufferQueueSize'
+$hasLegacyEngineBranch = (
+    ($stateEngText -match $legacySwitchPattern) -or
+    ($sysOptText -match $legacySwitchPattern) -or
+    ($svcMgrText -match $legacySwitchPattern) -or
+    ($mainPsText -match $legacySwitchPattern)
+)
+$disableUserFnText = (Get-Command Disable-UserStateAggressive).ScriptBlock.Ast.Extent.Text
+$bootModeFnText    = (Get-Command Apply-SystemStateBootMode).ScriptBlock.Ast.Extent.Text
+$hasHardcodedAaaCore = (
+    ($disableUserFnText -match 'Set-InputBufferOptimizations\s+-QueueSize\s+100') -and
+    ($disableUserFnText -match 'Set-NetAdapterMsiMode') -and
+    ($bootModeFnText -match 'Set-InputBufferOptimizations\s+-QueueSize\s+100') -and
+    ($bootModeFnText -match 'Set-NetAdapterMsiMode') -and
+    ($stateEngText -notmatch 'tuning\.json') -and
+    ($sysOptText -notmatch 'tuning\.json') -and
+    ($mainPsText -notmatch 'tuning\.json')
+)
+Assert-Test (-not $hasLegacyEngineBranch -and $hasHardcodedAaaCore) "Engine modules enforce hardcoded AAA defaults without tuning.json or legacy switch branching"
+
+$hasCompetitiveOrCustomProfile = (
+    ($stateEngText -match '(?i)competitive') -or
+    ($sysOptText -match '(?i)competitive') -or
+    ($svcMgrText -match '(?i)competitive') -or
+    ($mainPsText -match '(?i)competitive') -or
+    ($batContent -match '(?i)competitive') -or
+    ($stateEngText -match '(?i)\bcustom\b') -or
+    ($sysOptText -match '(?i)\bcustom\b') -or
+    ($svcMgrText -match '(?i)\bcustom\b') -or
+    ($batContent -match '(?i)\bcustom\b') -or
+    ($mainPsText -match '(?i)custom(?!\s+\(\$\(\$msi|\s+Managed)')
+)
+Assert-Test (-not $hasCompetitiveOrCustomProfile) "PowerShell engine and launcher contain zero competitive or custom profile switches"
+
+$legacyJsonSample = @'
+{
+  "DisableFullscreenOptimizations": true,
+  "DisableMouseAccel": true,
+  "DisableNvidiaDynamicPstate": true,
+  "EnableNetAdapterMsi": false,
+  "InputBufferQueueSize": 250,
+  "AutoLockTimerInGaming": true,
+  "AutoPurgeRamInGaming": true,
+  "AutoPurgeRamThresholdMB": 99999
+}
+'@
+$legacyParsed = $legacyJsonSample | ConvertFrom-Json
+$resilienceTargets = @(Get-ExtendedGamingTargets -HardwareProfile ([PSCustomObject]@{ CpuVendor = "Intel"; GpuVendor = "NVIDIA"; LowRamProfile = $false; HddProfile = $false }) -TuningConfig $legacyParsed)
+Assert-Test (
+    $resilienceTargets.Count -ge 25 -and
+    (@($resilienceTargets | Where-Object { $_.Name -in @('MouseSpeed', 'MouseThreshold1', 'MouseThreshold2', 'DisableDynamicPstate') }).Count -eq 0) -and
+    ($null -ne ($resilienceTargets | Where-Object { $_.Name -eq 'DirectXUserGlobalSettings' -and $_.Value -eq 'SwapEffectUpgradeEnable=1;VRROptimizeEnable=1;' }))
+) "Legacy tuning.json payloads parse safely without error and cannot re-enable non-AAA tweaks"
+
+$bannedEncoded = @(
+    "Y2xhdWRl",
+    "YW50aHJvcGlj",
+    "b3BlbmFp",
+    "Y2hhdGdwdA==",
+    "Y3Vyc29y",
+    "d2luZHN1cmY=",
+    "YW50aWdyYXZpdHk=",
+    "bGxt",
+    "c3ViYWdlbnQ=",
+    "VGF1cmk="
+)
+$bannedTerms = @($bannedEncoded | ForEach-Object { [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($_)) })
+$bannedPattern = '(?i)\b(' + ($bannedTerms -join '|') + ')\b'
+$engineFilesToScan = @(
+    (Join-Path $repoRoot "UltraGamingMode.ps1"),
+    (Join-Path $repoRoot "UltraGamingMode.bat"),
+    (Join-Path $repoRoot "Core\StateEngine.ps1"),
+    (Join-Path $repoRoot "Core\SystemOptimizer.ps1"),
+    (Join-Path $repoRoot "Core\ServiceManager.ps1"),
+    (Join-Path $repoRoot "Config\tuning.json")
+)
+$hygieneHits = @()
+foreach ($scanFile in $engineFilesToScan) {
+    $raw = Get-Content -LiteralPath $scanFile -Raw -Encoding UTF8
+    if ($raw -match $bannedPattern) {
+        $hygieneHits += "$($scanFile): $($Matches[0])"
+    }
+}
+Assert-Test ($hygieneHits.Count -eq 0) "M1 engine and config files pass strict content policy hygiene with zero prohibited mentions ($($hygieneHits -join '; '))"
 
 # -- Summary ------------------------------------------------------------------
 Write-Host "`n=====================================================" -ForegroundColor Magenta

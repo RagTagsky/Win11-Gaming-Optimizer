@@ -1,0 +1,76 @@
+export struct ThemeCardItem {
+    id: string,
+    name-ru: string,
+    is-dark: bool,
+    is-active: bool,
+    preview-bg: color,
+    preview-surface: color,
+    preview-elevated: color,
+    preview-border: color,
+    preview-accent: color,
+    preview-accent-text: color,
+    preview-text: color,
+}
+
+export global ThemeTokens {
+    in-out property <string> active-theme-id: "dark";
+    in-out property <string> active-theme-name: "Тёмная классика";
+    in-out property <bool> is-dark: true;
+
+    // 43 base tokens from the 8-theme design specification
+    in-out property <color> bg-app: #0c0f14;
+    in-out property <color> bg-surface: #131720;
+    in-out property <color> bg-elevated: #1b202c;
+    in-out property <color> bg-hover: #232a38;
+    in-out property <color> bg-active: #2c3547;
+    in-out property <color> bg-titlebar: rgba(12, 15, 20, 0.94);
+    in-out property <color> border-subtle: #242b38;
+    in-out property <color> border-strong: #374156;
+    in-out property <color> border-input: #586884;
+    in-out property <color> text-primary: #f1f5f9;
+    in-out property <color> text-secondary: #a3b3c9;
+    in-out property <color> text-muted: #8293ab;
+    in-out property <color> accent-solid: #2563eb;
+    in-out property <color> accent-solid-hover: #1d4ed8;
+    in-out property <color> accent-solid-active: #1e40af;
+    in-out property <color> accent-text: #74b4fc;
+    in-out property <color> accent-card-tint: rgba(59, 130, 246, 0.08);
+    in-out property <color> accent-soft: rgba(59, 130, 246, 0.15);
+    in-out property <color> accent-border: rgba(96, 165, 250, 0.36);
+    in-out property <color> status-active-text: #34d399;
+    in-out property <color> status-active-soft: rgba(16, 185, 129, 0.14);
+    in-out property <color> status-active-border: rgba(52, 211, 153, 0.36);
+    in-out property <color> status-warn-text: #fbbf24;
+    in-out property <color> status-warn-soft: rgba(245, 158, 11, 0.14);
+    in-out property <color> status-warn-border: rgba(251, 191, 36, 0.36);
+    in-out property <color> status-danger-solid: #dc2626;
+    in-out property <color> status-danger-solid-hover: #b91c1c;
+    in-out property <color> status-danger-text: #f87171;
+    in-out property <color> status-danger-soft: rgba(239, 68, 68, 0.15);
+    in-out property <color> status-danger-border: rgba(248, 113, 113, 0.38);
+    in-out property <color> focus-ring: #60a5fa;
+    in-out property <color> switch-off-bg: #252c3b;
+    in-out property <color> switch-off-border: #586884;
+    in-out property <color> switch-off-thumb: #cbd5e1;
+    in-out property <color> text-on-solid: #ffffff;
+    in-out property <color> close-hover-bg: #c42b1c;
+    in-out property <color> close-active-bg: #9e2216;
+    in-out property <color> backdrop-overlay: rgba(6, 8, 12, 0.72);
+    in-out property <length> shadow-card-offset-y: 1px;
+    in-out property <length> shadow-card-blur: 2px;
+    in-out property <color> shadow-card-color: rgba(0, 0, 0, 0.28);
+    in-out property <length> shadow-card-hover-offset-y: 4px;
+    in-out property <length> shadow-card-hover-blur: 12px;
+    in-out property <color> shadow-card-hover-color: rgba(0, 0, 0, 0.36);
+    in-out property <length> shadow-dialog-offset-y: 18px;
+    in-out property <length> shadow-dialog-blur: 44px;
+    in-out property <color> shadow-dialog-color: rgba(0, 0, 0, 0.62);
+    in-out property <color> scrollbar-thumb: #2e3748;
+    in-out property <color> scrollbar-thumb-hover: #46536b;
+
+    // 2 optional enhancement tokens (themes 3, 4, 5, 8)
+    in-out property <bool> has-bg-app-glow: false;
+    in-out property <color> bg-app-glow-color: rgba(0, 0, 0, 0.0);
+    in-out property <bool> has-surface-top-highlight: false;
+    in-out property <color> surface-top-highlight: rgba(0, 0, 0, 0.0);
+}

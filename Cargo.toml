@@ -1,0 +1,26 @@
+[package]
+name = "ultra-gaming-mode"
+version = "4.0.0"
+description = "Ultra Gaming Mode v4.0.0 Native Desktop Application"
+authors = ["Ultra Gaming Mode Team"]
+edition = "2021"
+build = "build.rs"
+
+[[bin]]
+name = "UltraGamingMode"
+path = "src/main.rs"
+test = false
+
+[lib]
+name = "ultra_gaming_mode_lib"
+
+[build-dependencies]
+embed-resource = "3.0.12"
+
+[dependencies]
+slint = { version = "1.19.0", default-features = false, features = ["compat-1-2", "std", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility", "raw-window-handle-06"] }
+tray-icon = { version = "0.25.1", default-features = false }
+muda = { version = "0.20.0", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+raw-window-handle = "0.6"

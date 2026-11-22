@@ -1,0 +1,486 @@
+import { ScrollView } from "std-widgets.slint";
+import { ThemeTokens } from "theme.slint";
+
+export component MaintenanceView inherits Rectangle {
+    in property <string> running-repair: "";
+    in property <string> status-text: "";
+    in property <bool> status-is-error: false;
+
+    callback run-safe-repair(string);
+    callback request-critical-repair(string);
+    callback dismiss-status();
+
+    background: transparent;
+
+    ScrollView {
+        width: 100%;
+        height: 100%;
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 14px;
+
+            // Header Card
+            Rectangle {
+                border-radius: 14px;
+                background: ThemeTokens.bg-surface;
+                border-width: 1px;
+                border-color: ThemeTokens.border-subtle;
+                drop-shadow-offset-y: ThemeTokens.shadow-card-offset-y;
+                drop-shadow-blur: ThemeTokens.shadow-card-blur;
+                drop-shadow-color: ThemeTokens.shadow-card-color;
+
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 4px;
+
+                    Text {
+                        text: "Обслуживание и аварийное восстановление";
+                        font-size: 15px;
+                        font-weight: 700;
+                        color: ThemeTokens.text-primary;
+                    }
+
+                    Text {
+                        text: "Инструменты очистки памяти, диагностики целостности и безопасного сброса системных подсистем Windows 11.";
+                        font-size: 12px;
+                        color: ThemeTokens.text-secondary;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // Status Banner
+            if root.status-text != "" : Rectangle {
+                border-radius: 12px;
+                background: root.status-is-error ? ThemeTokens.status-danger-soft : ThemeTokens.status-active-soft;
+                border-width: 1px;
+                border-color: root.status-is-error ? ThemeTokens.status-danger-border : ThemeTokens.status-active-border;
+
+                HorizontalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.status-text;
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: root.status-is-error ? ThemeTokens.status-danger-text : ThemeTokens.status-active-text;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                    }
+
+                    Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 6px;
+                        background: ThemeTokens.bg-surface;
+
+                        TouchArea {
+                            accessible-role: button;
+                            accessible-label: "Скрыть результат операции";
+                            clicked => { root.dismiss-status(); }
+                        }
+
+                        Text {
+                            text: "✕";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            // Everyday Safe Actions (3 cards)
+            Text {
+                text: "Быстрое обслуживание и диагностика";
+                font-size: 13px;
+                font-weight: 700;
+                color: ThemeTokens.text-primary;
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+
+                // 1. Clean Standby RAM
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: 14px;
+                    background: ThemeTokens.bg-surface;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Очистить кэш ОЗУ";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            vertical-stretch: 1;
+                            text: "Освобождает резервную память (Standby List) в Windows через NtSetSystemInformation, помогая убрать подтормаживания при длительных сессиях.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 36px;
+                            border-radius: 9px;
+                            background: mem-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.border-strong;
+
+                            mem-ta := TouchArea {
+                                enabled: root.running-repair == "";
+                                accessible-role: button;
+                                clicked => { root.run-safe-repair("memory"); }
+                            }
+
+                            Text {
+                                text: root.running-repair == "memory" ? "Выполняется…" : "Очистить кэш ОЗУ";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: ThemeTokens.text-primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Verify Configs
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: 14px;
+                    background: ThemeTokens.bg-surface;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Проверить целостность конфигурации";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            vertical-stretch: 1;
+                            text: "Запускает автоматическую диагностику Verify-UniversalEngine.ps1 для проверки JSON-конфигов, кодировки UTF-8 и инвариантов движка.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 36px;
+                            border-radius: 9px;
+                            background: ver-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.border-strong;
+
+                            ver-ta := TouchArea {
+                                enabled: root.running-repair == "";
+                                accessible-role: button;
+                                clicked => { root.run-safe-repair("verify"); }
+                            }
+
+                            Text {
+                                text: root.running-repair == "verify" ? "Выполняется…" : "Проверить конфиги";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: ThemeTokens.text-primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 3. Repair Services
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: 14px;
+                    background: ThemeTokens.bg-surface;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 10px;
+
+                        Text {
+                            text: "Восстановить службы Windows";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            vertical-stretch: 1;
+                            text: "Возвращает исходные типы запуска всем службам из резервного снимка после нештатного завершения игры или сбоя питания.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 36px;
+                            border-radius: 9px;
+                            background: svc-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated;
+                            border-width: 1px;
+                            border-color: ThemeTokens.border-strong;
+
+                            svc-ta := TouchArea {
+                                enabled: root.running-repair == "";
+                                accessible-role: button;
+                                clicked => { root.run-safe-repair("services"); }
+                            }
+
+                            Text {
+                                text: root.running-repair == "services" ? "Выполняется…" : "Восстановить службы";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: ThemeTokens.text-primary;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Deep Reset & Windows 11 Components (2x2 Grid with Confirmation Dialog)
+            Text {
+                text: "Глубокий сброс и компоненты Windows 11 (с подтверждением)";
+                font-size: 13px;
+                font-weight: 700;
+                color: ThemeTokens.text-primary;
+            }
+
+            GridLayout {
+                spacing: 12px;
+
+                // 1. Flush GPU Shader Cache
+                Rectangle {
+                    row: 0;
+                    col: 0;
+                    border-radius: 14px;
+                    background: ThemeTokens.bg-surface;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Очистить кэш шейдеров GPU";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            text: "Удаляет накопленные скомпилированные шейдеры DirectX, NVIDIA, AMD и Intel для устранения статтеров и графических артефактов.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 34px;
+                            border-radius: 8px;
+                            background: ThemeTokens.status-warn-soft;
+                            border-width: 1px;
+                            border-color: ThemeTokens.status-warn-border;
+
+                            TouchArea {
+                                enabled: root.running-repair == "";
+                                accessible-role: button;
+                                clicked => { root.request-critical-repair("shaders"); }
+                            }
+
+                            Text {
+                                text: root.running-repair == "shaders" ? "Выполняется…" : "Очистить шейдеры…";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: ThemeTokens.status-warn-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Reset DWM Display Stack
+                Rectangle {
+                    row: 0;
+                    col: 1;
+                    border-radius: 14px;
+                    background: ThemeTokens.bg-surface;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Сбросить графический стек (DWM)";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            text: "Перезапускает композитор рабочего стола и переинициализирует вывод дисплея при зависании картинки или сбое HDR.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 34px;
+                            border-radius: 8px;
+                            background: ThemeTokens.status-warn-soft;
+                            border-width: 1px;
+                            border-color: ThemeTokens.status-warn-border;
+
+                            TouchArea {
+                                enabled: root.running-repair == "";
+                                accessible-role: button;
+                                clicked => { root.request-critical-repair("display"); }
+                            }
+
+                            Text {
+                                text: root.running-repair == "display" ? "Выполняется…" : "Сбросить дисплей…";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: ThemeTokens.status-warn-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 3. Apply Win11 Debloat
+                Rectangle {
+                    row: 1;
+                    col: 0;
+                    border-radius: 14px;
+                    background: ThemeTokens.bg-surface;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Оптимизация Windows 11 (Debloat)";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            text: "Отключает избыточную телеметрию и фоновые виджеты Windows 11 с сохранением резервной копии для полного отката.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 34px;
+                            border-radius: 8px;
+                            background: ThemeTokens.status-danger-soft;
+                            border-width: 1px;
+                            border-color: ThemeTokens.status-danger-border;
+
+                            TouchArea {
+                                enabled: root.running-repair == "";
+                                accessible-role: button;
+                                clicked => { root.request-critical-repair("debloat"); }
+                            }
+
+                            Text {
+                                text: root.running-repair == "debloat" ? "Выполняется…" : "Применить Win11 Debloat…";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: ThemeTokens.status-danger-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 4. Restore Win11 Debloat
+                Rectangle {
+                    row: 1;
+                    col: 1;
+                    border-radius: 14px;
+                    background: ThemeTokens.bg-surface;
+                    border-width: 1px;
+                    border-color: ThemeTokens.border-subtle;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+
+                        Text {
+                            text: "Откат Win11 Debloat";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: ThemeTokens.text-primary;
+                        }
+
+                        Text {
+                            text: "Возвращает стандартные настройки Windows 11 для телеметрии, виджетов и вспомогательных системных компонентов.";
+                            font-size: 12px;
+                            color: ThemeTokens.text-secondary;
+                            wrap: word-wrap;
+                        }
+
+                        Rectangle {
+                            height: 34px;
+                            border-radius: 8px;
+                            background: ThemeTokens.status-warn-soft;
+                            border-width: 1px;
+                            border-color: ThemeTokens.status-warn-border;
+
+                            TouchArea {
+                                enabled: root.running-repair == "";
+                                accessible-role: button;
+                                clicked => { root.request-critical-repair("restore_debloat"); }
+                            }
+
+                            Text {
+                                text: root.running-repair == "restore_debloat" ? "Выполняется…" : "Откатить Win11 Debloat…";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: ThemeTokens.status-warn-text;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
