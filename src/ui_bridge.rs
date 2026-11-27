@@ -263,6 +263,7 @@ struct UiAppState {
     runtime_root: PathBuf,
     theme_prefs: ThemePreferences,
     tuning: TuningConfig,
+    latest_update_info: Option<backend::UpdateInfo>,
     processes_snap: Option<LiveProcessesSnapshot>,
     services_lists: Option<ServicesLists>,
     loading_processes: bool,
@@ -688,6 +689,7 @@ pub fn run_native_app() {
         runtime_root: runtime_root.clone(),
         theme_prefs,
         tuning: initial_tuning,
+        latest_update_info: None,
         processes_snap: None,
         services_lists: None,
         loading_processes: false,
@@ -1123,13 +1125,13 @@ pub fn run_native_app() {
         });
     }
 
-    // Check Updates & Open Releases Page
+    // Check Updates, Install Update In-App & Open Releases Page
     {
         let weak = window.as_weak();
         let state = state.clone();
         window.on_check_updates(move || {
             let Some(w) = weak.upgrade() else { return };
-            if w.get_is_checking_updates() {
+            if w.get_is_checking_updates() || w.get_is_installing_update() {
                 return;
             }
             w.set_is_checking_updates(true);
@@ -1157,6 +1159,7 @@ pub fn run_native_app() {
                                         info.current_version, info.latest_version
                                     )
                                 };
+                                st.latest_update_info = Some(info);
                                 w.set_update_status_text(SharedString::from(&msg));
                                 st.push_log(&w, "success", msg);
                             }
@@ -1169,6 +1172,112 @@ pub fn run_native_app() {
                     }
                 });
             });
+        });
+    }
+    {
+        let weak = window.as_weak();
+        let state = state.clone();
+        window.on_install_update(move || {
+            let Some(w) = weak.upgrade() else { return };
+            if w.get_is_installing_update()
+                || w.get_is_checking_updates()
+                || w.get_is_busy()
+                || !w.get_running_repair().is_empty()
+            {
+                return;
+            }
+            let cached_info = state.lock().unwrap().latest_update_info.clone();
+            w.set_is_installing_update(true);
+            w.set_update_is_error(false);
+            w.set_update_status_text(SharedString::from("Подготовка к загрузке обновления…"));
+
+            let weak_bg = weak.clone();
+            let state_bg = state.clone();
+            std::thread::spawn(move || {
+                let weak_prog = weak_bg.clone();
+                let res = backend::prepare_verified_update_sync(cached_info, move |stage_msg| {
+                    let msg_owned = stage_msg.to_string();
+                    let weak_ui = weak_prog.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(w) = weak_ui.upgrade() {
+                            w.set_update_status_text(SharedString::from(&msg_owned));
+                        }
+                    });
+                });
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    let Some(w) = weak_bg.upgrade() else { return };
+                    match res {
+                        Ok(prepared) => {
+                            if MODE_ACTION_BUSY.load(Ordering::SeqCst)
+                                || !w.get_running_repair().is_empty()
+                            {
+                                w.set_is_installing_update(false);
+                                w.set_update_is_error(true);
+                                let _ = std::fs::remove_dir_all(&prepared.stage_dir);
+                                let warn_msg = "Дождитесь завершения текущей системной операции перед перезапуском для обновления.";
+                                w.set_update_status_text(SharedString::from(warn_msg));
+                                state_bg.lock().unwrap().push_log(&w, "warn", warn_msg);
+                                return;
+                            }
+                            match backend::spawn_detached_update_applier(&prepared) {
+                                Ok(()) => {
+                                    let msg = format!(
+                                        "Пакет v{} проверен по SHA-256. Установка обновления и перезапуск…",
+                                        prepared.latest_version
+                                    );
+                                    w.set_update_status_text(SharedString::from(&msg));
+                                    state_bg.lock().unwrap().push_log(&w, "success", msg);
+                                    ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
+                                    let _ = slint::quit_event_loop();
+                                }
+                                Err(e) => {
+                                    let _ = std::fs::remove_dir_all(&prepared.stage_dir);
+                                    w.set_is_installing_update(false);
+                                    w.set_update_is_error(true);
+                                    w.set_update_status_text(SharedString::from(&e));
+                                    state_bg.lock().unwrap().push_log(&w, "error", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            w.set_is_installing_update(false);
+                            w.set_update_is_error(true);
+                            w.set_update_status_text(SharedString::from(&e));
+                            state_bg.lock().unwrap().push_log(&w, "error", e);
+                        }
+                    }
+                });
+            });
+        });
+    }
+    if !start_in_tray && std::env::var_os("UGM_INSTANCE_NAMESPACE").is_none() {
+        let weak_auto = window.as_weak();
+        let state_auto = state.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            if let Ok(info) = backend::check_for_updates_sync() {
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = weak_auto.upgrade() {
+                        if w.get_is_installing_update() || w.get_is_checking_updates() {
+                            return;
+                        }
+                        let mut st = state_auto.lock().unwrap();
+                        w.set_latest_version(SharedString::from(&info.latest_version));
+                        w.set_has_update(info.has_update);
+                        if info.has_update {
+                            w.set_update_is_error(false);
+                            let msg = format!(
+                                "Доступно обновление v{} (текущая v{}).",
+                                info.latest_version, info.current_version
+                            );
+                            w.set_update_status_text(SharedString::from(&msg));
+                            st.push_log(&w, "info", msg);
+                        }
+                        st.latest_update_info = Some(info);
+                    }
+                });
+            }
         });
     }
     {
@@ -2465,6 +2574,33 @@ mod tests {
             single_vs_empty_diffs > 400,
             "Filtered 1-item list after scrolling must clamp into viewport instead of rendering off-screen (diffs={})",
             single_vs_empty_diffs
+        );
+
+        // 5. Dashboard in-app update CTA renders distinctly when has-update is true vs false
+        window.set_active_tab(0);
+        window.set_has_update(false);
+        window.set_is_installing_update(false);
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+
+        window.set_latest_version(SharedString::from("9.9.0"));
+        window.set_has_update(true);
+        window.set_update_status_text(SharedString::from("Доступно обновление v9.9.0."));
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_b, 960); });
+
+        let mut upd_btn_diffs = 0usize;
+        for y in 0..680 {
+            for x in 0..960 {
+                if rbuf_a[y * 960 + x] != rbuf_b[y * 960 + x] {
+                    upd_btn_diffs += 1;
+                }
+            }
+        }
+        assert!(
+            upd_btn_diffs > 300,
+            "Dashboard must visibly render primary in-app install update button when has-update=true (diffs={})",
+            upd_btn_diffs
         );
     }
 }

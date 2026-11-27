@@ -2,9 +2,14 @@ import { ThemeTokens } from "theme.slint";
 import { IconBolt, IconSun, IconMoon, IconMinimize, IconMaximize, IconClose } from "components.slint";
 
 export component TitleBar inherits Rectangle {
-    in property <string> app-version: "v4.0.1";
+    in property <string> app-version: "v4.1.0";
+    in property <string> latest-version: "4.1.0";
+    in property <bool> has-update: false;
+    in property <bool> is-installing-update: false;
+    in property <bool> is-busy: false;
     in property <bool> is-maximized: false;
     callback drag-window();
+    callback install-update();
     callback toggle-theme-polarity();
     callback minimize-window();
     callback toggle-maximize-window();
@@ -90,6 +95,51 @@ export component TitleBar inherits Rectangle {
                             font-size: 10.5px;
                             font-weight: 500;
                             color: ThemeTokens.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+
+            if root.has-update || root.is-installing-update : VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 22px;
+                    border-radius: 6px;
+                    background: (root.is-installing-update || root.is-busy) ? ThemeTokens.accent-soft : (hdr-upd-ta.pressed ? ThemeTokens.accent-solid-active : (hdr-upd-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid));
+                    border-width: 1px;
+                    border-color: hdr-upd-fs.has-focus ? ThemeTokens.focus-ring : ((root.is-installing-update || root.is-busy) ? ThemeTokens.accent-border : ThemeTokens.accent-solid);
+
+                    hdr-upd-fs := FocusScope {
+                        enabled: !root.is-installing-update && !root.is-busy;
+                        key-pressed(event) => {
+                            if (event.text == " " || event.text == "\n" || event.text == Key.Return) {
+                                root.install-update();
+                                return accept;
+                            }
+                            return reject;
+                        }
+
+                        hdr-upd-ta := TouchArea {
+                            enabled: !root.is-installing-update && !root.is-busy;
+                            mouse-cursor: (!root.is-installing-update && !root.is-busy) ? pointer : default;
+                            accessible-role: button;
+                            accessible-label: root.is-installing-update ? "Установка обновления" : ("Установить обновление v" + root.latest-version);
+                            clicked => {
+                                hdr-upd-fs.focus();
+                                root.install-update();
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        Text {
+                            text: root.is-installing-update ? "Установка обновления…" : ("Обновить до v" + root.latest-version);
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: (root.is-installing-update || root.is-busy) ? ThemeTokens.accent-text : ThemeTokens.text-on-solid;
                             vertical-alignment: center;
                         }
                     }

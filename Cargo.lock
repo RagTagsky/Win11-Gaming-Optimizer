@@ -4466,7 +4466,7 @@ dependencies = [
 
 [[package]]
 name = "ultra-gaming-mode"
-version = "4.0.1"
+version = "4.1.0"
 dependencies = [
  "embed-resource",
  "muda 0.20.0",

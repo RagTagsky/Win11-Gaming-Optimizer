@@ -2,7 +2,7 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
      xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
   <?ifndef AppVersion ?>
-    <?define AppVersion = "4.0.1.0" ?>
+    <?define AppVersion = "4.1.0.0" ?>
   <?endif?>
 
   <Product
@@ -18,7 +18,7 @@
       Compressed="yes"
       InstallScope="perMachine"
       Platform="x64"
-      Description="Ultra Gaming Mode v4.0.1 Native Windows 11 Gaming Optimizer"
+      Description="Ultra Gaming Mode v4.1.0 Native Windows 11 Gaming Optimizer"
       Manufacturer="Ultra Gaming Mode Team" />
 
     <MajorUpgrade

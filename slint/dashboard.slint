@@ -62,12 +62,13 @@ export component DashboardView inherits Rectangle {
     in property <string> dpc-latency: "Потоковый DPC (оптимально)";
     in property <string> mpo-status: "Штатный конвейер DWM (без мерцания)";
     in property <string> timer-resolution: "1.000 мс (штатный)";
-    in property <string> app-version: "4.0.1";
-    in property <string> latest-version: "4.0.1";
+    in property <string> app-version: "4.1.0";
+    in property <string> latest-version: "4.1.0";
     in property <bool> has-update: false;
     in property <bool> is-checking-updates: false;
+    in property <bool> is-installing-update: false;
     in property <bool> update-is-error: false;
-    in property <string> update-status-text: "Установлена актуальная версия v4.0.1.";
+    in property <string> update-status-text: "Установлена актуальная версия v4.1.0.";
     in property <int> disabled-services-count: 205;
     in property <int> disabled-processes-count: 40;
 
@@ -77,6 +78,7 @@ export component DashboardView inherits Rectangle {
     callback toggle-timer-lock();
     callback unlock-timer();
     callback check-updates();
+    callback install-update();
     callback open-releases-page();
 
     background: transparent;
@@ -885,17 +887,59 @@ export component DashboardView inherits Rectangle {
                             spacing: 8px;
                             alignment: end;
 
+                            if root.has-update || root.is-installing-update : Rectangle {
+                                height: 32px;
+                                border-radius: 7px;
+                                background: (root.is-installing-update || root.is-checking-updates || root.is-busy) ? ThemeTokens.bg-elevated : (inst-ta.pressed ? ThemeTokens.accent-solid-active : (inst-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid));
+                                border-width: 1px;
+                                border-color: inst-fs.has-focus ? ThemeTokens.focus-ring : ((root.is-installing-update || root.is-checking-updates || root.is-busy) ? ThemeTokens.border-subtle : ThemeTokens.accent-solid);
+
+                                inst-fs := FocusScope {
+                                    enabled: !root.is-installing-update && !root.is-checking-updates && !root.is-busy;
+                                    key-pressed(event) => {
+                                        if (event.text == " " || event.text == "\n" || event.text == Key.Return) {
+                                            root.install-update();
+                                            return accept;
+                                        }
+                                        return reject;
+                                    }
+
+                                    inst-ta := TouchArea {
+                                        enabled: !root.is-installing-update && !root.is-checking-updates && !root.is-busy;
+                                        mouse-cursor: (!root.is-installing-update && !root.is-checking-updates && !root.is-busy) ? pointer : default;
+                                        accessible-role: button;
+                                        accessible-label: root.is-installing-update ? "Установка обновления" : ("Установить обновление v" + root.latest-version);
+                                        clicked => {
+                                            inst-fs.focus();
+                                            root.install-update();
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    Text {
+                                        text: root.is-installing-update ? "Установка…" : ("Установить v" + root.latest-version);
+                                        font-size: 12px;
+                                        font-weight: 600;
+                                        color: (root.is-installing-update || root.is-checking-updates || root.is-busy) ? ThemeTokens.text-muted : ThemeTokens.text-on-solid;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
                             Rectangle {
                                 height: 32px;
                                 border-radius: 7px;
-                                opacity: root.is-checking-updates ? 0.6 : 1.0;
+                                opacity: (root.is-checking-updates || root.is-installing-update) ? 0.6 : 1.0;
                                 background: upd-ta.pressed ? ThemeTokens.bg-active : (upd-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                                 border-width: 1px;
                                 border-color: upd-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
                                 upd-ta := TouchArea {
-                                    enabled: !root.is-checking-updates;
-                                    mouse-cursor: !root.is-checking-updates ? pointer : default;
+                                    enabled: !root.is-checking-updates && !root.is-installing-update;
+                                    mouse-cursor: (!root.is-checking-updates && !root.is-installing-update) ? pointer : default;
                                     accessible-role: button;
                                     accessible-label: "Проверить обновления";
                                     clicked => {
@@ -907,10 +951,10 @@ export component DashboardView inherits Rectangle {
                                     padding-left: 12px;
                                     padding-right: 12px;
                                     Text {
-                                        text: root.is-checking-updates ? "Проверка…" : "Проверить обновления";
+                                        text: root.is-checking-updates ? "Проверка…" : (root.has-update ? "Проверить" : "Проверить обновления");
                                         font-size: 12px;
                                         font-weight: 600;
-                                        color: root.is-checking-updates ? ThemeTokens.text-muted : ThemeTokens.text-primary;
+                                        color: (root.is-checking-updates || root.is-installing-update) ? ThemeTokens.text-muted : ThemeTokens.text-primary;
                                         vertical-alignment: center;
                                     }
                                 }
@@ -919,13 +963,14 @@ export component DashboardView inherits Rectangle {
                             Rectangle {
                                 height: 32px;
                                 border-radius: 7px;
+                                opacity: root.is-installing-update ? 0.6 : 1.0;
                                 background: rel-ta.pressed ? ThemeTokens.bg-active : (rel-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                                 border-width: 1px;
                                 border-color: rel-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-
                                 rel-ta := TouchArea {
-                                    mouse-cursor: pointer;
+                                    enabled: !root.is-installing-update;
+                                    mouse-cursor: !root.is-installing-update ? pointer : default;
                                     accessible-role: button;
                                     accessible-label: "Открыть страницу GitHub Releases";
                                     clicked => {

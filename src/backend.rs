@@ -345,6 +345,22 @@ pub struct ServicesLists {
     pub feature_packs: Vec<ServiceFeaturePack>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallKind {
+    NsisSetup,
+    WixMsi,
+    Portable,
+}
+
+#[derive(Clone, Debug)]
+pub struct PreparedUpdate {
+    pub latest_version: String,
+    pub kind: InstallKind,
+    pub stage_dir: PathBuf,
+    pub package_path: PathBuf,
+    pub target_exe: PathBuf,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UpdateInfo {
     #[serde(rename = "currentVersion")]
@@ -367,6 +383,18 @@ pub struct UpdateInfo {
     pub checksum_url: Option<String>,
     #[serde(rename = "sizeBytes", default)]
     pub size_bytes: Option<u64>,
+    #[serde(rename = "setupUrl", default)]
+    pub setup_url: Option<String>,
+    #[serde(rename = "setupSizeBytes", default)]
+    pub setup_size_bytes: Option<u64>,
+    #[serde(rename = "msiUrl", default)]
+    pub msi_url: Option<String>,
+    #[serde(rename = "msiSizeBytes", default)]
+    pub msi_size_bytes: Option<u64>,
+    #[serde(rename = "portableUrl", default)]
+    pub portable_url: Option<String>,
+    #[serde(rename = "portableSizeBytes", default)]
+    pub portable_size_bytes: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -2232,6 +2260,33 @@ pub mod win_hw {
         }
     }
 
+    pub fn query_installed_msi_product_code() -> Option<String> {
+        type MsiEnumRelatedProductsWFn =
+            unsafe extern "system" fn(*const u16, u32, u32, *mut u16) -> u32;
+        unsafe {
+            let h_msi = LoadLibraryA(b"msi.dll\0".as_ptr());
+            if h_msi.is_null() {
+                return None;
+            }
+            let proc = GetProcAddress(h_msi, b"MsiEnumRelatedProductsW\0".as_ptr());
+            let mut found = None;
+            if !proc.is_null() {
+                let enum_fn: MsiEnumRelatedProductsWFn = std::mem::transmute(proc);
+                let upgrade_code = to_wide("{7630B84C-95F6-58D0-8C30-969D061C38B0}");
+                let mut prod_buf = [0u16; 40];
+                if enum_fn(upgrade_code.as_ptr(), 0, 0, prod_buf.as_mut_ptr()) == 0 {
+                    let end = prod_buf.iter().position(|&c| c == 0).unwrap_or(prod_buf.len());
+                    let code = String::from_utf16_lossy(&prod_buf[..end]).trim().to_string();
+                    if !code.is_empty() {
+                        found = Some(code);
+                    }
+                }
+            }
+            let _ = FreeLibrary(h_msi);
+            found
+        }
+    }
+
     pub fn acquire_single_instance_or_wake(wake_existing: bool) -> Option<isize> {
         const ERROR_ALREADY_EXISTS: u32 = 183;
         const EVENT_MODIFY_STATE: u32 = 0x0002;
@@ -2839,6 +2894,9 @@ pub fn resolve_runtime_root_fresh() -> PathBuf {
             return manifest_dir;
         }
     }
+
+    // Clean up any leftover .exe.old or stale ugm_update_* temp staging folders from a prior self-update
+    cleanup_stale_update_artifacts();
 
     // Portable or installed bundle with UltraGamingMode.ps1 beside UltraGamingMode.exe
     if let Ok(exe) = std::env::current_exe() {
@@ -5062,7 +5120,7 @@ pub fn parse_github_release_json(
         .collect::<String>();
 
     let mut exe_setup: Option<(String, String, Option<u64>)> = None;
-    let mut exe_any: Option<(String, String, Option<u64>)> = None;
+    let mut exe_portable: Option<(String, String, Option<u64>)> = None;
     let mut msi_any: Option<(String, String, Option<u64>)> = None;
     let mut checksum_url: Option<String> = None;
 
@@ -5086,8 +5144,8 @@ pub fn parse_github_release_json(
             } else if lower.ends_with(".exe") {
                 if lower.contains("setup") && exe_setup.is_none() {
                     exe_setup = Some((url.to_string(), name.to_string(), size));
-                } else if exe_any.is_none() {
-                    exe_any = Some((url.to_string(), name.to_string(), size));
+                } else if !lower.contains("setup") && exe_portable.is_none() {
+                    exe_portable = Some((url.to_string(), name.to_string(), size));
                 }
             } else if lower.ends_with(".msi") && msi_any.is_none() {
                 msi_any = Some((url.to_string(), name.to_string(), size));
@@ -5095,7 +5153,14 @@ pub fn parse_github_release_json(
         }
     }
 
-    let chosen = exe_setup.or(exe_any).or(msi_any);
+    let setup_url = exe_setup.as_ref().map(|(u, _, _)| u.clone());
+    let setup_size_bytes = exe_setup.as_ref().and_then(|(_, _, s)| *s);
+    let msi_url = msi_any.as_ref().map(|(u, _, _)| u.clone());
+    let msi_size_bytes = msi_any.as_ref().and_then(|(_, _, s)| *s);
+    let portable_url = exe_portable.as_ref().map(|(u, _, _)| u.clone());
+    let portable_size_bytes = exe_portable.as_ref().and_then(|(_, _, s)| *s);
+
+    let chosen = exe_setup.or(exe_portable).or(msi_any);
     let (installer_url, installer_name, size_bytes) = match chosen {
         Some((u, n, s)) => (Some(u), Some(n), s),
         None => (None, None, None),
@@ -5112,6 +5177,12 @@ pub fn parse_github_release_json(
         installer_name,
         checksum_url,
         size_bytes,
+        setup_url,
+        setup_size_bytes,
+        msi_url,
+        msi_size_bytes,
+        portable_url,
+        portable_size_bytes,
     })
 }
 
@@ -5235,6 +5306,14 @@ pub fn resolve_latest_release_via_redirect(current_version: &str) -> Result<Upda
         .filter(|s| !s.is_empty() && parse_semver_tuple(s).is_some())
         .ok_or_else(|| "Не удалось определить тег последнего релиза на GitHub.".to_string())?;
     let clean_ver = tag.trim_start_matches(['v', 'V']).to_string();
+    let dl_base = format!(
+        "https://github.com/{}/releases/download/{}",
+        GITHUB_REPO, tag
+    );
+    let setup_url = Some(format!("{}/UltraGamingMode-Setup.exe", dl_base));
+    let msi_url = Some(format!("{}/UltraGamingMode.msi", dl_base));
+    let portable_url = Some(format!("{}/UltraGamingMode.exe", dl_base));
+    let checksum_url = Some(format!("{}/SHA256SUMS.txt", dl_base));
     Ok(UpdateInfo {
         current_version: current_version.to_string(),
         latest_version: clean_ver.clone(),
@@ -5242,11 +5321,417 @@ pub fn resolve_latest_release_via_redirect(current_version: &str) -> Result<Upda
         release_url: effective,
         published_at: None,
         release_notes: "Подробности изменений доступны на странице релиза GitHub (API временно ограничен по лимиту).".to_string(),
-        installer_url: None,
-        installer_name: None,
-        checksum_url: None,
+        installer_url: setup_url.clone(),
+        installer_name: Some("UltraGamingMode-Setup.exe".to_string()),
+        checksum_url,
         size_bytes: None,
+        setup_url,
+        setup_size_bytes: None,
+        msi_url,
+        msi_size_bytes: None,
+        portable_url,
+        portable_size_bytes: None,
     })
+}
+
+pub fn clean_win_path(p: &Path) -> PathBuf {
+    let raw = p.to_string_lossy();
+    if let Some(stripped) = raw.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        p.to_path_buf()
+    }
+}
+
+fn norm_dir_key(p: &Path) -> String {
+    clean_win_path(p)
+        .to_string_lossy()
+        .trim()
+        .trim_matches('"')
+        .trim_end_matches(['\\', '/'])
+        .replace('/', "\\")
+        .to_lowercase()
+}
+
+pub fn detect_install_kind_with(
+    exe_path: &Path,
+    nsis_reg_install_dir: Option<&str>,
+    msi_installed: bool,
+    program_files_dir: Option<&str>,
+) -> InstallKind {
+    let cleaned_exe = clean_win_path(exe_path);
+    let Some(exe_dir) = cleaned_exe.parent() else {
+        return InstallKind::Portable;
+    };
+    if exe_dir.join("Uninstall.exe").is_file() {
+        return InstallKind::NsisSetup;
+    }
+    let exe_dir_key = norm_dir_key(exe_dir);
+    if let Some(nsis_dir) = nsis_reg_install_dir {
+        let trimmed = nsis_dir.trim().trim_matches('"');
+        if !trimmed.is_empty() && norm_dir_key(Path::new(trimmed)) == exe_dir_key {
+            return InstallKind::NsisSetup;
+        }
+    }
+    if msi_installed {
+        let pf = program_files_dir
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(r"C:\Program Files");
+        let default_msi_dir = Path::new(pf).join("UltraGamingMode");
+        if norm_dir_key(&default_msi_dir) == exe_dir_key {
+            return InstallKind::WixMsi;
+        }
+    }
+    InstallKind::Portable
+}
+
+pub fn detect_install_kind_for_exe(exe_path: &Path) -> InstallKind {
+    #[cfg(target_os = "windows")]
+    {
+        let nsis_dir = win_hw::read_reg_string(
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\UltraGamingMode",
+            "InstallLocation",
+        );
+        let msi_installed = win_hw::query_installed_msi_product_code().is_some();
+        let pf = std::env::var("ProgramW6432")
+            .ok()
+            .or_else(|| std::env::var("ProgramFiles").ok());
+        detect_install_kind_with(
+            exe_path,
+            nsis_dir.as_deref(),
+            msi_installed,
+            pf.as_deref(),
+        )
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        detect_install_kind_with(exe_path, None, false, None)
+    }
+}
+
+pub fn select_update_target_for_kind(
+    info: &UpdateInfo,
+    kind: InstallKind,
+) -> Result<(String, String, String, Option<u64>), String> {
+    let checksum_url = info.checksum_url.clone().ok_or_else(|| {
+        "В релизе отсутствует SHA256SUMS.txt — автоматическая установка отменена для защиты целостности."
+            .to_string()
+    })?;
+    match kind {
+        InstallKind::NsisSetup => {
+            let url = info.setup_url.clone().ok_or_else(|| {
+                "В релизе не найден пакет обновления UltraGamingMode-Setup.exe.".to_string()
+            })?;
+            Ok((
+                url,
+                "UltraGamingMode-Setup.exe".to_string(),
+                checksum_url,
+                info.setup_size_bytes,
+            ))
+        }
+        InstallKind::WixMsi => {
+            let url = info.msi_url.clone().ok_or_else(|| {
+                "В релизе не найден пакет обновления UltraGamingMode.msi.".to_string()
+            })?;
+            Ok((
+                url,
+                "UltraGamingMode.msi".to_string(),
+                checksum_url,
+                info.msi_size_bytes,
+            ))
+        }
+        InstallKind::Portable => {
+            let url = info.portable_url.clone().ok_or_else(|| {
+                "В релизе не найден портативный бинарник UltraGamingMode.exe.".to_string()
+            })?;
+            Ok((
+                url,
+                "UltraGamingMode.exe".to_string(),
+                checksum_url,
+                info.portable_size_bytes,
+            ))
+        }
+    }
+}
+
+pub fn cleanup_stale_update_artifacts() {
+    if let Ok(exe) = std::env::current_exe() {
+        let cleaned = clean_win_path(&exe);
+        if let Some(fname) = cleaned.file_name().and_then(|n| n.to_str()) {
+            let old_bak = cleaned.with_file_name(format!("{}.old", fname));
+            if old_bak.exists() {
+                let _ = std::fs::remove_file(&old_bak);
+            }
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        let cutoff = std::time::Duration::from_secs(30 * 60);
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if name
+                .to_str()
+                .map(|s| s.starts_with("ugm_update_"))
+                .unwrap_or(false)
+            {
+                let is_stale = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.elapsed().ok())
+                    .map(|age| age > cutoff)
+                    .unwrap_or(false);
+                if is_stale {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+    }
+}
+
+pub fn build_update_applier_script() -> &'static str {
+    concat!(
+        "$ErrorActionPreference = 'Stop'\n",
+        "$waitPid   = 0\n",
+        "[void][int]::TryParse($env:UGM_UPD_PID, [ref]$waitPid)\n",
+        "$mode      = $env:UGM_UPD_MODE\n",
+        "$pkg       = $env:UGM_UPD_PKG\n",
+        "$targetExe = $env:UGM_UPD_TARGET_EXE\n",
+        "$stageDir  = $env:UGM_UPD_STAGE_DIR\n",
+        "$noRelaunch = ($env:UGM_UPD_NO_RELAUNCH -eq '1')\n",
+        "$targetDir = Split-Path -Parent $targetExe\n",
+        "\n",
+        "if ($waitPid -gt 0) {\n",
+        "    for ($i = 0; $i -lt 60; $i++) {\n",
+        "        $proc = Get-Process -Id $waitPid -ErrorAction SilentlyContinue\n",
+        "        if ($null -eq $proc) { break }\n",
+        "        Start-Sleep -Milliseconds 250\n",
+        "    }\n",
+        "    Start-Sleep -Milliseconds 250\n",
+        "}\n",
+        "\n",
+        "$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)\n",
+        "\n",
+        "try {\n",
+        "    if ($mode -eq 'portable') {\n",
+        "        $bak = \"$targetExe.old\"\n",
+        "        if (Test-Path -LiteralPath $bak) {\n",
+        "            Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue\n",
+        "        }\n",
+        "        if (Test-Path -LiteralPath $targetExe) {\n",
+        "            Move-Item -LiteralPath $targetExe -Destination $bak -Force\n",
+        "        }\n",
+        "        try {\n",
+        "            Copy-Item -LiteralPath $pkg -Destination $targetExe -Force\n",
+        "            if (Test-Path -LiteralPath $bak) {\n",
+        "                Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue\n",
+        "            }\n",
+        "        } catch {\n",
+        "            if ((-not (Test-Path -LiteralPath $targetExe)) -and (Test-Path -LiteralPath $bak)) {\n",
+        "                Move-Item -LiteralPath $bak -Destination $targetExe -Force -ErrorAction SilentlyContinue\n",
+        "            }\n",
+        "            throw\n",
+        "        }\n",
+        "    } elseif ($mode -eq 'nsis') {\n",
+        "        $argStr = \"/S /D=$targetDir\"\n",
+        "        if ($isAdmin) {\n",
+        "            [void](Start-Process -FilePath $pkg -ArgumentList $argStr -Wait -PassThru)\n",
+        "        } else {\n",
+        "            [void](Start-Process -FilePath $pkg -ArgumentList $argStr -Verb RunAs -Wait -PassThru)\n",
+        "        }\n",
+        "    } elseif ($mode -eq 'msi') {\n",
+        "        $msiExe = Join-Path $env:SystemRoot 'System32\\msiexec.exe'\n",
+        "        if ($isAdmin) {\n",
+        "            [void](Start-Process -FilePath $msiExe -ArgumentList @('/i', \"`\"$pkg`\"\", '/qn', 'REBOOT=ReallySuppress') -Wait -PassThru)\n",
+        "        } else {\n",
+        "            [void](Start-Process -FilePath $msiExe -ArgumentList @('/i', \"`\"$pkg`\"\", '/passive', 'REBOOT=ReallySuppress') -Verb RunAs -Wait -PassThru)\n",
+        "        }\n",
+        "    }\n",
+        "} catch {\n",
+        "}\n",
+        "\n",
+        "if ((-not $noRelaunch) -and (Test-Path -LiteralPath $targetExe)) {\n",
+        "    try {\n",
+        "        [void](Start-Process -FilePath $targetExe -WorkingDirectory $targetDir)\n",
+        "    } catch {}\n",
+        "}\n",
+        "\n",
+        "if (-not [string]::IsNullOrWhiteSpace($pkg) -and (Test-Path -LiteralPath $pkg)) {\n",
+        "    Remove-Item -LiteralPath $pkg -Force -ErrorAction SilentlyContinue\n",
+        "}\n",
+        "if (-not [string]::IsNullOrWhiteSpace($stageDir) -and (Test-Path -LiteralPath $stageDir)) {\n",
+        "    Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue\n",
+        "}\n"
+    )
+}
+
+pub fn prepare_verified_update_sync<F>(
+    cached_info: Option<UpdateInfo>,
+    mut on_progress: F,
+) -> Result<PreparedUpdate, String>
+where
+    F: FnMut(&str),
+{
+    let raw_exe = std::env::current_exe()
+        .map_err(|e| format!("Не удалось определить путь текущего исполняемого файла: {}", e))?;
+    let target_exe = clean_win_path(&raw_exe);
+    let kind = detect_install_kind_for_exe(&target_exe);
+
+    if kind == InstallKind::Portable {
+        let Some(exe_dir) = target_exe.parent() else {
+            return Err("Не удалось определить каталог установки программы.".to_string());
+        };
+        if !is_dir_writable(exe_dir) {
+            return Err(
+                "Папка с программой недоступна для записи. Переместите UltraGamingMode.exe в доступную папку или запустите от имени администратора."
+                    .to_string(),
+            );
+        }
+    }
+
+    let info = match cached_info.filter(|c| c.has_update && c.checksum_url.is_some()) {
+        Some(c) => c,
+        None => {
+            on_progress("Получение метаданных релиза…");
+            check_for_updates_sync()?
+        }
+    };
+
+    if !info.has_update || !is_newer_version(&info.latest_version, APP_VERSION) {
+        return Err(format!(
+            "Установлена актуальная версия v{} — обновление не требуется.",
+            APP_VERSION
+        ));
+    }
+
+    let (asset_url, asset_name, checksum_url, expected_size) =
+        select_update_target_for_kind(&info, kind)?;
+    validate_release_update_urls(&asset_url, &checksum_url, &asset_name, APP_VERSION)?;
+
+    on_progress("Загрузка контрольных сумм SHA-256…");
+    let manifest_text = http_get_text_github(&checksum_url, "20")?;
+
+    let safe_ver: String = info
+        .latest_version
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        .collect();
+    let stage_dir = std::env::temp_dir().join(format!(
+        "ugm_update_{}_{}",
+        if safe_ver.is_empty() { "next" } else { &safe_ver },
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&stage_dir);
+    std::fs::create_dir_all(&stage_dir)
+        .map_err(|e| format!("Не удалось создать временный каталог обновления: {}", e))?;
+
+    let dl_label = match expected_size {
+        Some(sz) if sz > 0 => format!(
+            "Скачивание {} ({:.1} МБ)…",
+            asset_name,
+            sz as f64 / (1024.0 * 1024.0)
+        ),
+        _ => format!("Скачивание {}…", asset_name),
+    };
+    on_progress(&dl_label);
+
+    let part_path = stage_dir.join(format!("{}.part", asset_name));
+    if let Err(e) = http_download_file_github(&asset_url, &part_path) {
+        let _ = std::fs::remove_dir_all(&stage_dir);
+        return Err(e);
+    }
+
+    on_progress("Проверка контрольной суммы SHA-256…");
+    let file_bytes = match std::fs::read(&part_path) {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&stage_dir);
+            return Err(format!("Не удалось прочитать скачанный пакет обновления: {}", e));
+        }
+    };
+
+    if file_bytes.len() < 512 * 1024 {
+        let _ = std::fs::remove_dir_all(&stage_dir);
+        return Err("Скачанный файл обновления повреждён или неполный (слишком малый размер).".to_string());
+    }
+    if let Some(exp_sz) = expected_size {
+        if exp_sz > 0 && file_bytes.len() as u64 != exp_sz {
+            let _ = std::fs::remove_dir_all(&stage_dir);
+            return Err(format!(
+                "Размер скачанного файла ({} байт) не совпадает с ожидаемым ({} байт).",
+                file_bytes.len(),
+                exp_sz
+            ));
+        }
+    }
+
+    let valid_magic = if asset_name.to_ascii_lowercase().ends_with(".msi") {
+        file_bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
+    } else {
+        file_bytes.starts_with(b"MZ")
+    };
+    if !valid_magic {
+        let _ = std::fs::remove_dir_all(&stage_dir);
+        return Err("Скачанный пакет не прошёл проверку сигнатуры исполняемого файла.".to_string());
+    }
+
+    if let Err(e) = verify_sha256_manifest(&manifest_text, &asset_name, &file_bytes) {
+        let _ = std::fs::remove_dir_all(&stage_dir);
+        return Err(e);
+    }
+
+    let package_path = stage_dir.join(&asset_name);
+    if let Err(e) = std::fs::rename(&part_path, &package_path) {
+        let _ = std::fs::remove_dir_all(&stage_dir);
+        return Err(format!("Не удалось подготовить проверенный пакет обновления: {}", e));
+    }
+
+    Ok(PreparedUpdate {
+        latest_version: info.latest_version,
+        kind,
+        stage_dir,
+        package_path,
+        target_exe,
+    })
+}
+
+pub fn spawn_detached_update_applier(prepared: &PreparedUpdate) -> Result<(), String> {
+    let script_path = prepared.stage_dir.join("apply_update.ps1");
+    std::fs::write(&script_path, build_update_applier_script().as_bytes())
+        .map_err(|e| format!("Не удалось записать сценарий применения обновления: {}", e))?;
+
+    let mode_str = match prepared.kind {
+        InstallKind::Portable => "portable",
+        InstallKind::NsisSetup => "nsis",
+        InstallKind::WixMsi => "msi",
+    };
+
+    let ps_exe = resolve_powershell_exe();
+    let mut cmd = Command::new(&ps_exe);
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+    ])
+    .arg(&script_path)
+    .env("UGM_UPD_PID", std::process::id().to_string())
+    .env("UGM_UPD_MODE", mode_str)
+    .env("UGM_UPD_PKG", &prepared.package_path)
+    .env("UGM_UPD_TARGET_EXE", &prepared.target_exe)
+    .env("UGM_UPD_STAGE_DIR", &prepared.stage_dir);
+
+    #[cfg(target_os = "windows")]
+    {
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
+    }
+
+    cmd.spawn()
+        .map_err(|e| format!("Не удалось запустить фоновый процесс обновления: {}", e))?;
+    Ok(())
 }
 
 pub fn check_for_updates_sync() -> Result<UpdateInfo, String> {
@@ -7365,6 +7850,186 @@ mod tests {
                 r"Local\UltraGamingMode_WakeWindow_v3".to_string()
             )
         );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_install_kind_detection_asset_selection_sha256_and_portable_applier() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ugm_updater_unit_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let nsis_dir = tmp.join("nsis_install");
+        let mock_pf = tmp.join("mock_program_files");
+        let msi_dir = mock_pf.join("UltraGamingMode");
+        let port_dir = tmp.join("portable_usb");
+        std::fs::create_dir_all(&nsis_dir).unwrap();
+        std::fs::create_dir_all(&msi_dir).unwrap();
+        std::fs::create_dir_all(&port_dir).unwrap();
+        std::fs::write(nsis_dir.join("Uninstall.exe"), b"MZ_uninst").unwrap();
+
+        // 1. InstallKind detection across NSIS, WiX MSI, and Portable
+        assert_eq!(
+            detect_install_kind_with(&nsis_dir.join("UltraGamingMode.exe"), None, false, None),
+            InstallKind::NsisSetup,
+            "Directory with Uninstall.exe must be detected as NsisSetup"
+        );
+        assert_eq!(
+            detect_install_kind_with(
+                Path::new(r"\\?\D:\Games\UGM\UltraGamingMode.exe"),
+                Some(r"D:\Games\UGM\"),
+                false,
+                None
+            ),
+            InstallKind::NsisSetup,
+            "Directory matching HKLM InstallLocation must be detected as NsisSetup even with \\\\?\\ prefix"
+        );
+        assert_eq!(
+            detect_install_kind_with(
+                &msi_dir.join("UltraGamingMode.exe"),
+                None,
+                true,
+                mock_pf.to_str()
+            ),
+            InstallKind::WixMsi,
+            "Program Files install with active MSI UpgradeCode and no Uninstall.exe must be WixMsi"
+        );
+        assert_eq!(
+            detect_install_kind_with(
+                &port_dir.join("UltraGamingMode.exe"),
+                mock_pf.join("UltraGamingMode").to_str(),
+                true,
+                mock_pf.to_str()
+            ),
+            InstallKind::Portable,
+            "Standalone portable directory must stay Portable even when NSIS/MSI is installed in Program Files"
+        );
+
+        // 2. GitHub release JSON parsing & per-kind asset selection
+        let sample_json = r#"{
+            "tag_name": "v9.9.0",
+            "html_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v9.9.0",
+            "published_at": "2026-11-27T08:00:00Z",
+            "body": "- One-click verified updater",
+            "assets": [
+                {
+                    "name": "SHA256SUMS.txt",
+                    "browser_download_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v9.9.0/SHA256SUMS.txt",
+                    "size": 267
+                },
+                {
+                    "name": "UltraGamingMode-Setup.exe",
+                    "browser_download_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v9.9.0/UltraGamingMode-Setup.exe",
+                    "size": 6238161
+                },
+                {
+                    "name": "UltraGamingMode.msi",
+                    "browser_download_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v9.9.0/UltraGamingMode.msi",
+                    "size": 7249920
+                },
+                {
+                    "name": "UltraGamingMode.exe",
+                    "browser_download_url": "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v9.9.0/UltraGamingMode.exe",
+                    "size": 20235776
+                }
+            ]
+        }"#;
+        let info = parse_github_release_json(sample_json, "4.1.0").expect("parse release json");
+        assert!(info.has_update);
+        assert_eq!(info.latest_version, "9.9.0");
+
+        let (u_nsis, f_nsis, c_nsis, sz_nsis) =
+            select_update_target_for_kind(&info, InstallKind::NsisSetup).unwrap();
+        assert_eq!(f_nsis, "UltraGamingMode-Setup.exe");
+        assert_eq!(sz_nsis, Some(6238161));
+        validate_release_update_urls(&u_nsis, &c_nsis, &f_nsis, "4.1.0").unwrap();
+
+        let (u_msi, f_msi, c_msi, sz_msi) =
+            select_update_target_for_kind(&info, InstallKind::WixMsi).unwrap();
+        assert_eq!(f_msi, "UltraGamingMode.msi");
+        assert_eq!(sz_msi, Some(7249920));
+        validate_release_update_urls(&u_msi, &c_msi, &f_msi, "4.1.0").unwrap();
+
+        let (u_port, f_port, c_port, sz_port) =
+            select_update_target_for_kind(&info, InstallKind::Portable).unwrap();
+        assert_eq!(f_port, "UltraGamingMode.exe");
+        assert_eq!(sz_port, Some(20235776));
+        validate_release_update_urls(&u_port, &c_port, &f_port, "4.1.0").unwrap();
+
+        // Downgrade & untrusted host rejection
+        assert!(validate_release_update_urls(&u_port, &c_port, &f_port, "9.9.0").is_err());
+        assert!(validate_release_update_urls(
+            "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/download/v9.9.0/UltraGamingMode.exe",
+            &c_port,
+            &f_port,
+            "4.1.0"
+        )
+        .is_err());
+
+        // SHA-256 verification accepts exact bytes and rejects 1-bit tamper
+        let payload = b"MZ_verified_binary_payload";
+        let digest = sha256_hex(payload);
+        let manifest = format!("{}  UltraGamingMode.exe\n", digest);
+        assert!(verify_sha256_manifest(&manifest, "UltraGamingMode.exe", payload).is_ok());
+        assert!(verify_sha256_manifest(&manifest, "UltraGamingMode.exe", b"MZ_tampered").is_err());
+        assert!(verify_sha256_manifest(&manifest, "UltraGamingMode.msi", payload).is_err());
+
+        // 3. End-to-end sandboxed portable binary replacement via build_update_applier_script()
+        #[cfg(target_os = "windows")]
+        {
+            let stage_dir = tmp.join("ugm_update_9.9.0_test");
+            std::fs::create_dir_all(&stage_dir).unwrap();
+            let script_file = stage_dir.join("apply_update.ps1");
+            std::fs::write(&script_file, build_update_applier_script().as_bytes()).unwrap();
+
+            let target_exe = port_dir.join("UltraGamingMode.exe");
+            let pkg_exe = stage_dir.join("UltraGamingMode.exe");
+            std::fs::write(&target_exe, b"MZ_OLD_V401").unwrap();
+            std::fs::write(&pkg_exe, b"MZ_NEW_V410").unwrap();
+
+            let ps_exe = resolve_powershell_exe();
+            let mut cmd = Command::new(&ps_exe);
+            cmd.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ])
+            .arg(&script_file)
+            .env("UGM_UPD_PID", "0")
+            .env("UGM_UPD_MODE", "portable")
+            .env("UGM_UPD_PKG", &pkg_exe)
+            .env("UGM_UPD_TARGET_EXE", &target_exe)
+            .env("UGM_UPD_STAGE_DIR", &stage_dir)
+            .env("UGM_UPD_NO_RELAUNCH", "1")
+            .creation_flags(CREATE_NO_WINDOW);
+            let out = cmd.output().expect("run apply_update.ps1 in sandbox");
+            assert!(
+                out.status.success(),
+                "apply_update.ps1 exited with {:?}: {}",
+                out.status.code(),
+                decode_powershell_output(&out.stderr)
+            );
+            assert_eq!(
+                std::fs::read(&target_exe).unwrap(),
+                b"MZ_NEW_V410",
+                "Portable binary must be atomically replaced with verified package"
+            );
+            assert!(
+                !port_dir.join("UltraGamingMode.exe.old").exists(),
+                "Temporary .exe.old backup must be cleaned up after successful swap"
+            );
+            assert!(
+                !stage_dir.exists(),
+                "Staging directory must self-clean after applying update"
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

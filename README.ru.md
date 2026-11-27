@@ -1,12 +1,12 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode для Windows 11
-### *Нативное Rust + Slint приложение · Плавность AAA · Портативное универсальное издание (v4.0.1)*
+### *Нативное Rust + Slint приложение · Плавность AAA · Портативное универсальное издание (v4.1.0)*
 
 **Высокоточный оптимизатор задержек ввода (input latency), фреймтайма и аппаратных прерываний с нулевым риском для Windows 10 и 11.**  
 Построен на **нативном Rust + Slint 1.19.0 GUI** (безрамочное окно `960×680`, Windows DWM Dark Mode и скругление рамки, `Segoe UI Variable Text` + `Cascadia Code`, без WebView2) и нативном движке **Win32 / PowerShell AAA** — с **дизайн-пакетом из 8 тем (5 тёмных + 3 светлых)**, единым игровым конвейером AAA и аккуратным русским интерфейсом, двухрежимным управлением службами и процессами с подсказками безопасности, нативным системным треем (`tray-icon`), портативным запуском **`UltraGamingMode.exe`**, автофиксацией таймера `0.500 мс`, умной фоновой автоочисткой ОЗУ, защитой **Zapret / WinDivert / `winws`** и 100% отказоустойчивым сторожем `HKLM\RunOnce`.
 
-[![Версия](https://img.shields.io/badge/Релиз-v4.0.1-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
+[![Версия](https://img.shields.io/badge/Релиз-v4.1.0-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
 [![Платформа](https://img.shields.io/badge/Windows-11%20%7C%2010%20(x64)-2563EB?style=for-the-badge&logo=windows&logoColor=white&labelColor=0F172A)](https://www.microsoft.com/windows)
 [![Стек](https://img.shields.io/badge/GUI-Rust%20%2B%20Slint-3B82F6?style=for-the-badge&logo=rust&logoColor=white&labelColor=0F172A)](#вариант-а-нативное-десктопное-приложение-gui-v400---рекомендуется)
 [![Сторож](https://img.shields.io/badge/Fail--Safe-HKLM%20RunOnce-10B981?style=for-the-badge&labelColor=0F172A)](#гарантия-безопасности-и-fail-safe-сторож)
@@ -31,7 +31,8 @@
 | • **Нативный Rust + Slint 1.19.0** (`960×680`, без WebView2, DWM Dark Mode)<br>• **Нативный трей**: закрытие `[×]` выгружает окно Slint и оставляет только лёгкий `tray-icon` + `muda`<br>• **8 тем оформления** (5 тёмных + 3 светлых, сетка 4×2 + умный тумблер в шапке)<br>• **Портативный `UltraGamingMode.exe`** со встроенными ассетами + SHA-256 обновление | • **Автофиксация таймера `0.500 мс`** в игре (`NtSetTimerResolution`)<br>• **MSI Mode для GPU и сетевых карт** (`DevicePriority = 3`)<br>• **Winsock AFD 64 КБ Fast-Path** и отключение Нагла<br>• **AAA-очередь ввода** (`100` пакетов, защитный порог `>= 32`, 8000 Гц) | • **Распарковка ядер ЦП** (`CPMINCORES 100`) и Low-Core Guard (`<= 4` потоков)<br>• **Профили GPU** (AMD ULPS/DXNAVI, NVIDIA Per-Core DPC, Intel Arc, AAA Flip Model + HDR/OBS)<br>• **Low-RAM Guard (8 ГБ)** + нативная очистка Standby-кэша ядра<br>• **100% защита механических HDD** от фризов | • Полный снимок состояния в `Backups\active_state.json`<br>• Автономный сторож ядра `HKLM\RunOnce` (`*UltraGamingModeRestore`)<br>• **95 защищённых служб** (`FACEIT`, `vgk`, `EAC`, `zapret`, `WinDivert`, `camsvc`, `PrtSc`)<br>• Ремонт DisplayPort и микрофона в 1 клик |
 
 > [!TIP]
-> **Что нового в v4.0.1 (поверх v4.0.0):**
+> **Что нового в v4.1.0 (поверх v4.0.1 / v4.0.0):**
+> - **Установка обновлений в 1 клик прямо из приложения с проверкой SHA-256 (`v4.1.0`):** Фоновая автопроверка релизов, быстрая кнопка «Обновить до vX.Y.Z» в шапке окна и в карточке обновлений, автоматический выбор нужного пакета (`Setup.exe`, `.msi` или портативный `UltraGamingMode.exe`), криптографическая сверка `SHA256SUMS.txt` до запуска, сохранение `Config/*.json` и автоматический перезапуск.
 > - **Усиленные установщики NSIS и WiX (`v4.0.1`):** Гарантированное закрытие повышенного и фонового процесса в трее при обновлении, автоматическое удаление старых ярлыков в корне меню «Пуск» и задач Планировщика при удалении, взаимная проверка NSIS↔MSI с сохранением `Config/*.json` и установка классовых иконок окна `GCLP_HICON`.
 > - **Асинхронный UI без задержек и отказоустойчивый трей (`v4.0.1`):** Фоновая загрузка списков процессов, служб, автозапуска и очистки ОЗУ из трея, автоповтор инициализации трея на раннем входе в Windows, безопасное ограничение UTF-16 подсказок трея, ловушка фокуса `Tab` в модальных диалогах, локальное время в журнале событий и сохранение полных отчётов диагностики в `Backups\verify-*.log`.
 > - **Нативный Rust + Slint 1.19.0 GUI без WebView2 (`v4.0.0`):** Чистое нативное десктопное приложение на Rust + Slint (`960×680`, минимум `860×600`) без браузерных движков, с синхронизацией системной рамки и скругления Windows DWM (`DwmSetWindowAttribute`), аккуратной типографикой Windows (`Segoe UI Variable Text` + `Cascadia Code` с фоллбэком `Segoe UI` / `Consolas` на Windows 10), нативным треем (`tray-icon` + `muda`) и портативным запуском `UltraGamingMode.exe` со встроенными скриптами и конфигами (`EMBEDDED_RUNTIME_ASSETS`).
@@ -612,7 +613,7 @@ Ultra Gaming Mode v4.0.0 собирается на **чистом инструм
 cargo build --release
 
 # Или полная сборка релизных артефактов и SHA256SUMS.txt в каталог .bin/
-.\Build-Release.ps1 -Tag v4.0.1
+.\Build-Release.ps1 -Tag v4.1.0
 ```
 
 ---
