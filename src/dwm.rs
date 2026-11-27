@@ -14,6 +14,8 @@ pub const SM_CXICON: i32 = 11;
 pub const SM_CYICON: i32 = 12;
 pub const SM_CXSMICON: i32 = 49;
 pub const SM_CYSMICON: i32 = 50;
+pub const GCLP_HICON: i32 = -14;
+pub const GCLP_HICONSM: i32 = -34;
 
 #[cfg(target_os = "windows")]
 #[link(name = "dwmapi")]
@@ -45,6 +47,22 @@ extern "system" {
         fu_load: u32,
     ) -> isize;
     fn SendMessageW(hwnd: isize, msg: u32, w_param: usize, l_param: isize) -> isize;
+    #[cfg(target_pointer_width = "64")]
+    fn SetClassLongPtrW(hwnd: isize, n_index: i32, dw_new_long: isize) -> usize;
+    #[cfg(target_pointer_width = "32")]
+    fn SetClassLongW(hwnd: isize, n_index: i32, dw_new_long: i32) -> u32;
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn set_window_class_icon(hwnd: isize, n_index: i32, hicon: isize) {
+    #[cfg(target_pointer_width = "64")]
+    {
+        let _ = SetClassLongPtrW(hwnd, n_index, hicon);
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        let _ = SetClassLongW(hwnd, n_index, hicon as i32);
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -69,10 +87,12 @@ pub fn apply_window_icon_from_exe_resource(hwnd: isize) -> bool {
         let mut applied = false;
         if hicon_big != 0 {
             let _ = SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big);
+            set_window_class_icon(hwnd, GCLP_HICON, hicon_big);
             applied = true;
         }
         if hicon_small != 0 {
             let _ = SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small);
+            set_window_class_icon(hwnd, GCLP_HICONSM, hicon_small);
             applied = true;
         }
         applied

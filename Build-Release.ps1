@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Automated build and release packaging orchestrator for Ultra Gaming Mode v4.0.0.
+    Automated build and release packaging orchestrator for Ultra Gaming Mode v4.0.1.
     Terminates running instances, compiles native Rust/Slint release via cargo build --release,
     populates .bin/UltraGamingMode.exe and root UltraGamingMode.exe, packages native
     UltraGamingMode-Setup.exe (NSIS) and UltraGamingMode.msi (WiX), and writes SHA256SUMS.txt.
@@ -9,7 +9,7 @@
 param(
     [switch]$SkipBuild,
     [switch]$CreateGhRelease,
-    [string]$Tag = "v4.0.0"
+    [string]$Tag = "v4.0.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,7 +29,7 @@ if (-not (Test-Path $binDir)) {
 
 $cleanVersion = ($Tag -replace '^[vV]', '')
 if ($cleanVersion -notmatch '^\d+\.\d+\.\d+$') {
-    $cleanVersion = "4.0.0"
+    $cleanVersion = "4.0.1"
 }
 
 Write-Host "=====================================================" -ForegroundColor Cyan
@@ -142,11 +142,11 @@ if (Test-Path -LiteralPath $wxsScript) {
         $wixPdb = Join-Path $binDir "UltraGamingMode.wixpdb"
         Push-Location $installerDir
         try {
-            & $candle -nologo -arch x64 "-dAppVersion=$cleanVersion.0" -out $wixObj $wxsScript
+            & $candle -nologo -arch x64 -ext WixUtilExtension "-dAppVersion=$cleanVersion.0" -out $wixObj $wxsScript
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $wixObj)) {
                 throw "WiX candle.exe failed with exit code $LASTEXITCODE"
             }
-            & $light -nologo -ext WixUIExtension -spdb -sice:ICE61 -out $destMsi $wixObj
+            & $light -nologo -ext WixUIExtension -ext WixUtilExtension -spdb -sice:ICE61 -out $destMsi $wixObj
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $destMsi)) {
                 throw "WiX light.exe failed with exit code $LASTEXITCODE"
             }
@@ -187,9 +187,9 @@ if ($hashLines.Count -gt 0) {
 # 7. Optional GitHub Release creation/update
 if ($CreateGhRelease) {
     $notesList = [System.Collections.Generic.List[string]]::new()
-    $notesList.Add(([regex]::Unescape('- \u041f\u0435\u0440\u0435\u0445\u043e\u0434 \u043d\u0430 \u043f\u043e\u043b\u043d\u043e\u0441\u0442\u044c\u044e \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441 Rust \u0438 Slint \u0431\u0435\u0437 \u0432\u043d\u0435\u0448\u043d\u0438\u0445 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u043d\u044b\u0445 \u0434\u0432\u0438\u0436\u043a\u043e\u0432')))
-    $notesList.Add(([regex]::Unescape('- \u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u044b \u0432\u043e\u0441\u0435\u043c\u044c \u0442\u0435\u043c \u043e\u0444\u043e\u0440\u043c\u043b\u0435\u043d\u0438\u044f \u0441 \u043c\u0433\u043d\u043e\u0432\u0435\u043d\u043d\u044b\u043c \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435\u043c \u0438 \u0441\u0438\u043d\u0445\u0440\u043e\u043d\u0438\u0437\u0430\u0446\u0438\u0435\u0439 \u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043a\u0430 Windows')))
-    $notesList.Add(([regex]::Unescape('- \u0415\u0434\u0438\u043d\u044b\u0439 \u0438\u0433\u0440\u043e\u0432\u043e\u0439 \u043f\u0440\u043e\u0444\u0438\u043b\u044c AAA \u0441 \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0439 \u043e\u0447\u0438\u0441\u0442\u043a\u043e\u0439 \u043a\u044d\u0448\u0430 \u043f\u0430\u043c\u044f\u0442\u0438, \u0442\u0430\u0439\u043c\u0435\u0440\u043e\u043c 0.5 \u043c\u0441 \u0438 \u0437\u0430\u0449\u0438\u0442\u043e\u0439 Zapret')))
+    $notesList.Add(([regex]::Unescape('- \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u044b \u044f\u0440\u043b\u044b\u043a\u0438 \u043c\u0435\u043d\u044e \u041f\u0443\u0441\u043a, \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0449\u0438\u043a\u0438 Setup \u0438 MSI \u0438 \u043c\u0438\u0433\u0440\u0430\u0446\u0438\u044f \u043a\u043e\u043d\u0444\u0438\u0433\u043e\u0432')))
+    $notesList.Add(([regex]::Unescape('- \u0423\u0441\u043a\u043e\u0440\u0435\u043d\u0430 \u0430\u0441\u0438\u043d\u0445\u0440\u043e\u043d\u043d\u0430\u044f \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u043f\u0440\u043e\u0446\u0435\u0441\u0441\u043e\u0432, \u0441\u043b\u0443\u0436\u0431 \u0438 \u0440\u0430\u0431\u043e\u0442\u0430 \u0441\u0438\u0441\u0442\u0435\u043c\u043d\u043e\u0433\u043e \u0442\u0440\u0435\u044f')))
+    $notesList.Add(([regex]::Unescape('- \u0423\u043b\u0443\u0447\u0448\u0435\u043d\u044b \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0441\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433\u043e\u0432, \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0435 \u0432\u0440\u0435\u043c\u044f \u0436\u0443\u0440\u043d\u0430\u043b\u0430 \u0438 \u043e\u0442\u0447\u0435\u0442\u044b \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438')))
     $notesList.Add("")
     $notesList.Add(([regex]::Unescape('### \u0424\u0430\u0439\u043b\u044b \u0438 SHA-256')))
     foreach ($hl in $hashLines) {

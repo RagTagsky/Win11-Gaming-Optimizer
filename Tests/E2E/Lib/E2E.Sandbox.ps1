@@ -202,6 +202,14 @@ function New-SandboxedProcessStartInfo {
     $psi.Environment["TEMP"]            = $tmp
     $psi.Environment["TMP"]             = $tmp
 
+    $envParentLeaf = (Split-Path (Split-Path $EnvRoot -Parent) -Leaf) -replace '^ugm_e2e_\d+_', 'e2e_'
+    $envLeaf       = Split-Path $EnvRoot -Leaf
+    $rawNs         = ("{0}_{1}" -f $envParentLeaf, $envLeaf) -replace '[^A-Za-z0-9_-]', ''
+    if ($rawNs.Length -gt 48) { $rawNs = $rawNs.Substring($rawNs.Length - 48) }
+    if (-not [string]::IsNullOrWhiteSpace($rawNs)) {
+        $psi.Environment["UGM_INSTANCE_NAMESPACE"] = $rawNs
+    }
+
     if ($RequireRunAsInvoker -and -not (Test-IsElevatedAdmin)) {
         $psi.Environment["__COMPAT_LAYER"] = "RunAsInvoker"
     }

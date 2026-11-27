@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
   <?ifndef AppVersion ?>
-    <?define AppVersion = "4.0.0.0" ?>
+    <?define AppVersion = "4.0.1.0" ?>
   <?endif?>
 
   <Product
@@ -17,7 +18,7 @@
       Compressed="yes"
       InstallScope="perMachine"
       Platform="x64"
-      Description="Ultra Gaming Mode v4.0.0 Native Windows 11 Gaming Optimizer"
+      Description="Ultra Gaming Mode v4.0.1 Native Windows 11 Gaming Optimizer"
       Manufacturer="Ultra Gaming Mode Team" />
 
     <MajorUpgrade
@@ -25,6 +26,71 @@
       DowngradeErrorMessage="A newer version of Ultra Gaming Mode is already installed." />
 
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Property Id="NSIS_UNINSTALL_STRING">
+      <RegistrySearch
+        Id="FindNsisInstall"
+        Root="HKLM"
+        Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\UltraGamingMode"
+        Name="UninstallString"
+        Type="raw"
+        Win64="yes" />
+    </Property>
+
+    <Condition Message="Ultra Gaming Mode is already installed via the Setup (.exe) installer. Please uninstall the existing Setup version first or use UltraGamingMode-Setup.exe to upgrade.">
+      Installed OR NOT NSIS_UNINSTALL_STRING
+    </Condition>
+
+    <util:CloseApplication
+      Id="CloseUltraGamingMode"
+      Target="UltraGamingMode.exe"
+      CloseMessage="yes"
+      ElevatedCloseMessage="yes"
+      ElevatedEndSessionMessage="yes"
+      RebootPrompt="no"
+      TerminateProcess="0"
+      Timeout="2" />
+
+    <util:CloseApplication
+      Id="CloseLegacyUltraGamingMode"
+      Target="ultra-gaming-mode.exe"
+      CloseMessage="yes"
+      ElevatedCloseMessage="yes"
+      ElevatedEndSessionMessage="yes"
+      RebootPrompt="no"
+      TerminateProcess="0"
+      Timeout="1" />
+
+    <CustomAction
+      Id="SetStopRunningAppDeferred"
+      Property="StopRunningAppDeferred"
+      Value="&quot;[System64Folder]cmd.exe&quot; /c taskkill.exe /F /T /IM UltraGamingMode.exe &gt;nul 2&gt;&amp;1 &amp; taskkill.exe /F /T /IM ultra-gaming-mode.exe &gt;nul 2&gt;&amp;1 &amp; exit /b 0" />
+    <CustomAction
+      Id="StopRunningAppDeferred"
+      BinaryKey="WixCA"
+      DllEntry="WixQuietExec64"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore" />
+
+    <CustomAction
+      Id="SetCleanupScheduledTasksDeferred"
+      Property="CleanupScheduledTasksDeferred"
+      Value="&quot;[System64Folder]cmd.exe&quot; /c schtasks.exe /Delete /TN &quot;UltraGamingMode_AutoStart&quot; /F &gt;nul 2&gt;&amp;1 &amp; schtasks.exe /Delete /TN &quot;UltraGamingMode_BootTrigger&quot; /F &gt;nul 2&gt;&amp;1 &amp; schtasks.exe /Delete /TN &quot;UltraGamingMode_Watchdog&quot; /F &gt;nul 2&gt;&amp;1 &amp; exit /b 0" />
+    <CustomAction
+      Id="CleanupScheduledTasksDeferred"
+      BinaryKey="WixCA"
+      DllEntry="WixQuietExec64"
+      Execute="deferred"
+      Impersonate="no"
+      Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetStopRunningAppDeferred" Before="RemoveFiles" />
+      <Custom Action="StopRunningAppDeferred" After="SetStopRunningAppDeferred" />
+      <Custom Action="SetCleanupScheduledTasksDeferred" After="RemoveFiles">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="CleanupScheduledTasksDeferred" After="SetCleanupScheduledTasksDeferred">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+    </InstallExecuteSequence>
 
     <Icon Id="AppIcon.ico" SourceFile="..\assets\icons\icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
@@ -91,7 +157,10 @@
           Description="Ultra Gaming Mode - Windows 11 AAA Gaming Optimizer"
           Target="[INSTALLFOLDER]UltraGamingMode.exe"
           WorkingDirectory="INSTALLFOLDER"
-          Icon="AppIcon.ico" />
+          Icon="AppIcon.ico"
+          IconIndex="0" />
+        <RemoveFile Id="RemoveLegacyRootStartMenuShortcut" Directory="ProgramMenuFolder" Name="UltraGamingMode.lnk" On="both" />
+        <RemoveFile Id="RemoveLegacyNsisUninstallShortcut" Name="Uninstall Ultra Gaming Mode.lnk" On="both" />
         <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\UltraGamingMode" Name="StartMenuShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
       </Component>
@@ -105,7 +174,9 @@
           Description="Ultra Gaming Mode - Windows 11 AAA Gaming Optimizer"
           Target="[INSTALLFOLDER]UltraGamingMode.exe"
           WorkingDirectory="INSTALLFOLDER"
-          Icon="AppIcon.ico" />
+          Icon="AppIcon.ico"
+          IconIndex="0" />
+        <RemoveFile Id="RemoveLegacyDesktopShortcut" Name="UltraGamingMode.lnk" On="both" />
         <RegistryValue Root="HKCU" Key="Software\UltraGamingMode" Name="DesktopShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>

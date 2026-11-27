@@ -19,14 +19,26 @@ component NavTabItem inherits Rectangle {
     border-radius: 7px;
     background: root.active ? ThemeTokens.accent-soft : (tab-ta.pressed ? ThemeTokens.bg-active : (tab-ta.has-hover ? ThemeTokens.bg-hover : transparent));
     border-width: 1px;
-    border-color: root.active ? ThemeTokens.accent-border : transparent;
+    border-color: tab-fs.has-focus ? ThemeTokens.focus-ring : (root.active ? ThemeTokens.accent-border : transparent);
 
-    tab-ta := TouchArea {
-        mouse-cursor: pointer;
-        accessible-role: tab;
-        accessible-label: root.label;
-        clicked => {
-            root.clicked();
+    tab-fs := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n" || event.text == Key.Return) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+
+        tab-ta := TouchArea {
+            mouse-cursor: pointer;
+            accessible-role: tab;
+            accessible-checked: root.active;
+            accessible-label: root.badge-count >= 0 ? (root.label + " (" + root.badge-count + ")") : root.label;
+            clicked => {
+                tab-fs.focus();
+                root.clicked();
+            }
         }
     }
 
@@ -71,7 +83,7 @@ component NavTabItem inherits Rectangle {
 }
 
 export component MainWindow inherits Window {
-    title: "Ultra Gaming Mode v4.0.0";
+    title: "Ultra Gaming Mode v4.0.1";
     icon: @image-url("../assets/icons/128x128.png");
     no-frame: true;
     preferred-width: 960px;
@@ -86,7 +98,7 @@ export component MainWindow inherits Window {
     in-out property <int> active-tab: 0;
     in-out property <bool> is-maximized: false;
     in-out property <bool> dwm-border-active: false;
-    in-out property <string> app-version: "4.0.0";
+    in-out property <string> app-version: "4.0.1";
 
     // Dashboard & Hardware State
     in-out property <string> mode: "Normal";
@@ -100,9 +112,11 @@ export component MainWindow inherits Window {
     in-out property <string> dpc-latency: "Потоковый DPC (оптимально)";
     in-out property <string> mpo-status: "Штатный конвейер DWM (без мерцания)";
     in-out property <string> timer-resolution: "1.000 мс (штатный)";
-    in-out property <string> latest-version: "4.0.0";
+    in-out property <string> latest-version: "4.0.1";
     in-out property <bool> has-update: false;
-    in-out property <string> update-status-text: "Установлена актуальная версия v4.0.0.";
+    in-out property <bool> is-checking-updates: false;
+    in-out property <bool> update-is-error: false;
+    in-out property <string> update-status-text: "Установлена актуальная версия v4.0.1.";
     in-out property <int> disabled-services-count: 205;
     in-out property <int> disabled-processes-count: 40;
 
@@ -159,7 +173,7 @@ export component MainWindow inherits Window {
     in-out property <bool> tooltip-visible: false;
     changed tooltip-visible => {
         if (self.tooltip-visible) {
-            root-fs.focus();
+            tooltip-modal.focus-primary();
         }
     }
     in-out property <string> tooltip-title: "";
@@ -172,7 +186,7 @@ export component MainWindow inherits Window {
     in-out property <bool> confirm-visible: false;
     changed confirm-visible => {
         if (self.confirm-visible) {
-            root-fs.focus();
+            confirm-modal.focus-cancel();
         }
     }
     in-out property <string> confirm-title: "";
@@ -396,6 +410,8 @@ export component MainWindow inherits Window {
                 app-version: root.app-version;
                 latest-version: root.latest-version;
                 has-update: root.has-update;
+                is-checking-updates: root.is-checking-updates;
+                update-is-error: root.update-is-error;
                 update-status-text: root.update-status-text;
                 disabled-services-count: root.disabled-services-count;
                 disabled-processes-count: root.disabled-processes-count;
@@ -551,7 +567,7 @@ export component MainWindow inherits Window {
     }
 
     // 5. Tooltip Modal Overlay
-    TooltipOverlay {
+    tooltip-modal := TooltipOverlay {
         width: 100%;
         height: 100%;
         visible-tooltip: root.tooltip-visible;
@@ -565,7 +581,7 @@ export component MainWindow inherits Window {
     }
 
     // 6. Confirmation Dialog Modal Overlay
-    ConfirmDialogOverlay {
+    confirm-modal := ConfirmDialogOverlay {
         width: 100%;
         height: 100%;
         visible-confirm: root.confirm-visible;

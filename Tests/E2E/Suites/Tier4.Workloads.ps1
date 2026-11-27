@@ -10,10 +10,9 @@ function Register-Tier4Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::", "CreateCoreWebView2", "slint")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
-        Assert-E2EEqual 0 (Get-E2EPreExistingUgmPids).Count "No pre-existing UltraGamingMode.exe allowed"
 
         $usbDir = Join-Path $ctx.Sandbox.Root ("usb_deploy_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
         New-Item -ItemType Directory -Path $usbDir -Force | Out-Null
@@ -60,10 +59,9 @@ function Register-Tier4Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
-        Assert-E2EEqual 0 (Get-E2EPreExistingUgmPids).Count "No pre-existing UltraGamingMode.exe allowed"
 
         $roExe = Join-Path $ctx.Sandbox.PortableRo "UltraGamingMode.exe"
         Copy-Item -LiteralPath $exePath -Destination $roExe -Force
@@ -266,7 +264,7 @@ Write-Output 'WORKLOAD_RESTORE_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin release artifacts pending (M5)" -Artifact ".bin/SHA256SUMS.txt"
         }
         $pe = Get-PEInspection -ExePath $binExe -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe still legacy pre-v4.0.0 (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $rootExe = Join-Path $ctx.RepoRoot "UltraGamingMode.exe"

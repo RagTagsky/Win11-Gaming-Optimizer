@@ -43,13 +43,26 @@ export component LogConsole inherits Rectangle {
                         height: 26px;
                         border-radius: 6px;
                         background: exp-ta.pressed ? ThemeTokens.bg-active : (exp-ta.has-hover ? ThemeTokens.bg-hover : transparent);
+                        border-width: exp-fs.has-focus ? 1px : 0px;
+                        border-color: ThemeTokens.focus-ring;
 
-                        exp-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            accessible-role: button;
-                            accessible-label: "Журнал событий";
-                            clicked => {
-                                root.expanded = !root.expanded;
+                        exp-fs := FocusScope {
+                            key-pressed(event) => {
+                                if (event.text == " " || event.text == "\n") {
+                                    root.expanded = !root.expanded;
+                                    return accept;
+                                }
+                                return reject;
+                            }
+
+                            exp-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                accessible-role: button;
+                                accessible-label: root.expanded ? "Свернуть журнал событий" : "Развернуть журнал событий";
+                                clicked => {
+                                    exp-fs.focus();
+                                    root.expanded = !root.expanded;
+                                }
                             }
                         }
 
@@ -349,13 +362,29 @@ export component TooltipOverlay inherits Rectangle {
                             height: 32px;
                             border-radius: 7px;
                             background: ok-ta.pressed ? ThemeTokens.accent-solid-active : (ok-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid);
+                            border-width: ok-fs.has-focus ? 2px : 0px;
+                            border-color: ThemeTokens.focus-ring;
 
-                            ok-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                accessible-role: button;
-                                accessible-label: "Закрыть описание";
-                                clicked => {
-                                    root.close-tooltip();
+                            ok-fs := FocusScope {
+                                enabled: root.visible-tooltip;
+                                key-pressed(event) => {
+                                    if (event.text == Key.Escape || event.text == Key.Return || event.text == " " || event.text == "\n") {
+                                        root.close-tooltip();
+                                        return accept;
+                                    }
+                                    if (event.text == Key.Tab || event.text == Key.Backtab) {
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+
+                                ok-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    accessible-role: button;
+                                    accessible-label: "Закрыть описание";
+                                    clicked => {
+                                        root.close-tooltip();
+                                    }
                                 }
                             }
 
@@ -375,6 +404,10 @@ export component TooltipOverlay inherits Rectangle {
                 }
             }
         }
+    }
+
+    public function focus-primary() {
+        ok-fs.focus();
     }
 }
 
@@ -452,14 +485,30 @@ export component ConfirmDialogOverlay inherits Rectangle {
                             height: 34px;
                             border-radius: 8px;
                             background: cnl-ta.pressed ? ThemeTokens.bg-active : (cnl-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
-                            border-width: 1px;
-                            border-color: cnl-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
+                            border-width: cnl-fs.has-focus ? 2px : 1px;
+                            border-color: cnl-fs.has-focus ? ThemeTokens.focus-ring : (cnl-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle);
 
-                            cnl-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                accessible-role: button;
-                                clicked => {
-                                    root.confirm-cancelled();
+                            cnl-fs := FocusScope {
+                                enabled: root.visible-confirm;
+                                key-pressed(event) => {
+                                    if (event.text == Key.Escape || event.text == Key.Return || event.text == " " || event.text == "\n") {
+                                        root.confirm-cancelled();
+                                        return accept;
+                                    }
+                                    if (event.text == Key.Tab || event.text == Key.Backtab || event.text == Key.RightArrow || event.text == Key.LeftArrow) {
+                                        acc-fs.focus();
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+
+                                cnl-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    accessible-role: button;
+                                    accessible-label: root.cancel-label;
+                                    clicked => {
+                                        root.confirm-cancelled();
+                                    }
                                 }
                             }
 
@@ -480,12 +529,34 @@ export component ConfirmDialogOverlay inherits Rectangle {
                             height: 34px;
                             border-radius: 8px;
                             background: root.tone == "danger" ? (acc-ta.has-hover ? ThemeTokens.status-danger-solid-hover : ThemeTokens.status-danger-solid) : (acc-ta.pressed ? ThemeTokens.accent-solid-active : (acc-ta.has-hover ? ThemeTokens.accent-solid-hover : ThemeTokens.accent-solid));
+                            border-width: acc-fs.has-focus ? 2px : 0px;
+                            border-color: ThemeTokens.focus-ring;
 
-                            acc-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                accessible-role: button;
-                                clicked => {
-                                    root.confirm-accepted();
+                            acc-fs := FocusScope {
+                                enabled: root.visible-confirm;
+                                key-pressed(event) => {
+                                    if (event.text == Key.Escape) {
+                                        root.confirm-cancelled();
+                                        return accept;
+                                    }
+                                    if (event.text == Key.Return || event.text == " " || event.text == "\n") {
+                                        root.confirm-accepted();
+                                        return accept;
+                                    }
+                                    if (event.text == Key.Tab || event.text == Key.Backtab || event.text == Key.RightArrow || event.text == Key.LeftArrow) {
+                                        cnl-fs.focus();
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+
+                                acc-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    accessible-role: button;
+                                    accessible-label: root.confirm-label;
+                                    clicked => {
+                                        root.confirm-accepted();
+                                    }
                                 }
                             }
 
@@ -505,5 +576,9 @@ export component ConfirmDialogOverlay inherits Rectangle {
                 }
             }
         }
+    }
+
+    public function focus-cancel() {
+        cnl-fs.focus();
     }
 }

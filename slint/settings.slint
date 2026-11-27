@@ -405,6 +405,7 @@ export component SettingsView inherits Rectangle {
                             tray-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "При входе запускать сразу в трей";
                                 clicked => {
                                     root.toggle-autostart(root.autostart-enabled, true);
                                 }
@@ -434,6 +435,7 @@ export component SettingsView inherits Rectangle {
                             win-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "При входе открывать окно";
                                 clicked => {
                                     root.toggle-autostart(root.autostart-enabled, false);
                                 }
@@ -462,6 +464,7 @@ export component SettingsView inherits Rectangle {
                             fix-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "Исправить путь задачи автозапуска";
                                 clicked => {
                                     root.toggle-autostart(true, root.autostart-start-in-tray);
                                 }
@@ -608,6 +611,7 @@ export component SettingsView inherits Rectangle {
                                 enabled: root.auto-purge-ram-in-gaming;
                                 mouse-cursor: root.auto-purge-ram-in-gaming ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Порог свободной ОЗУ " + thresh.label;
                                 clicked => {
                                     root.set-ram-threshold(thresh.val);
                                 }

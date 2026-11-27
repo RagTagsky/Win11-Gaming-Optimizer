@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
+
+static REBOOT_DIALOG_OPEN: AtomicBool = AtomicBool::new(false);
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
@@ -254,14 +256,7 @@ pub fn apply_theme_to_window(window: &MainWindow, theme_id: ThemeId) {
 }
 
 fn now_hms_string() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let s = secs % 60;
-    let m = (secs / 60) % 60;
-    let h = (secs / 3600) % 24;
-    format!("{:02}:{:02}:{:02}", h, m, s)
+    backend::format_local_hms()
 }
 
 struct UiAppState {
@@ -270,6 +265,10 @@ struct UiAppState {
     tuning: TuningConfig,
     processes_snap: Option<LiveProcessesSnapshot>,
     services_lists: Option<ServicesLists>,
+    loading_processes: bool,
+    loading_services: bool,
+    toggling_autostart: bool,
+    cleaning_ram_from_tray: bool,
     process_filter: String,
     process_search: String,
     process_show_os_core: bool,
@@ -609,7 +608,7 @@ fn refresh_services_model(state: &mut UiAppState, window: &MainWindow) {
     window.set_service_disabled_count(disabled_count as i32);
     window.set_service_normal_count(normal_count as i32);
     window.set_service_running_count(running_count as i32);
-    window.set_disabled_services_count(if disabled_count > 0 {
+    window.set_disabled_services_count(if total_count > 0 {
         disabled_count as i32
     } else {
         lists.blacklist.len() as i32
@@ -691,6 +690,10 @@ pub fn run_native_app() {
         tuning: initial_tuning,
         processes_snap: None,
         services_lists: None,
+        loading_processes: false,
+        loading_services: false,
+        toggling_autostart: false,
+        cleaning_ram_from_tray: false,
         process_filter: "all".to_string(),
         process_search: String::new(),
         process_show_os_core: false,
@@ -699,54 +702,87 @@ pub fn run_native_app() {
         logs: Vec::new(),
     }));
 
-    state.lock().unwrap().push_log(
-        &window,
-        "info",
-        format!(
-            "Нативный интерфейс Slint инициализирован (v{}, тема «{}», профиль AAA).",
-            APP_VERSION,
-            get_theme_by_id(theme_prefs.theme).name_ru
-        ),
-    );
+    {
+        let mut st = state.lock().unwrap();
+        st.push_log(
+            &window,
+            "info",
+            format!(
+                "Нативный интерфейс Slint инициализирован (v{}, тема «{}», профиль AAA).",
+                APP_VERSION,
+                get_theme_by_id(theme_prefs.theme).name_ru
+            ),
+        );
+        for (lvl, msg) in backend::take_startup_migration_logs() {
+            st.push_log(&window, &lvl, msg);
+        }
+    }
 
-    // Initialize native system tray on UI thread
+    // Initialize native system tray on UI thread (with lazy retry if Explorer taskbar is not ready at logon)
     let (tray_tx, tray_rx) = mpsc::channel::<TrayCommand>();
     let tray_rx = Arc::new(Mutex::new(tray_rx));
+    let (tray_tip_tx, tray_tip_rx) = mpsc::channel::<(String, String)>();
+    let tray_tip_rx = Arc::new(Mutex::new(tray_tip_rx));
     let initial_tray_snap = TrayStateSnapshot {
         mode: initial_mode.clone(),
         timer_locked: TIMER_LOCKED.load(Ordering::SeqCst),
         mode_action_busy: MODE_ACTION_BUSY.load(Ordering::SeqCst),
     };
-    let tray_controller = Rc::new(RefCell::new(
-        TrayController::new(&initial_tray_snap, tray_tx.clone(), None).ok(),
-    ));
+    let initial_tray = match TrayController::new(&initial_tray_snap, tray_tx.clone(), None) {
+        Ok(ctrl) => Some(ctrl),
+        Err(e) => {
+            state.lock().unwrap().push_log(
+                &window,
+                "warn",
+                format!(
+                    "Системный трей пока недоступен ({}); повторная инициализация выполнится автоматически.",
+                    e
+                ),
+            );
+            None
+        }
+    };
+    let tray_controller = Rc::new(RefCell::new(initial_tray));
 
     let sync_tray = {
         let tray_controller = tray_controller.clone();
+        let tray_tx = tray_tx.clone();
         let runtime_root = runtime_root.clone();
-        move || {
-            if let Some(ref ctrl) = *tray_controller.borrow() {
-                let snap = TrayStateSnapshot {
-                    mode: backend::read_current_mode_fast(&runtime_root),
-                    timer_locked: TIMER_LOCKED.load(Ordering::SeqCst),
-                    mode_action_busy: MODE_ACTION_BUSY.load(Ordering::SeqCst),
-                };
+        move || -> bool {
+            let snap = TrayStateSnapshot {
+                mode: backend::read_current_mode_fast(&runtime_root),
+                timer_locked: TIMER_LOCKED.load(Ordering::SeqCst),
+                mode_action_busy: MODE_ACTION_BUSY.load(Ordering::SeqCst),
+            };
+            let mut borrow = tray_controller.borrow_mut();
+            if let Some(ref ctrl) = *borrow {
                 ctrl.sync_state(&snap);
+                true
+            } else if let Ok(ctrl) = TrayController::new(&snap, tray_tx.clone(), None) {
+                *borrow = Some(ctrl);
+                true
+            } else {
+                false
             }
         }
     };
 
-    // Intercept window close button -> hide to tray
+    // Intercept window close button -> hide to tray ONLY if tray icon exists; otherwise exit cleanly
     {
         let weak = window.as_weak();
+        let sync_tray = sync_tray.clone();
         window.window().on_close_requested(move || {
             if ALLOW_APP_EXIT.load(Ordering::SeqCst) {
                 slint::CloseRequestResponse::HideWindow
-            } else {
+            } else if sync_tray() {
                 if let Some(w) = weak.upgrade() {
                     let _ = w.hide();
                 }
                 slint::CloseRequestResponse::KeepWindowShown
+            } else {
+                ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
+                let _ = slint::quit_event_loop();
+                slint::CloseRequestResponse::HideWindow
             }
         });
     }
@@ -780,9 +816,15 @@ pub fn run_native_app() {
     }
     {
         let weak = window.as_weak();
+        let sync_tray = sync_tray.clone();
         window.on_close_to_tray(move || {
-            if let Some(w) = weak.upgrade() {
-                let _ = w.hide();
+            if sync_tray() {
+                if let Some(w) = weak.upgrade() {
+                    let _ = w.hide();
+                }
+            } else {
+                ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
+                let _ = slint::quit_event_loop();
             }
         });
     }
@@ -795,10 +837,13 @@ pub fn run_native_app() {
             if let Some(w) = weak.upgrade() {
                 let mut st = state.lock().unwrap();
                 let next_id = st.theme_prefs.toggle_polarity();
-                let _ = st.theme_prefs.save_to_runtime(&st.runtime_root);
+                let save_res = st.theme_prefs.save_to_runtime(&st.runtime_root);
                 apply_theme_to_window(&w, next_id);
                 let name = get_theme_by_id(next_id).name_ru;
                 st.push_log(&w, "info", format!("Переключена тема оформления: «{}».", name));
+                if let Err(e) = save_res {
+                    st.push_log(&w, "warn", e);
+                }
             }
         });
     }
@@ -810,45 +855,113 @@ pub fn run_native_app() {
                 if let Some(id) = ThemeId::parse(raw_id.as_str()) {
                     let mut st = state.lock().unwrap();
                     st.theme_prefs.select_theme(id);
-                    let _ = st.theme_prefs.save_to_runtime(&st.runtime_root);
+                    let save_res = st.theme_prefs.save_to_runtime(&st.runtime_root);
                     apply_theme_to_window(&w, id);
                     let name = get_theme_by_id(id).name_ru;
                     st.push_log(&w, "info", format!("Выбрана тема оформления: «{}».", name));
+                    if let Err(e) = save_res {
+                        st.push_log(&w, "warn", e);
+                    }
                 }
             }
         });
     }
 
-    // Lazy load processes & services when switching tabs
+    // Helper to refresh processes asynchronously without blocking UI thread
+    let spawn_processes_refresh = {
+        let weak = window.as_weak();
+        let state = state.clone();
+        move || {
+            {
+                let mut st = state.lock().unwrap();
+                if st.loading_processes {
+                    return;
+                }
+                st.loading_processes = true;
+            }
+            let weak_bg = weak.clone();
+            let state_bg = state.clone();
+            std::thread::spawn(move || {
+                let res = backend::get_running_processes_sync();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let mut st = state_bg.lock().unwrap();
+                    st.loading_processes = false;
+                    if let Some(w) = weak_bg.upgrade() {
+                        match res {
+                            Ok(snap) => {
+                                st.processes_snap = Some(snap);
+                                refresh_processes_model(&mut st, &w);
+                            }
+                            Err(e) => st.push_log(&w, "error", e),
+                        }
+                    }
+                });
+            });
+        }
+    };
+
+    // Helper to refresh services asynchronously without blocking UI thread
+    let spawn_services_refresh = {
+        let weak = window.as_weak();
+        let state = state.clone();
+        move || {
+            {
+                let mut st = state.lock().unwrap();
+                if st.loading_services {
+                    return;
+                }
+                st.loading_services = true;
+            }
+            let weak_bg = weak.clone();
+            let state_bg = state.clone();
+            std::thread::spawn(move || {
+                let res = backend::read_services_lists_sync();
+                let _ = slint::invoke_from_event_loop(move || {
+                    let mut st = state_bg.lock().unwrap();
+                    st.loading_services = false;
+                    if let Some(w) = weak_bg.upgrade() {
+                        match res {
+                            Ok(lists) => {
+                                st.services_lists = Some(lists);
+                                refresh_services_model(&mut st, &w);
+                            }
+                            Err(e) => st.push_log(&w, "error", e),
+                        }
+                    }
+                });
+            });
+        }
+    };
+
+    // Lazy load processes & services when switching tabs (non-blocking)
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let spawn_processes_refresh = spawn_processes_refresh.clone();
+        let spawn_services_refresh = spawn_services_refresh.clone();
         window.on_tab_selected(move |tab_idx| {
-            if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                if tab_idx == 1 && st.processes_snap.is_none() {
-                    if let Ok(snap) = backend::get_running_processes_sync() {
-                        st.processes_snap = Some(snap);
-                        refresh_processes_model(&mut st, &w);
+            let (need_procs, need_svcs) = {
+                let st = state.lock().unwrap();
+                (
+                    tab_idx == 1 && st.processes_snap.is_none() && !st.loading_processes,
+                    tab_idx == 2 && st.services_lists.is_none() && !st.loading_services,
+                )
+            };
+            if need_procs {
+                spawn_processes_refresh();
+            } else if need_svcs {
+                spawn_services_refresh();
+            } else if tab_idx == 3 {
+                let weak_bg = weak.clone();
+                std::thread::spawn(move || {
+                    if let Ok(auto_st) = backend::get_autostart_status_sync() {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w) = weak_bg.upgrade() {
+                                apply_autostart_to_window(&w, &auto_st);
+                            }
+                        });
                     }
-                } else if tab_idx == 2 && st.services_lists.is_none() {
-                    if let Ok(lists) = backend::read_services_lists_sync() {
-                        st.services_lists = Some(lists);
-                        refresh_services_model(&mut st, &w);
-                    }
-                } else if tab_idx == 3 {
-                    drop(st);
-                    let weak_bg = weak.clone();
-                    std::thread::spawn(move || {
-                        if let Ok(auto_st) = backend::get_autostart_status_sync() {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(w) = weak_bg.upgrade() {
-                                    apply_autostart_to_window(&w, &auto_st);
-                                }
-                            });
-                        }
-                    });
-                }
+                });
             }
         });
     }
@@ -858,6 +971,7 @@ pub fn run_native_app() {
         let weak = window.as_weak();
         let state = state.clone();
         let sync_tray = sync_tray.clone();
+        let spawn_services_refresh = spawn_services_refresh.clone();
         window.on_toggle_mode(move || {
             let Some(w) = weak.upgrade() else { return };
             if w.get_is_busy() {
@@ -883,10 +997,11 @@ pub fn run_native_app() {
                     "Возврат штатного режима Windows…"
                 },
             );
-            sync_tray();
+            let _ = sync_tray();
 
             let weak_bg = weak.clone();
             let state_bg = state.clone();
+            let refresh_svcs_done = spawn_services_refresh.clone();
             std::thread::spawn(move || {
                 let res = backend::run_execute_mode_action_sync(action);
                 let status = backend::read_system_status_sync().ok();
@@ -896,11 +1011,17 @@ pub fn run_native_app() {
                         if let Some(st_now) = status {
                             apply_status_to_window(&w, &st_now);
                         }
-                        let mut st = state_bg.lock().unwrap();
-                        match res {
-                            Ok(r) if r.success => st.push_log(&w, "success", r.message),
-                            Ok(r) => st.push_log(&w, "error", r.message),
-                            Err(e) => st.push_log(&w, "error", e),
+                        let should_reload_svcs = {
+                            let mut st = state_bg.lock().unwrap();
+                            match res {
+                                Ok(r) if r.success => st.push_log(&w, "success", r.message),
+                                Ok(r) => st.push_log(&w, "error", r.message),
+                                Err(e) => st.push_log(&w, "error", e),
+                            }
+                            st.services_lists.is_some()
+                        };
+                        if should_reload_svcs {
+                            refresh_svcs_done();
                         }
                     }
                 });
@@ -912,14 +1033,18 @@ pub fn run_native_app() {
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let sync_tray = sync_tray.clone();
+        let spawn_services_refresh = spawn_services_refresh.clone();
         window.on_finish_pending_restore(move || {
             let Some(w) = weak.upgrade() else { return };
             if w.get_is_busy() {
                 return;
             }
             w.set_is_busy(true);
+            let _ = sync_tray();
             let weak_bg = weak.clone();
             let state_bg = state.clone();
+            let refresh_svcs_done = spawn_services_refresh.clone();
             std::thread::spawn(move || {
                 let res = backend::run_finish_pending_restore_sync();
                 let status = backend::read_system_status_sync().ok();
@@ -929,11 +1054,17 @@ pub fn run_native_app() {
                         if let Some(st_now) = status {
                             apply_status_to_window(&w, &st_now);
                         }
-                        let mut st = state_bg.lock().unwrap();
-                        match res {
-                            Ok(r) if r.success => st.push_log(&w, "success", r.message),
-                            Ok(r) => st.push_log(&w, "error", r.message),
-                            Err(e) => st.push_log(&w, "error", e),
+                        let should_reload_svcs = {
+                            let mut st = state_bg.lock().unwrap();
+                            match res {
+                                Ok(r) if r.success => st.push_log(&w, "success", r.message),
+                                Ok(r) => st.push_log(&w, "error", r.message),
+                                Err(e) => st.push_log(&w, "error", e),
+                            }
+                            st.services_lists.is_some()
+                        };
+                        if should_reload_svcs {
+                            refresh_svcs_done();
                         }
                     }
                 });
@@ -997,17 +1128,24 @@ pub fn run_native_app() {
         let weak = window.as_weak();
         let state = state.clone();
         window.on_check_updates(move || {
+            let Some(w) = weak.upgrade() else { return };
+            if w.get_is_checking_updates() {
+                return;
+            }
+            w.set_is_checking_updates(true);
             let weak_bg = weak.clone();
             let state_bg = state.clone();
             std::thread::spawn(move || {
                 let res = backend::check_for_updates_sync();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = weak_bg.upgrade() {
+                        w.set_is_checking_updates(false);
                         let mut st = state_bg.lock().unwrap();
                         match res {
                             Ok(info) => {
                                 w.set_latest_version(SharedString::from(&info.latest_version));
                                 w.set_has_update(info.has_update);
+                                w.set_update_is_error(false);
                                 let msg = if info.has_update {
                                     format!(
                                         "Доступно обновление v{} (текущая v{}).",
@@ -1023,6 +1161,7 @@ pub fn run_native_app() {
                                 st.push_log(&w, "success", msg);
                             }
                             Err(e) => {
+                                w.set_update_is_error(true);
                                 w.set_update_status_text(SharedString::from(&e));
                                 st.push_log(&w, "warn", e);
                             }
@@ -1081,46 +1220,49 @@ pub fn run_native_app() {
         });
     }
     {
-        let weak = window.as_weak();
-        let state = state.clone();
+        let spawn_processes_refresh = spawn_processes_refresh.clone();
         window.on_refresh_processes(move || {
-            if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                if let Ok(snap) = backend::get_running_processes_sync() {
-                    st.processes_snap = Some(snap);
-                    refresh_processes_model(&mut st, &w);
-                }
-            }
+            spawn_processes_refresh();
         });
     }
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let spawn_processes_refresh = spawn_processes_refresh.clone();
         window.on_set_process_mode(move |name, disable| {
             if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                let root = st.runtime_root.clone();
-                match backend::set_process_gaming_mode_in_root(&root, name.as_str(), disable) {
-                    Ok(_) => {
-                        if let Ok(snap) = backend::get_running_processes_sync() {
-                            st.processes_snap = Some(snap);
-                            refresh_processes_model(&mut st, &w);
+                let mut need_bg_load = false;
+                {
+                    let mut st = state.lock().unwrap();
+                    let root = st.runtime_root.clone();
+                    match backend::set_process_gaming_mode_in_root(&root, name.as_str(), disable) {
+                        Ok(lists) => {
+                            if let Some(ref mut snap) = st.processes_snap {
+                                snap.blacklist_processes = lists.blacklist_processes;
+                                snap.protected_startup_names = lists.protected_startup_names;
+                                refresh_processes_model(&mut st, &w);
+                            } else {
+                                need_bg_load = true;
+                            }
+                            st.push_log(
+                                &w,
+                                "success",
+                                format!(
+                                    "Процесс {}: {}.",
+                                    name,
+                                    if disable {
+                                        "Выкл. в Gaming Mode"
+                                    } else {
+                                        "Без утилки"
+                                    }
+                                ),
+                            );
                         }
-                        st.push_log(
-                            &w,
-                            "success",
-                            format!(
-                                "Процесс {}: {}.",
-                                name,
-                                if disable {
-                                    "Выкл. в Gaming Mode"
-                                } else {
-                                    "Без утилки"
-                                }
-                            ),
-                        );
+                        Err(e) => st.push_log(&w, "error", e),
                     }
-                    Err(e) => st.push_log(&w, "error", e),
+                }
+                if need_bg_load {
+                    spawn_processes_refresh();
                 }
             }
         });
@@ -1128,28 +1270,38 @@ pub fn run_native_app() {
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let spawn_processes_refresh = spawn_processes_refresh.clone();
         window.on_add_process(move |raw_name| {
             if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                let root = st.runtime_root.clone();
                 let clean = backend::strip_exe_suffix(raw_name.as_str()).trim().to_string();
                 if clean.is_empty() {
                     return;
                 }
-                match backend::set_process_gaming_mode_in_root(&root, &clean, true) {
-                    Ok(_) => {
-                        w.set_new_process_name(SharedString::default());
-                        if let Ok(snap) = backend::get_running_processes_sync() {
-                            st.processes_snap = Some(snap);
-                            refresh_processes_model(&mut st, &w);
+                let mut need_bg_load = false;
+                {
+                    let mut st = state.lock().unwrap();
+                    let root = st.runtime_root.clone();
+                    match backend::set_process_gaming_mode_in_root(&root, &clean, true) {
+                        Ok(lists) => {
+                            w.set_new_process_name(SharedString::default());
+                            if let Some(ref mut snap) = st.processes_snap {
+                                snap.blacklist_processes = lists.blacklist_processes;
+                                snap.protected_startup_names = lists.protected_startup_names;
+                                refresh_processes_model(&mut st, &w);
+                            } else {
+                                need_bg_load = true;
+                            }
+                            st.push_log(
+                                &w,
+                                "success",
+                                format!("Процесс '{}' добавлен для выключения в Gaming Mode.", clean),
+                            );
                         }
-                        st.push_log(
-                            &w,
-                            "success",
-                            format!("Процесс '{}' добавлен для выключения в Gaming Mode.", clean),
-                        );
+                        Err(e) => st.push_log(&w, "error", e),
                     }
-                    Err(e) => st.push_log(&w, "error", e),
+                }
+                if need_bg_load {
+                    spawn_processes_refresh();
                 }
             }
         });
@@ -1180,49 +1332,62 @@ pub fn run_native_app() {
         });
     }
     {
-        let weak = window.as_weak();
-        let state = state.clone();
+        let spawn_services_refresh = spawn_services_refresh.clone();
         window.on_refresh_services(move || {
-            if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                if let Ok(lists) = backend::read_services_lists_sync() {
-                    st.services_lists = Some(lists);
-                    refresh_services_model(&mut st, &w);
-                }
-            }
+            spawn_services_refresh();
         });
     }
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let spawn_services_refresh = spawn_services_refresh.clone();
         window.on_toggle_feature_pack(move |pack_id, keep| {
             if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                let root = st.runtime_root.clone();
-                match backend::apply_service_feature_pack_in_root(
-                    &root,
-                    pack_id.as_str(),
-                    keep,
-                    cfg!(target_os = "windows"),
-                ) {
-                    Ok(lists) => {
-                        st.services_lists = Some(lists);
-                        refresh_services_model(&mut st, &w);
-                        st.push_log(
-                            &w,
-                            "success",
-                            format!(
-                                "Пресет служб '{}': {}.",
-                                pack_id,
-                                if keep {
-                                    "Без утилки"
-                                } else {
-                                    "Выкл. в Gaming Mode"
+                let root = {
+                    let st = state.lock().unwrap();
+                    st.runtime_root.clone()
+                };
+                match backend::apply_service_feature_pack_in_root(&root, pack_id.as_str(), keep, false) {
+                    Ok(offline_lists) => {
+                        {
+                            let mut st = state.lock().unwrap();
+                            if let Some(ref prev) = st.services_lists {
+                                let status_map: std::collections::HashMap<String, String> = prev
+                                    .all_installed_services
+                                    .iter()
+                                    .map(|s| (s.name.to_lowercase(), s.status.clone()))
+                                    .collect();
+                                let mut merged = offline_lists;
+                                for item in &mut merged.all_installed_services {
+                                    if let Some(st_str) = status_map.get(&item.name.to_lowercase()) {
+                                        item.status = st_str.clone();
+                                    }
                                 }
-                            ),
-                        );
+                                st.services_lists = Some(merged);
+                                refresh_services_model(&mut st, &w);
+                            } else {
+                                st.services_lists = Some(offline_lists);
+                                refresh_services_model(&mut st, &w);
+                            }
+                            st.push_log(
+                                &w,
+                                "success",
+                                format!(
+                                    "Пресет служб '{}': {}.",
+                                    pack_id,
+                                    if keep {
+                                        "Без утилки"
+                                    } else {
+                                        "Выкл. в Gaming Mode"
+                                    }
+                                ),
+                            );
+                        }
+                        if cfg!(target_os = "windows") {
+                            spawn_services_refresh();
+                        }
                     }
-                    Err(e) => st.push_log(&w, "error", e),
+                    Err(e) => state.lock().unwrap().push_log(&w, "error", e),
                 }
             }
         });
@@ -1230,34 +1395,54 @@ pub fn run_native_app() {
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let spawn_services_refresh = spawn_services_refresh.clone();
         window.on_set_service_mode(move |name, disable| {
             if let Some(w) = weak.upgrade() {
-                let mut st = state.lock().unwrap();
-                let root = st.runtime_root.clone();
-                match backend::set_service_gaming_mode_in_root(
-                    &root,
-                    name.as_str(),
-                    disable,
-                    cfg!(target_os = "windows"),
-                ) {
-                    Ok(lists) => {
-                        st.services_lists = Some(lists);
-                        refresh_services_model(&mut st, &w);
-                        st.push_log(
-                            &w,
-                            "success",
-                            format!(
-                                "Служба {}: {}.",
-                                name,
-                                if disable {
-                                    "Выкл. в Gaming Mode"
-                                } else {
-                                    "Без утилки"
+                let root = {
+                    let st = state.lock().unwrap();
+                    st.runtime_root.clone()
+                };
+                match backend::set_service_gaming_mode_in_root(&root, name.as_str(), disable, false) {
+                    Ok(offline_lists) => {
+                        {
+                            let mut st = state.lock().unwrap();
+                            if let Some(ref prev) = st.services_lists {
+                                let status_map: std::collections::HashMap<String, String> = prev
+                                    .all_installed_services
+                                    .iter()
+                                    .map(|s| (s.name.to_lowercase(), s.status.clone()))
+                                    .collect();
+                                let mut merged = offline_lists;
+                                for item in &mut merged.all_installed_services {
+                                    if let Some(st_str) = status_map.get(&item.name.to_lowercase()) {
+                                        item.status = st_str.clone();
+                                    }
                                 }
-                            ),
-                        );
+                                st.services_lists = Some(merged);
+                                refresh_services_model(&mut st, &w);
+                            } else {
+                                st.services_lists = Some(offline_lists);
+                                refresh_services_model(&mut st, &w);
+                            }
+                            st.push_log(
+                                &w,
+                                "success",
+                                format!(
+                                    "Служба {}: {}.",
+                                    name,
+                                    if disable {
+                                        "Выкл. в Gaming Mode"
+                                    } else {
+                                        "Без утилки"
+                                    }
+                                ),
+                            );
+                        }
+                        if cfg!(target_os = "windows") {
+                            spawn_services_refresh();
+                        }
                     }
-                    Err(e) => st.push_log(&w, "error", e),
+                    Err(e) => state.lock().unwrap().push_log(&w, "error", e),
                 }
             }
         });
@@ -1268,27 +1453,42 @@ pub fn run_native_app() {
         let weak = window.as_weak();
         let state = state.clone();
         window.on_toggle_autostart(move |enabled, start_in_tray| {
-            if let Some(w) = weak.upgrade() {
+            {
                 let mut st = state.lock().unwrap();
-                match backend::set_autostart_sync(enabled, start_in_tray) {
-                    Ok(auto_st) => {
-                        apply_autostart_to_window(&w, &auto_st);
-                        st.push_log(
-                            &w,
-                            "success",
-                            if auto_st.enabled {
-                                "Повышенный автозапуск вместе с Windows включён."
-                            } else {
-                                "Автозапуск вместе с Windows отключён."
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        w.set_autostart_warning(SharedString::from(&e));
-                        st.push_log(&w, "error", e);
-                    }
+                if st.toggling_autostart {
+                    return;
                 }
+                st.toggling_autostart = true;
             }
+            let weak_bg = weak.clone();
+            let state_bg = state.clone();
+            std::thread::spawn(move || {
+                let res = backend::set_autostart_sync(enabled, start_in_tray);
+                let _ = slint::invoke_from_event_loop(move || {
+                    let mut st = state_bg.lock().unwrap();
+                    st.toggling_autostart = false;
+                    if let Some(w) = weak_bg.upgrade() {
+                        match res {
+                            Ok(auto_st) => {
+                                apply_autostart_to_window(&w, &auto_st);
+                                st.push_log(
+                                    &w,
+                                    "success",
+                                    if auto_st.enabled {
+                                        "Повышенный автозапуск вместе с Windows включён."
+                                    } else {
+                                        "Автозапуск вместе с Windows отключён."
+                                    },
+                                );
+                            }
+                            Err(e) => {
+                                w.set_autostart_warning(SharedString::from(&e));
+                                st.push_log(&w, "error", e);
+                            }
+                        }
+                    }
+                });
+            });
         });
     }
     {
@@ -1297,19 +1497,26 @@ pub fn run_native_app() {
         window.on_toggle_auto_lock_timer(move || {
             if let Some(w) = weak.upgrade() {
                 let mut st = state.lock().unwrap();
-                st.tuning.auto_lock_timer_in_gaming = !st.tuning.auto_lock_timer_in_gaming;
-                if let Ok(saved) = backend::write_tuning_config_sync(st.tuning.clone()) {
-                    st.tuning = saved;
-                    apply_tuning_to_window(&w, &st.tuning);
-                    let enabled = st.tuning.auto_lock_timer_in_gaming;
-                    st.push_log(
-                        &w,
-                        "info",
-                        format!(
-                            "Автофиксация таймера 0.500 мс: {}.",
-                            if enabled { "Вкл" } else { "Выкл" }
-                        ),
-                    );
+                let mut candidate = st.tuning.clone();
+                candidate.auto_lock_timer_in_gaming = !candidate.auto_lock_timer_in_gaming;
+                match backend::write_tuning_config_sync(candidate) {
+                    Ok(saved) => {
+                        st.tuning = saved;
+                        apply_tuning_to_window(&w, &st.tuning);
+                        let enabled = st.tuning.auto_lock_timer_in_gaming;
+                        st.push_log(
+                            &w,
+                            "info",
+                            format!(
+                                "Автофиксация таймера 0.500 мс: {}.",
+                                if enabled { "Вкл" } else { "Выкл" }
+                            ),
+                        );
+                    }
+                    Err(e) => {
+                        apply_tuning_to_window(&w, &st.tuning);
+                        st.push_log(&w, "error", e);
+                    }
                 }
             }
         });
@@ -1320,19 +1527,26 @@ pub fn run_native_app() {
         window.on_toggle_auto_purge_ram(move || {
             if let Some(w) = weak.upgrade() {
                 let mut st = state.lock().unwrap();
-                st.tuning.auto_purge_ram_in_gaming = !st.tuning.auto_purge_ram_in_gaming;
-                if let Ok(saved) = backend::write_tuning_config_sync(st.tuning.clone()) {
-                    st.tuning = saved;
-                    apply_tuning_to_window(&w, &st.tuning);
-                    let enabled = st.tuning.auto_purge_ram_in_gaming;
-                    st.push_log(
-                        &w,
-                        "info",
-                        format!(
-                            "Автоочистка Standby-кэша ОЗУ: {}.",
-                            if enabled { "Вкл" } else { "Выкл" }
-                        ),
-                    );
+                let mut candidate = st.tuning.clone();
+                candidate.auto_purge_ram_in_gaming = !candidate.auto_purge_ram_in_gaming;
+                match backend::write_tuning_config_sync(candidate) {
+                    Ok(saved) => {
+                        st.tuning = saved;
+                        apply_tuning_to_window(&w, &st.tuning);
+                        let enabled = st.tuning.auto_purge_ram_in_gaming;
+                        st.push_log(
+                            &w,
+                            "info",
+                            format!(
+                                "Автоочистка Standby-кэша ОЗУ: {}.",
+                                if enabled { "Вкл" } else { "Выкл" }
+                            ),
+                        );
+                    }
+                    Err(e) => {
+                        apply_tuning_to_window(&w, &st.tuning);
+                        st.push_log(&w, "error", e);
+                    }
                 }
             }
         });
@@ -1343,16 +1557,23 @@ pub fn run_native_app() {
         window.on_set_ram_threshold(move |mb| {
             if let Some(w) = weak.upgrade() {
                 let mut st = state.lock().unwrap();
-                st.tuning.auto_purge_ram_threshold_mb = mb as u32;
-                if let Ok(saved) = backend::write_tuning_config_sync(st.tuning.clone()) {
-                    st.tuning = saved;
-                    apply_tuning_to_window(&w, &st.tuning);
-                    let threshold = st.tuning.auto_purge_ram_threshold_mb;
-                    st.push_log(
-                        &w,
-                        "info",
-                        format!("Порог автоочистки ОЗУ установлен: {} МБ.", threshold),
-                    );
+                let mut candidate = st.tuning.clone();
+                candidate.auto_purge_ram_threshold_mb = mb as u32;
+                match backend::write_tuning_config_sync(candidate) {
+                    Ok(saved) => {
+                        st.tuning = saved;
+                        apply_tuning_to_window(&w, &st.tuning);
+                        let threshold = st.tuning.auto_purge_ram_threshold_mb;
+                        st.push_log(
+                            &w,
+                            "info",
+                            format!("Порог автоочистки ОЗУ установлен: {} МБ.", threshold),
+                        );
+                    }
+                    Err(e) => {
+                        apply_tuning_to_window(&w, &st.tuning);
+                        st.push_log(&w, "error", e);
+                    }
                 }
             }
         });
@@ -1362,6 +1583,7 @@ pub fn run_native_app() {
     let run_repair_action = {
         let weak = window.as_weak();
         let state = state.clone();
+        let spawn_services_refresh = spawn_services_refresh.clone();
         move |kind: String| {
             let Some(w) = weak.upgrade() else { return };
             if !w.get_running_repair().is_empty() {
@@ -1370,27 +1592,50 @@ pub fn run_native_app() {
             w.set_running_repair(SharedString::from(&kind));
             let weak_bg = weak.clone();
             let state_bg = state.clone();
+            let refresh_svcs_done = spawn_services_refresh.clone();
+            let kind_clone = kind.clone();
             std::thread::spawn(move || {
-                let res = backend::execute_emergency_repair_sync(&kind);
+                let res = backend::execute_emergency_repair_sync(&kind_clone);
+                let status = backend::read_system_status_sync().ok();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(w) = weak_bg.upgrade() {
                         w.set_running_repair(SharedString::default());
-                        let mut st = state_bg.lock().unwrap();
-                        match res {
-                            Ok(r) => {
-                                w.set_repair_status_text(SharedString::from(&r.message));
-                                w.set_repair_status_is_error(!r.success);
-                                st.push_log(
-                                    &w,
-                                    if r.success { "success" } else { "error" },
-                                    r.message,
-                                );
+                        if let Some(st_now) = status {
+                            apply_status_to_window(&w, &st_now);
+                        }
+                        let should_reload_svcs = {
+                            let mut st = state_bg.lock().unwrap();
+                            if kind_clone == "verify" {
+                                st.tuning = backend::load_tuning_from_disk(&st.runtime_root);
+                                apply_tuning_to_window(&w, &st.tuning);
                             }
-                            Err(e) => {
-                                w.set_repair_status_text(SharedString::from(&e));
-                                w.set_repair_status_is_error(true);
-                                st.push_log(&w, "error", e);
+                            match res {
+                                Ok(r) => {
+                                    w.set_repair_status_text(SharedString::from(&r.message));
+                                    w.set_repair_status_is_error(!r.success);
+                                    if r.log_entries.is_empty() {
+                                        st.push_log(
+                                            &w,
+                                            if r.success { "success" } else { "error" },
+                                            r.message,
+                                        );
+                                    } else {
+                                        for (lvl, msg) in r.log_entries {
+                                            st.push_log(&w, &lvl, msg);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    w.set_repair_status_text(SharedString::from(&e));
+                                    w.set_repair_status_is_error(true);
+                                    st.push_log(&w, "error", e);
+                                }
                             }
+                            (kind_clone == "services" || kind_clone == "verify")
+                                && st.services_lists.is_some()
+                        };
+                        if should_reload_svcs {
+                            refresh_svcs_done();
                         }
                     }
                 });
@@ -1444,11 +1689,21 @@ pub fn run_native_app() {
         let tray_controller = tray_controller.clone();
         let sync_tray = sync_tray.clone();
         let tray_rx = tray_rx.clone();
+        let tray_tip_rx = tray_tip_rx.clone();
+        let tray_tip_tx = tray_tip_tx.clone();
+        let runtime_root = runtime_root.clone();
         poll_timer.start(
             slint::TimerMode::Repeated,
             std::time::Duration::from_millis(250),
             move || {
-                sync_tray();
+                let _ = sync_tray();
+                if let Ok(tip_rx) = tray_tip_rx.lock() {
+                    for (mode_str, detail) in tip_rx.try_iter() {
+                        if let Some(ref ctrl) = *tray_controller.borrow() {
+                            ctrl.set_action_tooltip(&mode_str, &detail);
+                        }
+                    }
+                }
                 if let Some(w) = weak.upgrade() {
                     let os_max = w.window().is_maximized();
                     if os_max != w.get_is_maximized() {
@@ -1481,38 +1736,112 @@ pub fn run_native_app() {
                             }
                         }
                         TrayCommand::CleanRam => {
-                            if let Ok(res) = backend::clean_memory_native_sync() {
-                                if let Some(ref ctrl) = *tray_controller.borrow() {
-                                    ctrl.set_tooltip(&format!(
-                                        "Ultra Gaming Mode — {}",
-                                        res.message
-                                    ));
+                            let should_run = {
+                                let mut st = state.lock().unwrap();
+                                if st.cleaning_ram_from_tray {
+                                    false
+                                } else {
+                                    st.cleaning_ram_from_tray = true;
+                                    true
                                 }
-                                if let Some(w) = weak.upgrade() {
-                                    state.lock().unwrap().push_log(&w, "success", res.message);
-                                }
+                            };
+                            if should_run {
+                                let weak_bg = weak.clone();
+                                let state_bg = state.clone();
+                                let tip_tx_bg = tray_tip_tx.clone();
+                                let runtime_root_bg = runtime_root.clone();
+                                std::thread::spawn(move || {
+                                    let res = backend::clean_memory_native_sync();
+                                    let mode_now = backend::read_current_mode_fast(&runtime_root_bg);
+                                    match &res {
+                                        Ok(ok_res) => {
+                                            let _ = tip_tx_bg.send((mode_now, ok_res.message.clone()));
+                                        }
+                                        Err(err_msg) => {
+                                            let _ = tip_tx_bg.send((mode_now, err_msg.clone()));
+                                        }
+                                    }
+                                    let _ = slint::invoke_from_event_loop(move || {
+                                        let mut st = state_bg.lock().unwrap();
+                                        st.cleaning_ram_from_tray = false;
+                                        if let Some(w) = weak_bg.upgrade() {
+                                            match res {
+                                                Ok(ok_res) => {
+                                                    st.push_log(&w, "success", ok_res.message);
+                                                }
+                                                Err(e) => st.push_log(&w, "error", e),
+                                            }
+                                        }
+                                    });
+                                });
+                            }
+                            if let Some(ref ctrl) = *tray_controller.borrow() {
+                                let cur_mode = backend::read_current_mode_fast(&runtime_root);
+                                ctrl.set_action_tooltip(&cur_mode, "Очистка кэша ОЗУ…");
                             }
                         }
                         TrayCommand::ToggleTimer => {
-                            if TIMER_LOCKED.load(Ordering::SeqCst) {
-                                let _ = backend::timer::unlock_timer_resolution();
+                            let timer_res = if TIMER_LOCKED.load(Ordering::SeqCst) {
+                                backend::timer::unlock_timer_resolution().map(|ms| (false, ms))
                             } else {
-                                let _ = backend::timer::lock_timer_resolution_05ms();
-                            }
+                                backend::timer::lock_timer_resolution_05ms()
+                                    .map(|(ms, _)| (true, ms))
+                            };
                             if let Some(w) = weak.upgrade() {
                                 if let Ok(st) = backend::read_system_status_sync() {
                                     apply_status_to_window(&w, &st);
                                 }
+                                let mut st = state.lock().unwrap();
+                                match timer_res {
+                                    Ok((true, ms)) => st.push_log(
+                                        &w,
+                                        "success",
+                                        format!("Таймер из трея зафиксирован: {:.3} мс.", ms),
+                                    ),
+                                    Ok((false, ms)) => st.push_log(
+                                        &w,
+                                        "info",
+                                        format!("Фиксация таймера из трея снята ({:.3} мс).", ms),
+                                    ),
+                                    Err(e) => st.push_log(&w, "error", e),
+                                }
                             }
-                            sync_tray();
+                            let _ = sync_tray();
                         }
                         TrayCommand::RebootPc => {
-                            std::thread::spawn(|| {
-                                #[cfg(target_os = "windows")]
-                                if backend::win_hw::confirm_reboot_dialog_win32() {
-                                    let _ = backend::reboot_pc_sync();
-                                }
-                            });
+                            if REBOOT_DIALOG_OPEN
+                                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                                .is_ok()
+                            {
+                                let weak_bg = weak.clone();
+                                let state_bg = state.clone();
+                                std::thread::spawn(move || {
+                                    struct ResetGuard;
+                                    impl Drop for ResetGuard {
+                                        fn drop(&mut self) {
+                                            REBOOT_DIALOG_OPEN.store(false, Ordering::SeqCst);
+                                        }
+                                    }
+                                    let _guard = ResetGuard;
+                                    #[cfg(target_os = "windows")]
+                                    if backend::win_hw::confirm_reboot_dialog_win32() {
+                                        let rb_res = backend::reboot_pc_sync();
+                                        let _ = slint::invoke_from_event_loop(move || {
+                                            if let Some(w) = weak_bg.upgrade() {
+                                                let mut st = state_bg.lock().unwrap();
+                                                match rb_res {
+                                                    Ok(r) => st.push_log(&w, "warn", r.message),
+                                                    Err(e) => st.push_log(&w, "error", e),
+                                                }
+                                            }
+                                        });
+                                    }
+                                    #[cfg(not(target_os = "windows"))]
+                                    {
+                                        let _ = (weak_bg, state_bg);
+                                    }
+                                });
+                            }
                         }
                         TrayCommand::ExitApp => {
                             ALLOW_APP_EXIT.store(true, Ordering::SeqCst);
@@ -1528,6 +1857,7 @@ pub fn run_native_app() {
     // Background watcher thread: Single-instance wake event, active_state.json changes, 60s Standby RAM auto-purge
     {
         let weak_watcher = window.as_weak();
+        let state_watcher = state.clone();
         let tray_tx_watcher = tray_tx.clone();
         let runtime_root_watcher = runtime_root.clone();
         std::thread::spawn(move || {
@@ -1550,7 +1880,23 @@ pub fn run_native_app() {
                     .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                     .is_ok()
             {
-                let _ = backend::run_finish_pending_restore_sync();
+                let restore_res = backend::run_finish_pending_restore_sync();
+                let st_after = backend::read_system_status_sync().ok();
+                let weak_ui = weak_watcher.clone();
+                let state_ui = state_watcher.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(w) = weak_ui.upgrade() {
+                        if let Some(st_now) = st_after {
+                            apply_status_to_window(&w, &st_now);
+                        }
+                        let mut st = state_ui.lock().unwrap();
+                        match restore_res {
+                            Ok(r) if r.success => st.push_log(&w, "success", r.message),
+                            Ok(r) => st.push_log(&w, "error", r.message),
+                            Err(e) => st.push_log(&w, "error", e),
+                        }
+                    }
+                });
             }
 
             loop {
@@ -2042,10 +2388,19 @@ mod tests {
             list_content_diffs
         );
 
-        // 3. Keyboard Escape must dismiss both ConfirmDialogOverlay and TooltipOverlay
+        // 3. Keyboard Escape & closed-loop Tab focus trap inside ConfirmDialogOverlay and TooltipOverlay
+        window.set_pending_confirm_action(SharedString::from("shaders"));
         window.set_confirm_visible(true);
         sw_window.request_redraw();
         sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+        for _ in 0..3 {
+            sw_window.dispatch_event(slint::platform::WindowEvent::KeyPressed {
+                text: SharedString::from(slint::platform::Key::Tab),
+            });
+            sw_window.dispatch_event(slint::platform::WindowEvent::KeyReleased {
+                text: SharedString::from(slint::platform::Key::Tab),
+            });
+        }
         sw_window.dispatch_event(slint::platform::WindowEvent::KeyPressed {
             text: SharedString::from(slint::platform::Key::Escape),
         });
@@ -2054,12 +2409,18 @@ mod tests {
         });
         assert!(
             !window.get_confirm_visible(),
-            "Pressing Escape must dismiss ConfirmDialogOverlay"
+            "Pressing Escape after Tab cycling must still dismiss ConfirmDialogOverlay (focus trapped inside modal)"
         );
 
         window.set_tooltip_visible(true);
         sw_window.request_redraw();
         sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+        sw_window.dispatch_event(slint::platform::WindowEvent::KeyPressed {
+            text: SharedString::from(slint::platform::Key::Tab),
+        });
+        sw_window.dispatch_event(slint::platform::WindowEvent::KeyReleased {
+            text: SharedString::from(slint::platform::Key::Tab),
+        });
         sw_window.dispatch_event(slint::platform::WindowEvent::KeyPressed {
             text: SharedString::from(slint::platform::Key::Escape),
         });
@@ -2068,12 +2429,42 @@ mod tests {
         });
         assert!(
             !window.get_tooltip_visible(),
-            "Pressing Escape must dismiss TooltipOverlay"
+            "Pressing Escape after Tab must dismiss TooltipOverlay"
         );
 
-        // 4. Empty list state renders cleanly without panicking
-        window.set_service_items(ModelRc::new(VecModel::from(Vec::<ServiceRowItem>::new())));
+        // 4. Shrinking filtered list after scrolling must clamp scroll offset so remaining item stays visible
+        let single_service = vec![ServiceRowItem {
+            name: SharedString::from("Audiosrv"),
+            display_name: SharedString::from("Windows Audio"),
+            status_label: SharedString::from("Работает"),
+            is_running: true,
+            is_core_locked: true,
+            disable_in_gaming: false,
+            summary_ru: SharedString::from("Критическая служба звука."),
+            can_disable_hint: SharedString::from("Нельзя выключать."),
+            safety_level: SharedString::from("protected"),
+        }];
+        window.set_service_items(ModelRc::new(VecModel::from(single_service)));
         sw_window.request_redraw();
         sw_window.draw_if_needed(|r| { r.render(&mut rbuf_a, 960); });
+
+        // Empty list state renders cleanly without panicking
+        window.set_service_items(ModelRc::new(VecModel::from(Vec::<ServiceRowItem>::new())));
+        sw_window.request_redraw();
+        sw_window.draw_if_needed(|r| { r.render(&mut rbuf_b, 960); });
+
+        let mut single_vs_empty_diffs = 0usize;
+        for y in 260..420 {
+            for x in 30..900 {
+                if rbuf_a[y * 960 + x] != rbuf_b[y * 960 + x] {
+                    single_vs_empty_diffs += 1;
+                }
+            }
+        }
+        assert!(
+            single_vs_empty_diffs > 400,
+            "Filtered 1-item list after scrolling must clamp into viewport instead of rendering off-screen (diffs={})",
+            single_vs_empty_diffs
+        );
     }
 }

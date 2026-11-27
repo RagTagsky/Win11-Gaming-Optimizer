@@ -148,6 +148,21 @@ static EXE_METADATA_CACHE: Mutex<Option<std::collections::HashMap<String, ExeMet
     Mutex::new(None);
 static SERVICE_SCM_DESC_CACHE: Mutex<Option<std::collections::HashMap<String, Option<String>>>> =
     Mutex::new(None);
+static STARTUP_MIGRATION_LOGS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
+fn record_startup_migration_log(level: &str, message: impl Into<String>) {
+    if let Ok(mut guard) = STARTUP_MIGRATION_LOGS.lock() {
+        guard.push((level.to_string(), message.into()));
+    }
+}
+
+pub fn take_startup_migration_logs() -> Vec<(String, String)> {
+    if let Ok(mut guard) = STARTUP_MIGRATION_LOGS.lock() {
+        std::mem::take(&mut *guard)
+    } else {
+        Vec::new()
+    }
+}
 
 fn default_true() -> bool {
     true
@@ -383,23 +398,6 @@ pub struct ProcessItem {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct StartupEntry {
-    pub id: String,
-    pub name: String,
-    #[serde(rename = "displayName")]
-    pub display_name: String,
-    pub source: String,
-    #[serde(rename = "sourceLabel")]
-    pub source_label: String,
-    pub target: String,
-    pub enabled: bool,
-    #[serde(rename = "isProtected")]
-    pub is_protected: bool,
-    #[serde(rename = "matchedRule", default)]
-    pub matched_rule: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProcessConfigLists {
     #[serde(rename = "blacklistProcesses")]
     pub blacklist_processes: Vec<String>,
@@ -433,6 +431,8 @@ pub struct SystemStatus {
 pub struct ActionResult {
     pub success: bool,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub log_entries: Vec<(String, String)>,
 }
 
 const CRITICAL_PROTECTED_PROCESSES: &[&str] = &[
@@ -750,14 +750,28 @@ pub fn is_immutable_core_service(name: &str) -> bool {
         .any(|s| s.eq_ignore_ascii_case(trimmed) || s.eq_ignore_ascii_case(canon))
 }
 
+fn format_fs_write_error(path: &Path, err: &std::io::Error) -> String {
+    if err.kind() == std::io::ErrorKind::PermissionDenied || err.raw_os_error() == Some(5) {
+        format!(
+            "Нет прав на запись в '{}' ({}). Запустите приложение от имени администратора или проверьте атрибуты доступа.",
+            path.display(),
+            err
+        )
+    } else {
+        format!("Не удалось записать '{}': {}", path.display(), err)
+    }
+}
+
 fn write_json_no_bom(path: &Path, val: &impl Serialize) -> Result<(), String> {
+    static TMP_WRITE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Не удалось создать каталог {}: {}", parent.display(), e))?;
+            .map_err(|e| format_fs_write_error(parent, &e))?;
     }
     let serialized = serde_json::to_string_pretty(val)
         .map_err(|e| format!("Ошибка сериализации {}: {}", path.display(), e))?;
-    let tmp_path = path.with_extension(format!("tmp.{}", std::process::id()));
+    let seq = TMP_WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = path.with_extension(format!("tmp.{}.{}", std::process::id(), seq));
     if std::fs::write(&tmp_path, serialized.as_bytes()).is_ok() {
         if std::fs::rename(&tmp_path, path).is_ok() {
             return Ok(());
@@ -765,7 +779,26 @@ fn write_json_no_bom(path: &Path, val: &impl Serialize) -> Result<(), String> {
         let _ = std::fs::remove_file(&tmp_path);
     }
     std::fs::write(path, serialized.as_bytes())
-        .map_err(|e| format!("Не удалось записать {}: {}", path.display(), e))
+        .map_err(|e| format_fs_write_error(path, &e))
+}
+
+pub fn single_instance_ipc_names_for(raw_ns: Option<&str>) -> (String, String) {
+    let valid_ns = raw_ns.map(str::trim).filter(|s| {
+        !s.is_empty()
+            && s.len() <= 48
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    });
+    match valid_ns {
+        Some(ns) => (
+            format!(r"Local\UltraGamingMode_SingleInstance_v3_{}", ns),
+            format!(r"Local\UltraGamingMode_WakeWindow_v3_{}", ns),
+        ),
+        None => (
+            r"Local\UltraGamingMode_SingleInstance_v3".to_string(),
+            r"Local\UltraGamingMode_WakeWindow_v3".to_string(),
+        ),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -865,31 +898,6 @@ pub mod win_hw {
     }
 
     #[repr(C)]
-    #[derive(Default, Clone, Copy)]
-    struct SERVICE_STATUS {
-        dw_service_type: u32,
-        dw_current_state: u32,
-        dw_controls_accepted: u32,
-        dw_win32_exit_code: u32,
-        dw_service_specific_exit_code: u32,
-        dw_check_point: u32,
-        dw_wait_hint: u32,
-    }
-
-    #[repr(C)]
-    struct QUERY_SERVICE_CONFIGW {
-        dw_service_type: u32,
-        dw_start_type: u32,
-        dw_error_control: u32,
-        lp_binary_path_name: *mut u16,
-        lp_load_order_group: *mut u16,
-        dw_tag_id: u32,
-        lp_dependencies: *mut u16,
-        lp_service_start_name: *mut u16,
-        lp_display_name: *mut u16,
-    }
-
-    #[repr(C)]
     struct SERVICE_DESCRIPTIONW {
         lp_description: *mut u16,
     }
@@ -963,39 +971,6 @@ pub mod win_hw {
             lpServiceName: *const u16,
             dwDesiredAccess: u32,
         ) -> usize;
-        fn StartServiceW(
-            hService: usize,
-            dwNumServiceArgs: u32,
-            lpServiceArgVectors: *const *const u16,
-        ) -> i32;
-        fn ControlService(
-            hService: usize,
-            dwControl: u32,
-            lpServiceStatus: *mut SERVICE_STATUS,
-        ) -> i32;
-        fn QueryServiceStatus(
-            hService: usize,
-            lpServiceStatus: *mut SERVICE_STATUS,
-        ) -> i32;
-        fn ChangeServiceConfigW(
-            hService: usize,
-            dwServiceType: u32,
-            dwStartType: u32,
-            dwErrorControl: u32,
-            lpBinaryPathName: *const u16,
-            lpLoadOrderGroup: *const u16,
-            lpdwTagId: *mut u32,
-            lpDependencies: *const u16,
-            lpServiceStartName: *const u16,
-            lpPassword: *const u16,
-            lpDisplayName: *const u16,
-        ) -> i32;
-        fn QueryServiceConfigW(
-            hService: usize,
-            lpServiceConfig: *mut u8,
-            cbBufSize: u32,
-            pcbBytesNeeded: *mut u32,
-        ) -> i32;
         fn QueryServiceConfig2W(
             hService: usize,
             dwInfoLevel: u32,
@@ -1054,7 +1029,6 @@ pub mod win_hw {
         fn Process32FirstW(hSnapshot: isize, lppe: *mut PROCESSENTRY32W) -> i32;
         fn Process32NextW(hSnapshot: isize, lppe: *mut PROCESSENTRY32W) -> i32;
         fn OpenProcess(dwDesiredAccess: u32, bInheritHandle: i32, dwProcessId: u32) -> isize;
-        fn TerminateProcess(hProcess: isize, uExitCode: u32) -> i32;
         fn CloseHandle(hObject: isize) -> i32;
         fn QueryFullProcessImageNameW(
             hProcess: isize,
@@ -2161,80 +2135,6 @@ pub mod win_hw {
         out
     }
 
-    pub fn terminate_process_win32(pid: u32, expected_name: &str) -> Result<String, String> {
-        if pid <= 4 || pid == std::process::id() {
-            return Err(format!(
-                "Запрещено завершение защищённого или собственного PID {}",
-                pid
-            ));
-        }
-        let expected_clean = super::strip_exe_suffix(expected_name).trim();
-        if !super::is_safe_identifier(expected_clean)
-            || super::is_protected_process_name(expected_clean)
-        {
-            return Err(format!(
-                "Процесс '{}' защищён от завершения.",
-                expected_clean
-            ));
-        }
-
-        unsafe {
-            let h_proc = OpenProcess(0x1001, 0, pid);
-            if h_proc == 0 {
-                let err = GetLastError();
-                return Err(format!(
-                    "Не удалось открыть процесс '{}' (PID {}): код Win32 {}",
-                    expected_clean, pid, err
-                ));
-            }
-
-            let mut path_buf = [0u16; 512];
-            let mut path_len = path_buf.len() as u32;
-            if QueryFullProcessImageNameW(h_proc, 0, path_buf.as_mut_ptr(), &mut path_len) != 0
-                && path_len > 0
-            {
-                let full_path = String::from_utf16_lossy(&path_buf[..(path_len as usize)]);
-                let actual_name = std::path::Path::new(&full_path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .trim();
-                if actual_name.is_empty()
-                    || !actual_name.eq_ignore_ascii_case(expected_clean)
-                    || super::is_protected_process_name(actual_name)
-                {
-                    let _ = CloseHandle(h_proc);
-                    return Err(format!(
-                        "Несовпадение имени процесса или попытка завершить защищённый процесс (PID {}: '{}').",
-                        pid, actual_name
-                    ));
-                }
-            } else {
-                let _ = CloseHandle(h_proc);
-                return Err(format!(
-                    "Не удалось подтвердить образ процесса '{}' (PID {}). Завершение отменено.",
-                    expected_clean, pid
-                ));
-            }
-
-            let term_ok = TerminateProcess(h_proc, 1);
-            let term_err = if term_ok == 0 { GetLastError() } else { 0 };
-            let _ = CloseHandle(h_proc);
-
-            if term_ok == 0 {
-                return Err(format!(
-                    "TerminateProcess не удалось для '{}' (PID {}): код Win32 {}",
-                    expected_clean, pid, term_err
-                ));
-            }
-        }
-
-        Ok(format!(
-            "Процесс '{}' (PID: {}) успешно завершён.",
-            expected_clean, pid
-        ))
-    }
-
     fn enable_privilege(privilege_name: &str) -> bool {
         unsafe {
             let mut token: isize = 0;
@@ -2323,181 +2223,6 @@ pub mod win_hw {
         }
     }
 
-    pub fn control_service_win32(
-        service_name: &str,
-        operation: &str,
-    ) -> Result<Result<String, u32>, String> {
-        const SERVICE_NO_CHANGE: u32 = 0xFFFF_FFFF;
-        const SERVICE_AUTO_START: u32 = 2;
-        const SERVICE_DEMAND_START: u32 = 3;
-        const SERVICE_DISABLED: u32 = 4;
-        const SERVICE_CONTROL_STOP: u32 = 1;
-
-        let desired_access: u32 = match operation {
-            "Start" => 0x0017,
-            "Stop" => 0x0024,
-            "Automatic" | "Manual" | "Disabled" => 0x0002,
-            _ => return Err(format!("Недопустимая операция над службой: {}", operation)),
-        };
-
-        unsafe {
-            let scm = OpenSCManagerW(std::ptr::null(), std::ptr::null(), 0x0001);
-            if scm == 0 {
-                return Err(format!(
-                    "Не удалось открыть диспетчер служб Windows (Win32 {})",
-                    GetLastError()
-                ));
-            }
-
-            let mut resolved_name = service_name.to_string();
-            let mut svc_w = to_wide(&resolved_name);
-            let mut h_svc = OpenServiceW(scm, svc_w.as_ptr(), desired_access);
-            if h_svc == 0 && GetLastError() == 1060 {
-                let lower = service_name.to_lowercase();
-                let prefix_under = format!("{}_", lower);
-                let live = enumerate_live_services();
-                if let Some((orig_name, _, _)) = live
-                    .iter()
-                    .find(|(k, _)| {
-                        k.starts_with(&prefix_under)
-                            || (k.starts_with(&lower)
-                                && k.len() > lower.len()
-                                && k.as_bytes()[lower.len()].is_ascii_digit())
-                    })
-                    .map(|(_, v)| v)
-                {
-                    resolved_name = orig_name.clone();
-                    svc_w = to_wide(&resolved_name);
-                    h_svc = OpenServiceW(scm, svc_w.as_ptr(), desired_access);
-                }
-            }
-
-            if h_svc == 0 {
-                let err = GetLastError();
-                let _ = CloseServiceHandle(scm);
-                return Err(format!(
-                    "Не удалось открыть службу '{}' (Win32 {})",
-                    resolved_name, err
-                ));
-            }
-
-            let result: Result<Result<String, u32>, String> = match operation {
-                "Start" => {
-                    let mut cfg_buf = vec![0u64; 1024];
-                    let mut needed: u32 = 0;
-                    if QueryServiceConfigW(
-                        h_svc,
-                        cfg_buf.as_mut_ptr() as *mut u8,
-                        (cfg_buf.len() * 8) as u32,
-                        &mut needed,
-                    ) != 0
-                    {
-                        let cfg = &*(cfg_buf.as_ptr() as *const QUERY_SERVICE_CONFIGW);
-                        if cfg.dw_start_type == SERVICE_DISABLED {
-                            let _ = ChangeServiceConfigW(
-                                h_svc,
-                                SERVICE_NO_CHANGE,
-                                SERVICE_DEMAND_START,
-                                SERVICE_NO_CHANGE,
-                                std::ptr::null(),
-                                std::ptr::null(),
-                                std::ptr::null_mut(),
-                                std::ptr::null(),
-                                std::ptr::null(),
-                                std::ptr::null(),
-                                std::ptr::null(),
-                            );
-                        }
-                    }
-                    if StartServiceW(h_svc, 0, std::ptr::null()) == 0 {
-                        let err = GetLastError();
-                        if err == 1056 {
-                            Ok(Ok(format!("Служба '{}' уже запущена.", resolved_name)))
-                        } else {
-                            Err(format!(
-                                "StartServiceW завершилась с ошибкой Win32 {} для '{}'",
-                                err, resolved_name
-                            ))
-                        }
-                    } else {
-                        let mut st = SERVICE_STATUS::default();
-                        for _ in 0..20 {
-                            if QueryServiceStatus(h_svc, &mut st) == 0 || st.dw_current_state != 2 {
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(75));
-                        }
-                        Ok(Ok(format!("Служба '{}' запущена.", resolved_name)))
-                    }
-                }
-                "Stop" => {
-                    let mut st = SERVICE_STATUS::default();
-                    if ControlService(h_svc, SERVICE_CONTROL_STOP, &mut st) == 0 {
-                        let err = GetLastError();
-                        if err == 1062 {
-                            Ok(Ok(format!("Служба '{}' уже остановлена.", resolved_name)))
-                        } else if err == 1051 {
-                            Ok(Err(1051))
-                        } else {
-                            Err(format!(
-                                "ControlService(STOP) завершилась с ошибкой Win32 {} для '{}'",
-                                err, resolved_name
-                            ))
-                        }
-                    } else {
-                        for _ in 0..20 {
-                            if st.dw_current_state != 3 {
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(75));
-                            if QueryServiceStatus(h_svc, &mut st) == 0 {
-                                break;
-                            }
-                        }
-                        Ok(Ok(format!("Служба '{}' остановлена.", resolved_name)))
-                    }
-                }
-                "Automatic" | "Manual" | "Disabled" => {
-                    let target_start = match operation {
-                        "Automatic" => SERVICE_AUTO_START,
-                        "Manual" => SERVICE_DEMAND_START,
-                        _ => SERVICE_DISABLED,
-                    };
-                    if ChangeServiceConfigW(
-                        h_svc,
-                        SERVICE_NO_CHANGE,
-                        target_start,
-                        SERVICE_NO_CHANGE,
-                        std::ptr::null(),
-                        std::ptr::null(),
-                        std::ptr::null_mut(),
-                        std::ptr::null(),
-                        std::ptr::null(),
-                        std::ptr::null(),
-                        std::ptr::null(),
-                    ) == 0
-                    {
-                        let err = GetLastError();
-                        Err(format!(
-                            "ChangeServiceConfigW завершилась с ошибкой Win32 {} для '{}'",
-                            err, resolved_name
-                        ))
-                    } else {
-                        Ok(Ok(format!(
-                            "Тип запуска службы '{}' изменён на {}.",
-                            resolved_name, operation
-                        )))
-                    }
-                }
-                _ => Err("Неизвестная операция".to_string()),
-            };
-
-            let _ = CloseServiceHandle(h_svc);
-            let _ = CloseServiceHandle(scm);
-            result
-        }
-    }
-
     pub fn confirm_reboot_dialog_win32() -> bool {
         unsafe {
             let text = to_wide("Перезагрузить компьютер сейчас?\nНесохранённые данные в открытых программах могут быть потеряны.");
@@ -2510,13 +2235,15 @@ pub mod win_hw {
     pub fn acquire_single_instance_or_wake(wake_existing: bool) -> Option<isize> {
         const ERROR_ALREADY_EXISTS: u32 = 183;
         const EVENT_MODIFY_STATE: u32 = 0x0002;
+        let ns_env = std::env::var("UGM_INSTANCE_NAMESPACE").ok();
+        let (mutex_str, wake_str) = super::single_instance_ipc_names_for(ns_env.as_deref());
         unsafe {
-            let mutex_name = to_wide(r"Local\UltraGamingMode_SingleInstance_v3");
+            let mutex_name = to_wide(&mutex_str);
             let h_mutex = CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr());
             if h_mutex != 0 && GetLastError() == ERROR_ALREADY_EXISTS {
                 let _ = CloseHandle(h_mutex);
                 if wake_existing {
-                    let wake_name = to_wide(r"Local\UltraGamingMode_WakeWindow_v3");
+                    let wake_name = to_wide(&wake_str);
                     let h_wake = OpenEventW(EVENT_MODIFY_STATE, 0, wake_name.as_ptr());
                     if h_wake != 0 {
                         let _ = SetEvent(h_wake);
@@ -2530,8 +2257,10 @@ pub mod win_hw {
     }
 
     pub fn create_wake_event() -> isize {
+        let ns_env = std::env::var("UGM_INSTANCE_NAMESPACE").ok();
+        let (_, wake_str) = super::single_instance_ipc_names_for(ns_env.as_deref());
         unsafe {
-            let wake_name = to_wide(r"Local\UltraGamingMode_WakeWindow_v3");
+            let wake_name = to_wide(&wake_str);
             CreateEventW(std::ptr::null(), 0, 0, wake_name.as_ptr())
         }
     }
@@ -2726,17 +2455,14 @@ pub fn sync_embedded_runtime(root: &Path) -> Result<(), String> {
         };
 
         if should_write {
-            std::fs::write(&dest, asset.bytes).map_err(|e| {
-                format!(
-                    "Не удалось записать встроенный ресурс {}: {}",
-                    dest.display(),
-                    e
-                )
-            })?;
+            std::fs::write(&dest, asset.bytes).map_err(|e| format_fs_write_error(&dest, &e))?;
         }
     }
 
-    migrate_user_configs_in_place(root);
+    let changes = migrate_user_configs_in_place(root)?;
+    for ch in changes {
+        record_startup_migration_log("info", format!("Автоисправление конфига: {}", ch));
+    }
 
     Ok(())
 }
@@ -2746,39 +2472,61 @@ pub fn sync_embedded_runtime(root: &Path) -> Result<(), String> {
 /// - Strips accidental UTF-8 BOMs from Config/*.json
 /// - Migrates legacy tuning.json switches to strictly the 3 AAA automation keys
 /// - Ensures critical Zapret/WinDivert/anti-cheat services are whitelisted and never blacklisted
+/// - Resolves any overlap between services_whitelist.json and services_blacklist.json
 /// - Ensures Zapret/winws and core OS shell processes are protected in startup_apps.json
-pub fn migrate_user_configs_in_place(root: &Path) {
+///
+/// Returns the list of applied migration descriptions, or `Err` if a required write fails.
+pub fn migrate_user_configs_in_place(root: &Path) -> Result<Vec<String>, String> {
     let config_dir = root.join("Config");
     if !config_dir.is_dir() {
-        return;
+        return Ok(Vec::new());
     }
 
-    if let Ok(entries) = std::fs::read_dir(&config_dir) {
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.extension()
+    let mut changes = Vec::new();
+
+    let dir_entries = std::fs::read_dir(&config_dir)
+        .map_err(|e| format!("Не удалось прочитать каталог '{}': {}", config_dir.display(), e))?;
+    let mut json_paths: Vec<PathBuf> = dir_entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
                 .and_then(|e| e.to_str())
                 .map(|e| e.eq_ignore_ascii_case("json"))
                 .unwrap_or(false)
-            {
-                if let Ok(bytes) = std::fs::read(&p) {
-                    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-                        let _ = std::fs::write(&p, &bytes[3..]);
-                    }
-                }
-            }
+        })
+        .collect();
+    json_paths.sort();
+
+    for p in json_paths {
+        let bytes = std::fs::read(&p)
+            .map_err(|e| format!("Не удалось прочитать '{}': {}", p.display(), e))?;
+        if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+            std::fs::write(&p, &bytes[3..]).map_err(|e| format_fs_write_error(&p, &e))?;
+            let fname = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Config/*.json");
+            changes.push(format!("удалён UTF-8 BOM из {}", fname));
         }
     }
 
     let tuning_path = config_dir.join("tuning.json");
-    if let Ok(raw) = std::fs::read_to_string(&tuning_path) {
+    if tuning_path.exists() {
+        let raw = std::fs::read_to_string(&tuning_path)
+            .map_err(|e| format!("Не удалось прочитать '{}': {}", tuning_path.display(), e))?;
         let trimmed = raw.trim_start_matches('\u{feff}');
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            if let Some(obj) = val.as_object() {
+        match serde_json::from_str::<serde_json::Value>(trimmed) {
+            Ok(serde_json::Value::Object(obj)) => {
                 let needs_migration = obj.len() != 3
-                    || !obj.contains_key("AutoLockTimerInGaming")
-                    || !obj.contains_key("AutoPurgeRamInGaming")
-                    || !obj.contains_key("AutoPurgeRamThresholdMB")
+                    || !obj
+                        .get("AutoLockTimerInGaming")
+                        .map(|v| v.is_boolean())
+                        .unwrap_or(false)
+                    || !obj
+                        .get("AutoPurgeRamInGaming")
+                        .map(|v| v.is_boolean())
+                        .unwrap_or(false)
                     || obj
                         .get("AutoPurgeRamThresholdMB")
                         .and_then(|v| v.as_u64())
@@ -2788,11 +2536,48 @@ pub fn migrate_user_configs_in_place(root: &Path) {
                         })
                         .unwrap_or(true);
                 if needs_migration {
-                    if let Ok(parsed) = serde_json::from_value::<TuningConfig>(val) {
-                        let normalized = normalize_tuning_config(parsed);
-                        let _ = write_json_no_bom(&tuning_path, &normalized);
-                    }
+                    let auto_lock = obj
+                        .get("AutoLockTimerInGaming")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let auto_purge = obj
+                        .get("AutoPurgeRamInGaming")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(true);
+                    let threshold_mb = obj
+                        .get("AutoPurgeRamThresholdMB")
+                        .and_then(|v| {
+                            v.as_u64()
+                                .map(|n| n.min(u32::MAX as u64) as u32)
+                                .or_else(|| {
+                                    v.as_i64().map(|n| {
+                                        if n <= 0 {
+                                            MIN_AUTO_PURGE_RAM_THRESHOLD_MB
+                                        } else {
+                                            n.min(u32::MAX as i64) as u32
+                                        }
+                                    })
+                                })
+                                .or_else(|| v.as_f64().map(|f| f.max(0.0) as u32))
+                        })
+                        .unwrap_or(DEFAULT_AUTO_PURGE_RAM_THRESHOLD_MB);
+                    let normalized = normalize_tuning_config(TuningConfig {
+                        auto_lock_timer_in_gaming: auto_lock,
+                        auto_purge_ram_in_gaming: auto_purge,
+                        auto_purge_ram_threshold_mb: threshold_mb,
+                    });
+                    write_json_no_bom(&tuning_path, &normalized)?;
+                    changes.push(
+                        "обновлён tuning.json до актуальной схемы AAA (3 параметра)".to_string(),
+                    );
                 }
+            }
+            _ => {
+                write_json_no_bom(&tuning_path, &TuningConfig::default())?;
+                changes.push(
+                    "восстановлен повреждённый tuning.json до параметров AAA по умолчанию"
+                        .to_string(),
+                );
             }
         }
     }
@@ -2816,8 +2601,14 @@ pub fn migrate_user_configs_in_place(root: &Path) {
     ];
     let wl_path = config_dir.join("services_whitelist.json");
     let bl_path = config_dir.join("services_blacklist.json");
+    let mut effective_whitelist: Vec<String> = MANDATORY_WHITELIST
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
 
-    if let Ok(raw) = std::fs::read_to_string(&wl_path) {
+    if wl_path.exists() {
+        let raw = std::fs::read_to_string(&wl_path)
+            .map_err(|e| format!("Не удалось прочитать '{}': {}", wl_path.display(), e))?;
         if let Ok(mut wl_val) =
             serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}'))
         {
@@ -2825,26 +2616,43 @@ pub fn migrate_user_configs_in_place(root: &Path) {
                 .get_mut("ProtectedServices")
                 .and_then(|v| v.as_array_mut())
             {
-                let mut changed = false;
+                let mut added_wl: Vec<&str> = Vec::new();
                 for req in MANDATORY_WHITELIST {
                     let exists = arr.iter().any(|item| {
                         item.as_str()
-                            .map(|s| s.eq_ignore_ascii_case(req))
+                            .map(|s| service_names_match(s, req))
                             .unwrap_or(false)
                     });
                     if !exists {
                         arr.push(serde_json::Value::String((*req).to_string()));
-                        changed = true;
+                        added_wl.push(*req);
                     }
                 }
-                if changed {
-                    let _ = write_json_no_bom(&wl_path, &wl_val);
+                for item in arr.iter() {
+                    if let Some(s) = item.as_str() {
+                        if !effective_whitelist
+                            .iter()
+                            .any(|w| service_names_match(w, s))
+                        {
+                            effective_whitelist.push(s.to_string());
+                        }
+                    }
+                }
+                if !added_wl.is_empty() {
+                    write_json_no_bom(&wl_path, &wl_val)?;
+                    changes.push(format!(
+                        "добавлены защищённые службы в services_whitelist.json ({}): {}",
+                        added_wl.len(),
+                        added_wl.join(", ")
+                    ));
                 }
             }
         }
     }
 
-    if let Ok(raw) = std::fs::read_to_string(&bl_path) {
+    if bl_path.exists() {
+        let raw = std::fs::read_to_string(&bl_path)
+            .map_err(|e| format!("Не удалось прочитать '{}': {}", bl_path.display(), e))?;
         if let Ok(mut bl_val) =
             serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}'))
         {
@@ -2852,18 +2660,32 @@ pub fn migrate_user_configs_in_place(root: &Path) {
                 .get_mut("TargetServices")
                 .and_then(|v| v.as_array_mut())
             {
-                let orig_len = arr.len();
+                let mut removed_bl: Vec<String> = Vec::new();
                 arr.retain(|item| {
                     let name = item
                         .as_str()
                         .or_else(|| item.get("Name").and_then(|n| n.as_str()))
-                        .unwrap_or("");
-                    !MANDATORY_WHITELIST
+                        .unwrap_or("")
+                        .trim();
+                    if name.is_empty() {
+                        removed_bl.push("<empty>".to_string());
+                        return false;
+                    }
+                    let should_remove = effective_whitelist
                         .iter()
-                        .any(|req| req.eq_ignore_ascii_case(name))
+                        .any(|req| service_names_match(req, name));
+                    if should_remove {
+                        removed_bl.push(name.to_string());
+                    }
+                    !should_remove
                 });
-                if arr.len() != orig_len {
-                    let _ = write_json_no_bom(&bl_path, &bl_val);
+                if !removed_bl.is_empty() {
+                    write_json_no_bom(&bl_path, &bl_val)?;
+                    changes.push(format!(
+                        "исключены защищённые службы из services_blacklist.json ({}): {}",
+                        removed_bl.len(),
+                        removed_bl.join(", ")
+                    ));
                 }
             }
         }
@@ -2879,30 +2701,31 @@ pub fn migrate_user_configs_in_place(root: &Path) {
         "zapret",
     ];
     let st_path = config_dir.join("startup_apps.json");
-    if let Ok(raw) = std::fs::read_to_string(&st_path) {
+    if st_path.exists() {
+        let raw = std::fs::read_to_string(&st_path)
+            .map_err(|e| format!("Не удалось прочитать '{}': {}", st_path.display(), e))?;
         if let Ok(mut st_val) =
             serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}'))
         {
-            let mut changed = false;
+            let mut removed_st_bl: Vec<String> = Vec::new();
+            let mut added_st_prot: Vec<&str> = Vec::new();
             if let Some(bl_arr) = st_val
                 .get_mut("BlacklistProcesses")
                 .and_then(|v| v.as_array_mut())
             {
-                let orig_len = bl_arr.len();
                 bl_arr.retain(|item| {
-                    let clean = item
-                        .as_str()
-                        .unwrap_or("")
-                        .trim()
+                    let raw_name = item.as_str().unwrap_or("").trim();
+                    let clean = raw_name
                         .trim_end_matches(".exe")
                         .trim_end_matches(".EXE");
-                    !FORBIDDEN_BLACKLIST_PROCS
+                    let forbidden = FORBIDDEN_BLACKLIST_PROCS
                         .iter()
-                        .any(|forb| forb.eq_ignore_ascii_case(clean))
+                        .any(|forb| forb.eq_ignore_ascii_case(clean));
+                    if forbidden {
+                        removed_st_bl.push(clean.to_string());
+                    }
+                    !forbidden
                 });
-                if bl_arr.len() != orig_len {
-                    changed = true;
-                }
             }
             if let Some(prot_arr) = st_val
                 .get_mut("ProtectedStartupNames")
@@ -2921,15 +2744,29 @@ pub fn migrate_user_configs_in_place(root: &Path) {
                     });
                     if !exists {
                         prot_arr.push(serde_json::Value::String((*req).to_string()));
-                        changed = true;
+                        added_st_prot.push(*req);
                     }
                 }
             }
-            if changed {
-                let _ = write_json_no_bom(&st_path, &st_val);
+            if !removed_st_bl.is_empty() || !added_st_prot.is_empty() {
+                write_json_no_bom(&st_path, &st_val)?;
+                if !removed_st_bl.is_empty() {
+                    changes.push(format!(
+                        "исключены защищённые процессы из BlacklistProcesses в startup_apps.json: {}",
+                        removed_st_bl.join(", ")
+                    ));
+                }
+                if !added_st_prot.is_empty() {
+                    changes.push(format!(
+                        "добавлены защищённые процессы в ProtectedStartupNames в startup_apps.json: {}",
+                        added_st_prot.join(", ")
+                    ));
+                }
             }
         }
     }
+
+    Ok(changes)
 }
 
 pub fn ensure_backups_writable(root: &Path) {
@@ -3007,7 +2844,12 @@ pub fn resolve_runtime_root_fresh() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
             if exe_dir.join("UltraGamingMode.ps1").exists() && is_dir_writable(exe_dir) {
-                let _ = sync_embedded_runtime(exe_dir);
+                if let Err(e) = sync_embedded_runtime(exe_dir) {
+                    record_startup_migration_log(
+                        "error",
+                        format!("Не удалось обновить ресурсы/конфиги в '{}': {}", exe_dir.display(), e),
+                    );
+                }
                 ensure_backups_writable(exe_dir);
                 return exe_dir.to_path_buf();
             }
@@ -4165,7 +4007,11 @@ pub fn run_powershell_script(
         }
     };
 
-    Ok(ActionResult { success, message })
+    Ok(ActionResult {
+        success,
+        message,
+        log_entries: Vec::new(),
+    })
 }
 
 pub fn run_execute_mode_action_sync(action: &str) -> Result<ActionResult, String> {
@@ -4311,6 +4157,7 @@ pub fn clean_memory_native_sync() -> Result<ActionResult, String> {
                 "Кэш ОЗУ (Standby List) очищен. Освобождено {:.1} МБ.",
                 freed_mb
             ),
+            log_entries: Vec::new(),
         })
     }
     #[cfg(not(target_os = "windows"))]
@@ -4318,8 +4165,508 @@ pub fn clean_memory_native_sync() -> Result<ActionResult, String> {
         Ok(ActionResult {
             success: true,
             message: "Кэш ОЗУ очищен (симуляция вне Windows).".to_string(),
+            log_entries: Vec::new(),
         })
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VerifyVerdict {
+    Passed {
+        summary: String,
+    },
+    Failed {
+        summary: Option<String>,
+        fail_lines: Vec<String>,
+        extra_error: Option<String>,
+    },
+    Unknown {
+        reason: String,
+    },
+}
+
+pub fn parse_test_results_counts(line: &str) -> Option<(u64, u64)> {
+    let idx = line.find("TEST RESULTS:")?;
+    let after = line[idx + "TEST RESULTS:".len()..].trim();
+    let mut parts = after.split('|');
+    let left = parts.next()?.trim();
+    let right = parts.next()?.trim();
+    let tests_run = left.split_whitespace().next()?.parse::<u64>().ok()?;
+    let failures = right.split_whitespace().next()?.parse::<u64>().ok()?;
+    Some((tests_run, failures))
+}
+
+fn extract_concise_non_pass_error(stdout: &str, stderr: &str) -> Option<String> {
+    let mut candidates: Vec<&str> = Vec::new();
+    for src in [stderr, stdout] {
+        for raw in src.lines() {
+            let t = raw.trim();
+            if t.is_empty()
+                || t.starts_with("[PASS]")
+                || t.starts_with("[Test Group")
+                || t.starts_with("===")
+                || t.contains("ULTRA GAMING MODE ENGINE VERIFICATION SUITE")
+            {
+                continue;
+            }
+            candidates.push(t);
+            if candidates.len() >= 3 {
+                break;
+            }
+        }
+        if !candidates.is_empty() {
+            break;
+        }
+    }
+    if candidates.is_empty() {
+        None
+    } else {
+        Some(candidates.join(" | "))
+    }
+}
+
+pub fn evaluate_verify_output(
+    exit_success: bool,
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+) -> VerifyVerdict {
+    let test_results_line = stdout
+        .lines()
+        .chain(stderr.lines())
+        .rev()
+        .map(|l| l.trim())
+        .find(|l| l.contains("TEST RESULTS:"))
+        .map(|s| s.to_string());
+
+    let fail_lines: Vec<String> = stdout
+        .lines()
+        .chain(stderr.lines())
+        .map(|l| l.trim())
+        .filter(|l| l.starts_with("[FAIL]"))
+        .map(|s| s.to_string())
+        .collect();
+
+    if !fail_lines.is_empty() {
+        return VerifyVerdict::Failed {
+            summary: test_results_line,
+            fail_lines,
+            extra_error: None,
+        };
+    }
+
+    if let Some(summary) = test_results_line {
+        match parse_test_results_counts(&summary) {
+            Some((tests_run, 0)) if tests_run > 0 && exit_success => {
+                VerifyVerdict::Passed { summary }
+            }
+            Some((0, _)) => VerifyVerdict::Unknown {
+                reason: format!(
+                    "В выводе проверки не выполнено ни одного теста ({}) — результат неизвестен.",
+                    summary
+                ),
+            },
+            Some((_, failures)) if failures > 0 || !exit_success => VerifyVerdict::Failed {
+                summary: Some(summary),
+                fail_lines,
+                extra_error: extract_concise_non_pass_error(stdout, stderr),
+            },
+            _ => VerifyVerdict::Unknown {
+                reason: format!(
+                    "Не удалось разобрать итоговую строку проверки ({}) — результат неизвестен.",
+                    summary
+                ),
+            },
+        }
+    } else if exit_success {
+        VerifyVerdict::Unknown {
+            reason: "Проверка завершилась без итоговой строки TEST RESULTS — результат неизвестен."
+                .to_string(),
+        }
+    } else {
+        let extra = extract_concise_non_pass_error(stdout, stderr);
+        let suffix = extra
+            .map(|e| format!(" ({})", e))
+            .unwrap_or_default();
+        VerifyVerdict::Unknown {
+            reason: format!(
+                "Проверка прервана до формирования TEST RESULTS (код {:?}) — результат неизвестен.{}",
+                exit_code, suffix
+            ),
+        }
+    }
+}
+
+pub fn format_local_hms() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct SystemTimeWin32 {
+            year: u16,
+            month: u16,
+            day_of_week: u16,
+            day: u16,
+            hour: u16,
+            minute: u16,
+            second: u16,
+            milliseconds: u16,
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetLocalTime(lp_system_time: *mut SystemTimeWin32);
+        }
+        let mut st = SystemTimeWin32 {
+            year: 1970,
+            month: 1,
+            day_of_week: 0,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            second: 0,
+            milliseconds: 0,
+        };
+        unsafe {
+            GetLocalTime(&mut st);
+        }
+        format!("{:02}:{:02}:{:02}", st.hour, st.minute, st.second)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let s = secs % 60;
+        let m = (secs / 60) % 60;
+        let h = (secs / 3600) % 24;
+        format!("{:02}:{:02}:{:02}", h, m, s)
+    }
+}
+
+fn format_verify_log_timestamp() -> (String, u16) {
+    #[cfg(target_os = "windows")]
+    {
+        #[repr(C)]
+        struct SystemTimeWin32 {
+            year: u16,
+            month: u16,
+            day_of_week: u16,
+            day: u16,
+            hour: u16,
+            minute: u16,
+            second: u16,
+            milliseconds: u16,
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetLocalTime(lp_system_time: *mut SystemTimeWin32);
+        }
+        let mut st = SystemTimeWin32 {
+            year: 1970,
+            month: 1,
+            day_of_week: 0,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            second: 0,
+            milliseconds: 0,
+        };
+        unsafe {
+            GetLocalTime(&mut st);
+        }
+        let stamp = format!(
+            "{:04}-{:02}-{:02}_{:02}-{:02}-{:02}",
+            st.year, st.month, st.day, st.hour, st.minute, st.second
+        );
+        (stamp, st.milliseconds)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let dur = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = dur.as_secs();
+        let ms = dur.subsec_millis() as u16;
+        let days = (secs / 86_400) as i64;
+        let rem = secs % 86_400;
+        let h = rem / 3600;
+        let m = (rem % 3600) / 60;
+        let s = rem % 60;
+        // Civil date from days since 1970-01-01 (Howard Hinnant algorithm)
+        let z = days + 719_468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = (z - era * 146_097) as u64;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+        let mut y = (yoe as i64) + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+        if mo <= 2 {
+            y += 1;
+        }
+        (
+            format!("{:04}-{:02}-{:02}_{:02}-{:02}-{:02}", y, mo, d, h, m, s),
+            ms,
+        )
+    }
+}
+
+pub fn save_verify_full_log(
+    root: &Path,
+    migration_changes: &[String],
+    exit_code: Option<i32>,
+    stdout: &str,
+    stderr: &str,
+) -> Result<PathBuf, String> {
+    let backups_dir = root.join("Backups");
+    std::fs::create_dir_all(&backups_dir)
+        .map_err(|e| format_fs_write_error(&backups_dir, &e))?;
+
+    let (stamp, ms) = format_verify_log_timestamp();
+    let mut log_path = backups_dir.join(format!("verify-{}.log", stamp));
+    if log_path.exists() {
+        log_path = backups_dir.join(format!("verify-{}-{:03}.log", stamp, ms));
+    }
+
+    let mut content = String::new();
+    content.push_str(&format!(
+        "# Ultra Gaming Mode v{} — Полный журнал проверки конфигов\n# Дата: {}\n# Каталог: {}\n# Код возврата: {:?}\n\n",
+        APP_VERSION,
+        stamp,
+        root.display(),
+        exit_code
+    ));
+    if !migration_changes.is_empty() {
+        content.push_str("[Применённые автоисправления конфигов]\n");
+        for ch in migration_changes {
+            content.push_str("  - ");
+            content.push_str(ch);
+            content.push('\n');
+        }
+        content.push('\n');
+    }
+    if !stdout.is_empty() {
+        content.push_str(stdout);
+        if !stdout.ends_with('\n') {
+            content.push('\n');
+        }
+    }
+    if !stderr.is_empty() {
+        content.push_str("\n[STDERR]\n");
+        content.push_str(stderr);
+        if !stderr.ends_with('\n') {
+            content.push('\n');
+        }
+    }
+
+    std::fs::write(&log_path, content.as_bytes())
+        .map_err(|e| format_fs_write_error(&log_path, &e))?;
+    Ok(log_path)
+}
+
+pub fn build_verify_action_result(
+    verdict: VerifyVerdict,
+    migration_changes: &[String],
+    saved_log: Result<PathBuf, String>,
+    root: &Path,
+) -> ActionResult {
+    let mut log_entries: Vec<(String, String)> = Vec::new();
+    for ch in migration_changes {
+        log_entries.push((
+            "info".to_string(),
+            format!("Автоисправление конфига: {}", ch),
+        ));
+    }
+
+    let log_rel = match saved_log {
+        Ok(ref p) => {
+            let rel = p.strip_prefix(root).unwrap_or(p);
+            Some(rel.to_string_lossy().replace('/', "\\"))
+        }
+        Err(err) => {
+            log_entries.push((
+                "warn".to_string(),
+                format!("Не удалось сохранить полный лог проверки: {}", err),
+            ));
+            None
+        }
+    };
+
+    match verdict {
+        VerifyVerdict::Passed { summary } => {
+            let log_suffix = log_rel
+                .as_deref()
+                .map(|r| format!(" (полный лог: {})", r))
+                .unwrap_or_default();
+            let mig_suffix = if migration_changes.is_empty() {
+                String::new()
+            } else {
+                format!(" Исправлено конфигов: {}.", migration_changes.len())
+            };
+            let banner = format!(
+                "Проверка конфигов и движка пройдена: {}.{}{}",
+                summary, mig_suffix, log_suffix
+            );
+            log_entries.push((
+                "success".to_string(),
+                format!("Проверка конфигов пройдена: {}{}", summary, log_suffix),
+            ));
+            ActionResult {
+                success: true,
+                message: banner,
+                log_entries,
+            }
+        }
+        VerifyVerdict::Unknown { reason } => {
+            let log_suffix = log_rel
+                .as_deref()
+                .map(|r| format!(" Полный лог: {}", r))
+                .unwrap_or_default();
+            let banner = format!("{}{}", reason, log_suffix);
+            log_entries.push(("warn".to_string(), banner.clone()));
+            ActionResult {
+                success: false,
+                message: banner,
+                log_entries,
+            }
+        }
+        VerifyVerdict::Failed {
+            summary,
+            fail_lines,
+            extra_error,
+        } => {
+            let sum_str = summary
+                .clone()
+                .unwrap_or_else(|| format!("обнаружено ошибок: {}", fail_lines.len().max(1)));
+            let log_suffix = log_rel
+                .as_deref()
+                .map(|r| format!(" (полный лог: {})", r))
+                .unwrap_or_default();
+
+            log_entries.push((
+                "error".to_string(),
+                format!("Проверка конфигов не пройдена: {}{}", sum_str, log_suffix),
+            ));
+            for fl in fail_lines.iter().take(25) {
+                log_entries.push(("error".to_string(), fl.clone()));
+            }
+            if fail_lines.len() > 25 {
+                log_entries.push((
+                    "warn".to_string(),
+                    format!("…и ещё {} ошибок (см. полный лог).", fail_lines.len() - 25),
+                ));
+            }
+            if fail_lines.is_empty() {
+                if let Some(ref extra) = extra_error {
+                    log_entries.push(("error".to_string(), extra.clone()));
+                }
+            }
+
+            let mut banner_lines: Vec<String> = Vec::new();
+            banner_lines.push(format!(
+                "Обнаружены проблемы при проверке конфигов ({}):",
+                sum_str
+            ));
+            for fl in fail_lines.iter().take(8) {
+                banner_lines.push(fl.clone());
+            }
+            if fail_lines.len() > 8 {
+                banner_lines.push(format!("…и ещё {} ошибок.", fail_lines.len() - 8));
+            }
+            if fail_lines.is_empty() {
+                if let Some(extra) = extra_error {
+                    banner_lines.push(extra);
+                }
+            }
+            if let Some(r) = log_rel {
+                banner_lines.push(format!("Полный лог сохранён: {}", r));
+            }
+
+            ActionResult {
+                success: false,
+                message: banner_lines.join("\n"),
+                log_entries,
+            }
+        }
+    }
+}
+
+pub fn run_verify_engine_sync(root: &Path) -> Result<ActionResult, String> {
+    if !is_dev_repo_root(root) {
+        for asset in EMBEDDED_RUNTIME_ASSETS {
+            if asset.preserve_if_exists {
+                continue;
+            }
+            let mut dest = root.to_path_buf();
+            for seg in asset.rel_path.split('/') {
+                dest.push(seg);
+            }
+            let needs_update = match std::fs::read(&dest) {
+                Ok(existing) => existing.as_slice() != asset.bytes,
+                Err(_) => true,
+            };
+            if needs_update {
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| format_fs_write_error(parent, &e))?;
+                }
+                std::fs::write(&dest, asset.bytes)
+                    .map_err(|e| format_fs_write_error(&dest, &e))?;
+            }
+        }
+    }
+
+    let migration_changes = migrate_user_configs_in_place(root).map_err(|e| {
+        format!(
+            "Не удалось автоматически обновить конфиги перед проверкой: {}",
+            e
+        )
+    })?;
+
+    let script_to_run = root.join("Tests").join("Verify-UniversalEngine.ps1");
+    if !script_to_run.exists() {
+        return Err(format!(
+            "Скрипт проверки не найден по пути: {}",
+            script_to_run.display()
+        ));
+    }
+    let script_str = script_to_run
+        .to_str()
+        .ok_or_else(|| "Путь к скрипту проверки содержит недопустимые символы".to_string())?;
+
+    let mut cmd = Command::new(resolve_powershell_exe());
+    cmd.current_dir(root).args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        script_str,
+        "-UserInstall",
+    ]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Не удалось запустить PowerShell для проверки конфигов: {}", e))?;
+
+    let stdout = decode_powershell_output(&output.stdout).trim().to_string();
+    let stderr = decode_powershell_output(&output.stderr).trim().to_string();
+    let exit_success = output.status.success();
+    let exit_code = output.status.code();
+
+    let saved_log = save_verify_full_log(root, &migration_changes, exit_code, &stdout, &stderr);
+    let verdict = evaluate_verify_output(exit_success, exit_code, &stdout, &stderr);
+    invalidate_active_state_cache();
+
+    Ok(build_verify_action_result(
+        verdict,
+        &migration_changes,
+        saved_log,
+        root,
+    ))
 }
 
 pub fn execute_emergency_repair_sync(kind: &str) -> Result<ActionResult, String> {
@@ -4335,15 +4682,17 @@ pub fn execute_emergency_repair_sync(kind: &str) -> Result<ActionResult, String>
                     "Кэш шейдеров GPU очищен: удалено {} файлов ({:.1} МБ).",
                     files, mb
                 ),
+                log_entries: Vec::new(),
             });
+        }
+        "verify" => {
+            let root = get_workspace_root();
+            return run_verify_engine_sync(&root);
         }
         _ => {}
     }
 
     let root = get_workspace_root();
-    if kind == "verify" {
-        migrate_user_configs_in_place(&root);
-    }
     let script_path = root.join("UltraGamingMode.ps1");
 
     let (args, script_to_run): (Vec<&'static str>, PathBuf) = match kind {
@@ -4353,10 +4702,6 @@ pub fn execute_emergency_repair_sync(kind: &str) -> Result<ActionResult, String>
         "restore_debloat" => (
             vec!["-Action", "RestoreDebloat", "-SkipUpdateCheck"],
             script_path,
-        ),
-        "verify" => (
-            vec!["-UserInstall"],
-            root.join("Tests").join("Verify-UniversalEngine.ps1"),
         ),
         _ => return Err("Неизвестный тип операции".into()),
     };
@@ -4369,41 +4714,6 @@ pub fn execute_emergency_repair_sync(kind: &str) -> Result<ActionResult, String>
         "Не удалось выполнить команду",
     );
     invalidate_active_state_cache();
-
-    if kind == "verify" {
-        return match res {
-            Ok(ar) => {
-                let summary = ar
-                    .message
-                    .lines()
-                    .rev()
-                    .find(|l| l.contains("TEST RESULTS:"))
-                    .map(|l| l.trim().to_string())
-                    .unwrap_or_else(|| "Все проверки целостности пройдены без ошибок.".to_string());
-                Ok(ActionResult {
-                    success: true,
-                    message: format!("Проверка конфигов и движка пройдена: {}", summary),
-                })
-            }
-            Err(err_text) => {
-                let fail_lines: Vec<&str> = err_text
-                    .lines()
-                    .map(|l| l.trim())
-                    .filter(|l| l.starts_with("[FAIL]") || l.contains("TEST RESULTS:"))
-                    .take(8)
-                    .collect();
-                if fail_lines.is_empty() {
-                    Err(err_text)
-                } else {
-                    Err(format!(
-                        "Обнаружены проблемы при проверке конфигов:\n{}",
-                        fail_lines.join("\n")
-                    ))
-                }
-            }
-        };
-    }
-
     res
 }
 
@@ -4434,6 +4744,7 @@ pub fn reboot_pc_sync() -> Result<ActionResult, String> {
     Ok(ActionResult {
         success: true,
         message: "Команда перезагрузки ПК отправлена. Перезагрузка через 2 секунды.".to_string(),
+        log_entries: Vec::new(),
     })
 }
 
@@ -5457,7 +5768,7 @@ pub fn update_process_list_in_root(
             .map(|arr| {
                 arr.iter()
                     .filter_map(|x| x.as_str())
-                    .any(|s| s.eq_ignore_ascii_case(&clean_name))
+                    .any(|s| strip_exe_suffix(s).trim().eq_ignore_ascii_case(&clean_name))
             })
             .unwrap_or(false);
         if is_in_protected {
@@ -5482,7 +5793,7 @@ pub fn update_process_list_in_root(
         if arr
             .iter()
             .filter_map(|v| v.as_str())
-            .any(|s| s.eq_ignore_ascii_case(&clean_name))
+            .any(|s| strip_exe_suffix(s).trim().eq_ignore_ascii_case(&clean_name))
         {
             return Err(format!("Элемент '{}' уже присутствует в списке.", clean_name));
         }
@@ -5495,7 +5806,7 @@ pub fn update_process_list_in_root(
             {
                 bl_arr.retain(|v| {
                     v.as_str()
-                        .map(|s| !strip_exe_suffix(s).eq_ignore_ascii_case(&clean_name))
+                        .map(|s| !strip_exe_suffix(s).trim().eq_ignore_ascii_case(&clean_name))
                         .unwrap_or(true)
                 });
             }
@@ -5504,7 +5815,7 @@ pub fn update_process_list_in_root(
         let before = arr.len();
         arr.retain(|v| {
             v.as_str()
-                .map(|s| !s.eq_ignore_ascii_case(&clean_name))
+                .map(|s| !strip_exe_suffix(s).trim().eq_ignore_ascii_case(&clean_name))
                 .unwrap_or(true)
         });
         if arr.len() == before {
@@ -6581,7 +6892,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             cfg.join("services_blacklist.json"),
-            r#"{"TargetServices":[{"Name":"Spooler"},{"Name":"zapret"},{"Name":"MyCustomDisabledSvc"}]}"#,
+            r#"{"TargetServices":[{"Name":"Spooler"},{"Name":"zapret"},{"Name":"MyCustomProtectedSvc"},{"Name":"MyCustomDisabledSvc"}]}"#,
         )
         .unwrap();
         std::fs::write(
@@ -6590,7 +6901,42 @@ mod tests {
         )
         .unwrap();
 
-        migrate_user_configs_in_place(&tmp);
+        let changes = migrate_user_configs_in_place(&tmp)
+            .expect("migrate_user_configs_in_place should succeed on writable temp dir");
+        assert!(
+            changes.iter().any(|c| c.contains("BOM") && c.contains("tuning.json")),
+            "Changes must report UTF-8 BOM removal: {:?}",
+            changes
+        );
+        assert!(
+            changes.iter().any(|c| c.contains("tuning.json") && c.contains("AAA")),
+            "Changes must report tuning.json AAA schema upgrade: {:?}",
+            changes
+        );
+        assert!(
+            changes.iter().any(|c| c.contains("services_whitelist.json")),
+            "Changes must report whitelist additions: {:?}",
+            changes
+        );
+        assert!(
+            changes.iter().any(|c| c.contains("services_blacklist.json")),
+            "Changes must report blacklist cleanup: {:?}",
+            changes
+        );
+        assert!(
+            changes.iter().any(|c| c.contains("startup_apps.json")),
+            "Changes must report startup_apps.json migration: {:?}",
+            changes
+        );
+
+        // Idempotent second run produces zero additional changes
+        let second_changes = migrate_user_configs_in_place(&tmp)
+            .expect("second migration run should succeed");
+        assert!(
+            second_changes.is_empty(),
+            "Second migration run must be a no-op, got: {:?}",
+            second_changes
+        );
 
         let tun_bytes = std::fs::read(cfg.join("tuning.json")).unwrap();
         assert!(!tun_bytes.starts_with(&[0xEF, 0xBB, 0xBF]));
@@ -6623,6 +6969,10 @@ mod tests {
             .filter_map(|v| v.get("Name").and_then(|n| n.as_str()))
             .collect();
         assert!(!bl_names.contains(&"zapret"));
+        assert!(
+            !bl_names.contains(&"MyCustomProtectedSvc"),
+            "Overlapping whitelisted service must be removed from blacklist"
+        );
         assert!(bl_names.contains(&"MyCustomDisabledSvc"));
 
         let st_val: serde_json::Value =
@@ -6645,6 +6995,376 @@ mod tests {
         assert!(st_pr.contains(&"winws"));
         assert!(st_pr.contains(&"winws2"));
         assert!(st_pr.contains(&"zapret"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_migrate_user_configs_reports_write_permission_error_instead_of_ignoring() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ugm_readonly_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let cfg = tmp.join("Config");
+        std::fs::create_dir_all(&cfg).unwrap();
+
+        let tuning_file = cfg.join("tuning.json");
+        std::fs::write(&tuning_file, r#"{"DisableMouseAccel":true}"#).unwrap();
+
+        let mut perms = std::fs::metadata(&tuning_file).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&tuning_file, perms).unwrap();
+
+        let mig_res = migrate_user_configs_in_place(&tmp);
+
+        // Always restore write permission before assertions so temp directory cleans up cleanly
+        let mut writable = std::fs::metadata(&tuning_file).unwrap().permissions();
+        writable.set_readonly(false);
+        let _ = std::fs::set_permissions(&tuning_file, writable);
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let err_msg = mig_res.expect_err("Read-only tuning.json must return an Err, not be silently ignored");
+        assert!(
+            err_msg.contains("tuning.json") && (err_msg.contains("прав") || err_msg.contains("Не удалось записать")),
+            "Write failure error must name tuning.json and explain failure: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_verify_verdict_log_filtering_unknown_result_and_full_backup_log() {
+        // 1. Missing TEST RESULTS line with exit code 0 -> Unknown ("результат неизвестен"), never false success
+        let v_early_zero = evaluate_verify_output(
+            true,
+            Some(0),
+            "[Test Group 1]\n  [PASS] Script parses with 0 AST errors\n",
+            "",
+        );
+        match &v_early_zero {
+            VerifyVerdict::Unknown { reason } => {
+                assert!(
+                    reason.contains("результат неизвестен"),
+                    "Expected 'результат неизвестен', got: {}",
+                    reason
+                );
+            }
+            other => panic!("Expected Unknown verdict on missing TEST RESULTS, got: {:?}", other),
+        }
+
+        // 2. Zero tests executed -> Unknown ("результат неизвестен")
+        let v_zero_tests = evaluate_verify_output(
+            true,
+            Some(0),
+            "TEST RESULTS: 0 Tests Run | 0 Failures",
+            "",
+        );
+        assert!(matches!(v_zero_tests, VerifyVerdict::Unknown { .. }));
+
+        // 3. Early crash (exit 1, no TEST RESULTS, no [FAIL], 5 [PASS] lines + PowerShell error)
+        let v_crash = evaluate_verify_output(
+            false,
+            Some(1),
+            "  [PASS] Check A\n  [PASS] Check B\n",
+            "ParserError: Unexpected token '}' in expression or statement.",
+        );
+        match &v_crash {
+            VerifyVerdict::Unknown { reason } => {
+                assert!(reason.contains("результат неизвестен"));
+                assert!(reason.contains("ParserError"));
+                assert!(!reason.contains("[PASS]"));
+            }
+            other => panic!("Expected Unknown verdict on pre-summary crash, got: {:?}", other),
+        }
+
+        // 4. Failure output with many [PASS] lines and [FAIL] lines:
+        //    - Journal log_entries must contain migration notes + summary + [FAIL] lines and ZERO [PASS] lines
+        //    - Full output must be saved to Backups/verify-<date>.log without BOM
+        let tmp = std::env::temp_dir().join(format!(
+            "ugm_verify_log_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let mut noisy_stdout = String::new();
+        for i in 1..=50 {
+            noisy_stdout.push_str(&format!("  [PASS] Passing invariant #{}\n", i));
+        }
+        noisy_stdout.push_str("  [FAIL] tuning.json contains strictly the 3 AAA automation keys\n");
+        noisy_stdout.push_str("  [FAIL] services_whitelist.json protects all critical services\n");
+        noisy_stdout.push_str("=====================================================\n");
+        noisy_stdout.push_str("   TEST RESULTS: 52 Tests Run | 2 Failures\n");
+        noisy_stdout.push_str("=====================================================\n");
+
+        let mig_notes = vec!["удалён UTF-8 BOM из tuning.json".to_string()];
+        let saved = save_verify_full_log(&tmp, &mig_notes, Some(1), &noisy_stdout, "");
+        let log_path = saved.as_ref().expect("save_verify_full_log should succeed").clone();
+        assert!(
+            log_path.exists()
+                && log_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("verify-") && n.ends_with(".log"))
+                    .unwrap_or(false),
+            "Expected Backups/verify-<date>.log, got: {}",
+            log_path.display()
+        );
+        let log_bytes = std::fs::read(&log_path).unwrap();
+        assert!(
+            !log_bytes.starts_with(&[0xEF, 0xBB, 0xBF]),
+            "Saved verify log must be UTF-8 without BOM"
+        );
+        let log_text = String::from_utf8(log_bytes).unwrap();
+        assert!(log_text.contains("[PASS] Passing invariant #50"));
+        assert!(log_text.contains("[FAIL] tuning.json"));
+        assert!(log_text.contains("удалён UTF-8 BOM из tuning.json"));
+
+        let verdict_fail = evaluate_verify_output(false, Some(1), &noisy_stdout, "");
+        let ar_fail = build_verify_action_result(verdict_fail, &mig_notes, saved, &tmp);
+        assert!(!ar_fail.success, "Failed verification must have success=false");
+        assert!(!ar_fail.message.contains("[PASS]"), "Banner must not dump [PASS] lines");
+        assert!(ar_fail.message.contains("[FAIL] tuning.json"));
+        assert!(ar_fail.message.contains("Backups\\verify-"));
+
+        for (_, entry_msg) in &ar_fail.log_entries {
+            assert!(
+                !entry_msg.contains("[PASS]"),
+                "Journal log_entries must never contain [PASS] lines, got: {}",
+                entry_msg
+            );
+        }
+        assert!(ar_fail
+            .log_entries
+            .iter()
+            .any(|(lvl, m)| lvl == "info" && m.contains("Автоисправление конфига")));
+        assert!(ar_fail
+            .log_entries
+            .iter()
+            .any(|(lvl, m)| lvl == "error" && m.contains("TEST RESULTS: 52 Tests Run | 2 Failures")));
+        assert_eq!(
+            ar_fail
+                .log_entries
+                .iter()
+                .filter(|(_, m)| m.starts_with("[FAIL]"))
+                .count(),
+            2
+        );
+
+        // 5. Clean pass -> success=true, zero [PASS] lines in journal
+        let pass_stdout = "  [PASS] Check 1\n  [PASS] Check 2\n   TEST RESULTS: 88 Tests Run | 0 Failures\n";
+        let saved_ok = save_verify_full_log(&tmp, &[], Some(0), pass_stdout, "");
+        let verdict_ok = evaluate_verify_output(true, Some(0), pass_stdout, "");
+        let ar_ok = build_verify_action_result(verdict_ok, &[], saved_ok, &tmp);
+        assert!(ar_ok.success);
+        assert!(ar_ok.message.contains("TEST RESULTS: 88 Tests Run | 0 Failures"));
+        assert!(ar_ok.log_entries.iter().all(|(_, m)| !m.contains("[PASS]")));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_run_verify_engine_sync_end_to_end_migrates_configs_and_catches_early_exit() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ugm_verify_e2e_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        sync_embedded_runtime(&tmp).expect("initial sync_embedded_runtime");
+
+        // Inject legacy broken configs (BOM, negative threshold, zapret in blacklist, winws in process blacklist)
+        let cfg = tmp.join("Config");
+        let mut bad_tuning = vec![0xEF, 0xBB, 0xBF];
+        bad_tuning.extend_from_slice(
+            br#"{"DisableMouseAccel":true,"AutoLockTimerInGaming":true,"AutoPurgeRamInGaming":false,"AutoPurgeRamThresholdMB":-10}"#,
+        );
+        std::fs::write(cfg.join("tuning.json"), &bad_tuning).unwrap();
+        std::fs::write(
+            cfg.join("services_whitelist.json"),
+            r#"{"ProtectedServices":["FACEIT","Audiosrv"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            cfg.join("services_blacklist.json"),
+            r#"{"TargetServices":[{"Name":"Spooler"},{"Name":"zapret"}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            cfg.join("startup_apps.json"),
+            r#"{"BlacklistProcesses":["Discord","winws"],"ProtectedStartupNames":["FACEITClient"]}"#,
+        )
+        .unwrap();
+
+        let res = run_verify_engine_sync(&tmp).expect("run_verify_engine_sync should succeed");
+        assert!(
+            res.success,
+            "Auto-migrated temp install should pass Verify-UniversalEngine -UserInstall: {}",
+            res.message
+        );
+        assert!(
+            res.log_entries
+                .iter()
+                .any(|(lvl, m)| lvl == "info" && m.contains("Автоисправление конфига")),
+            "Log entries must record applied config migrations: {:?}",
+            res.log_entries
+        );
+        assert!(
+            res.log_entries.iter().all(|(_, m)| !m.contains("[PASS]")),
+            "Log entries must never include [PASS] lines: {:?}",
+            res.log_entries
+        );
+        let verify_logs: Vec<_> = std::fs::read_dir(tmp.join("Backups"))
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .map(|n| n.starts_with("verify-") && n.ends_with(".log"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(verify_logs.len(), 1, "Must save full log into Backups/verify-<date>.log");
+
+        // Now simulate a script that exits early with code 0 without TEST RESULTS
+        std::fs::write(tmp.join("Build-Release.ps1"), "# dev marker\n").unwrap();
+        std::fs::write(
+            tmp.join("Tests").join("Verify-UniversalEngine.ps1"),
+            "param([switch]$UserInstall)\nWrite-Host '  [PASS] Early check'\nexit 0\n",
+        )
+        .unwrap();
+
+        let early_res = run_verify_engine_sync(&tmp).expect("early-exit verify should return ActionResult");
+        assert!(
+            !early_res.success,
+            "Early exit without TEST RESULTS must not report success"
+        );
+        assert!(
+            early_res.message.contains("результат неизвестен"),
+            "Early exit without TEST RESULTS must state unknown result: {}",
+            early_res.message
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_corrupt_tuning_healing_canonical_overlap_and_exe_suffix_removal() {
+        let tmp = std::env::temp_dir().join(format!(
+            "ugm_edge_mig_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let cfg = tmp.join("Config");
+        std::fs::create_dir_all(&cfg).unwrap();
+
+        // 1. Corrupt/truncated tuning.json + _LUID/versioned service overlap in blacklist
+        std::fs::write(cfg.join("tuning.json"), "{corrupt-truncated-json").unwrap();
+        std::fs::write(
+            cfg.join("services_whitelist.json"),
+            r#"{"ProtectedServices":["cbdhsvc","GoogleUpdaterService"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            cfg.join("services_blacklist.json"),
+            r#"{"TargetServices":[{"Name":"Spooler"},{"Name":"cbdhsvc_5e3a4"},{"Name":"GoogleUpdaterService159.0.8140.0"},{"Name":"   "}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            cfg.join("startup_apps.json"),
+            r#"{"BlacklistProcesses":["Discord.exe"],"ProtectedStartupNames":["Spotify.EXE"]}"#,
+        )
+        .unwrap();
+
+        let changes = migrate_user_configs_in_place(&tmp).expect("migration should heal corrupt tuning.json");
+        assert!(
+            changes.iter().any(|c| c.contains("восстановлен повреждённый tuning.json")),
+            "Expected corrupt tuning.json healing note, got: {:?}",
+            changes
+        );
+
+        let healed_tun: TuningConfig =
+            serde_json::from_str(&std::fs::read_to_string(cfg.join("tuning.json")).unwrap()).unwrap();
+        assert_eq!(healed_tun, TuningConfig::default());
+
+        let bl_val: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(cfg.join("services_blacklist.json")).unwrap()).unwrap();
+        let bl_names: Vec<&str> = bl_val["TargetServices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.get("Name").and_then(|n| n.as_str()))
+            .collect();
+        assert_eq!(bl_names, vec!["Spooler"], "Canonical _LUID, versioned updater, and blank entries must be stripped");
+
+        // 2. update_process_list_in_root handles .exe-suffixed entries on duplicate check and removal
+        assert!(
+            update_process_list_in_root(&tmp, "blacklist", "Spotify", "add").is_err(),
+            "Should detect Spotify.EXE in ProtectedStartupNames"
+        );
+        assert!(
+            update_process_list_in_root(&tmp, "blacklist", "Discord", "add").is_err(),
+            "Should detect existing Discord.exe in BlacklistProcesses"
+        );
+        let after_rm = update_process_list_in_root(&tmp, "blacklist", "Discord", "remove")
+            .expect("Removing 'Discord' must match 'Discord.exe'");
+        assert!(!after_rm
+            .blacklist_processes
+            .iter()
+            .any(|p| strip_exe_suffix(p).eq_ignore_ascii_case("Discord")));
+
+        // 3. format_local_hms produces valid HH:MM:SS local wall-clock time
+        let hms = format_local_hms();
+        assert_eq!(hms.len(), 8, "Expected HH:MM:SS, got {}", hms);
+        let parts: Vec<&str> = hms.split(':').collect();
+        assert_eq!(parts.len(), 3);
+        let hh: u32 = parts[0].parse().expect("valid hour");
+        let mm: u32 = parts[1].parse().expect("valid minute");
+        let ss: u32 = parts[2].parse().expect("valid second");
+        assert!(hh < 24 && mm < 60 && ss < 60);
+
+        // 4. single_instance_ipc_names_for isolates valid sandbox IDs and rejects unsafe strings
+        assert_eq!(
+            single_instance_ipc_names_for(None),
+            (
+                r"Local\UltraGamingMode_SingleInstance_v3".to_string(),
+                r"Local\UltraGamingMode_WakeWindow_v3".to_string()
+            )
+        );
+        assert_eq!(
+            single_instance_ipc_names_for(Some("e2e_1234_env_rw")),
+            (
+                r"Local\UltraGamingMode_SingleInstance_v3_e2e_1234_env_rw".to_string(),
+                r"Local\UltraGamingMode_WakeWindow_v3_e2e_1234_env_rw".to_string()
+            )
+        );
+        assert_eq!(
+            single_instance_ipc_names_for(Some(r"Global\Evil\..\Inject")),
+            (
+                r"Local\UltraGamingMode_SingleInstance_v3".to_string(),
+                r"Local\UltraGamingMode_WakeWindow_v3".to_string()
+            )
+        );
+        assert_eq!(
+            single_instance_ipc_names_for(Some(&"a".repeat(64))),
+            (
+                r"Local\UltraGamingMode_SingleInstance_v3".to_string(),
+                r"Local\UltraGamingMode_WakeWindow_v3".to_string()
+            )
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

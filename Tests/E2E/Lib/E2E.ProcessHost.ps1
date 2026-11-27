@@ -167,7 +167,13 @@ function Stop-E2EProcessTree {
             Stop-Process -Id $RootPid -Force -ErrorAction SilentlyContinue
             $null = $p.WaitForExit(3000)
         }
-    } catch {}
+        $after = Get-Process -Id $RootPid -ErrorAction SilentlyContinue
+        if ($null -eq $after -or $after.HasExited) {
+            $null = $script:TrackedChildPids.Remove($RootPid)
+        }
+    } catch {
+        $null = $script:TrackedChildPids.Remove($RootPid)
+    }
 }
 
 function Stop-E2ETrackedProcesses {

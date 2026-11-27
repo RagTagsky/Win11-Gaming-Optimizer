@@ -420,6 +420,15 @@ component ThemedScrollBar inherits Rectangle {
     in-out property <length> page-size;
     in-out property <length> value;
 
+    changed maximum => {
+        if (-self.value > self.maximum) {
+            self.value = -self.maximum;
+        }
+        if (self.value > 0px) {
+            self.value = 0px;
+        }
+    }
+
     property <length> pad: 4px;
     property <length> track-size: max(1px, root.height - 2 * root.pad);
     property <length> thumb-height: root.maximum <= 0px ? 0px : max(28px, min(root.track-size, root.track-size * (root.page-size / (root.maximum + root.page-size))));

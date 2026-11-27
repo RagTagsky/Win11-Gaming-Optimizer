@@ -48,7 +48,7 @@ function Register-Tier1Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Root Cargo.toml not yet created (M3 pending)" -Artifact "Cargo.toml"
         }
         $raw = Get-Content -LiteralPath $cargoToml -Raw -Encoding UTF8
-        Assert-E2EMatch $raw 'version\s*=\s*"4\.0\.0"' "Cargo.toml version must be 4.0.0"
+        Assert-E2EMatch $raw 'version\s*=\s*"4\.0\.1"' "Cargo.toml version must be 4.0.1"
         Assert-E2EMatch $raw 'slint' "Cargo.toml must depend on slint"
         Assert-E2ENotMatch $raw '(?i)\b(tauri|wry|webview2-com|tao)\b' "Cargo.toml must not contain Tauri or WebView2 crates"
         $legacyUi = Join-Path $ctx.RepoRoot "ui"
@@ -79,7 +79,7 @@ function Register-Tier1Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("CreateCoreWebView2", "ICoreWebView2", "WebView2Loader", "tauri::", "wry::", "EBWebView", "slint", "DwmSetWindowAttribute")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.MarkerCounts["CreateCoreWebView2"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.MarkerCounts["CreateCoreWebView2"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.0.0 legacy build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         Assert-E2EEqual "Amd64" $pe.Machine "PE Machine must be Amd64"
@@ -170,11 +170,9 @@ function Register-Tier1Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still legacy pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
-        $preUgm = Get-E2EPreExistingUgmPids
-        Assert-E2ETrue ($preUgm.Count -eq 0) "Host must not have pre-existing UltraGamingMode.exe running during live single-instance test"
 
         $stageExe = Join-Path $ctx.Sandbox.PortableRw "UltraGamingMode.exe"
         Copy-Item -LiteralPath $exePath -Destination $stageExe -Force
@@ -198,10 +196,9 @@ function Register-Tier1Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still legacy pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
-        Assert-E2EEqual 0 (Get-E2EPreExistingUgmPids).Count "No pre-existing UltraGamingMode.exe allowed"
 
         $stageExe = Join-Path $ctx.Sandbox.PortableRw "UltraGamingMode.exe"
         Copy-Item -LiteralPath $exePath -Destination $stageExe -Force
@@ -233,7 +230,7 @@ function Register-Tier1Tests {
         Assert-E2EEqual 0 $astErrs.Count ("PS 5.1/7 AST errors: " + ($astErrs -join "; "))
 
         $batText = Get-Content -LiteralPath $bat -Raw -Encoding UTF8
-        Assert-E2EMatch $batText '4\.0\.0' "UltraGamingMode.bat must report v4.0.0"
+        Assert-E2EMatch $batText '4\.0\.1' "UltraGamingMode.bat must report v4.0.1"
 
         $pwshPath = (Get-Process -Id $PID).Path
         foreach ($act in @("Status", "Diagnostic", "KernelLatencyStatus", "GpuMsiStatus")) {
@@ -394,22 +391,22 @@ Write-Output 'AAA_DEFAULTS_OK'
         }
     }
 
-    Register-E2ETest -Id "T1-F4-05" -Tier 1 -Feature "F4" -Name "Version 4.0.0 synchronized across PS engine, bat launcher, Cargo.toml, and Build-Release.ps1" -Artifact "Core/StateEngine.ps1" -Body {
+    Register-E2ETest -Id "T1-F4-05" -Tier 1 -Feature "F4" -Name "Version 4.0.1 synchronized across PS engine, bat launcher, Cargo.toml, and Build-Release.ps1" -Artifact "Core/StateEngine.ps1" -Body {
         param($ctx)
         $se = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "Core\StateEngine.ps1") -Raw -Encoding UTF8
-        Assert-E2EMatch $se '\$Script:APP_VERSION\s*=\s*"4\.0\.0"' "Core/StateEngine.ps1 must be 4.0.0"
+        Assert-E2EMatch $se '\$Script:APP_VERSION\s*=\s*"4\.0\.1"' "Core/StateEngine.ps1 must be 4.0.1"
         $bat = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "UltraGamingMode.bat") -Raw -Encoding UTF8
-        Assert-E2EMatch $bat '4\.0\.0' "UltraGamingMode.bat must be 4.0.0"
+        Assert-E2EMatch $bat '4\.0\.1' "UltraGamingMode.bat must be 4.0.1"
 
         $cargoToml = Join-Path $ctx.RepoRoot "Cargo.toml"
         if (-not (Test-Path -LiteralPath $cargoToml)) {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Cargo.toml not yet created (M3 pending)" -Artifact "Cargo.toml"
         }
         $br = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "Build-Release.ps1") -Raw -Encoding UTF8
-        if ($br -notmatch 'v4\.0\.0') {
-            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Build-Release.ps1 not yet updated to v4.0.0 (M5 pending)" -Artifact "Build-Release.ps1"
+        if ($br -notmatch 'v4\.0\.1') {
+            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Build-Release.ps1 not yet updated to v4.0.1 (M5 pending)" -Artifact "Build-Release.ps1"
         }
-        Assert-E2EMatch (Get-Content -LiteralPath $cargoToml -Raw -Encoding UTF8) 'version\s*=\s*"4\.0\.0"' "Cargo.toml must be 4.0.0"
+        Assert-E2EMatch (Get-Content -LiteralPath $cargoToml -Raw -Encoding UTF8) 'version\s*=\s*"4\.0\.1"' "Cargo.toml must be 4.0.1"
     }
 
     # =========================================================================
@@ -682,10 +679,9 @@ Write-Output 'TCP_TIMESTAMPS_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
-        Assert-E2EEqual 0 (Get-E2EPreExistingUgmPids).Count "No pre-existing UltraGamingMode.exe allowed"
 
         $portDir = Join-Path $ctx.Sandbox.Root ("port_t1_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
         New-Item -ItemType Directory -Path $portDir -Force | Out-Null
@@ -716,7 +712,7 @@ Write-Output 'TCP_TIMESTAMPS_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Release .bin/ artifacts not yet built (M5 pending)" -Artifact ".bin/SHA256SUMS.txt"
         }
         $pe = Get-PEInspection -ExePath $binExe -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe not yet rebuilt for v4.0.0 (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         Assert-E2EEqual (Get-FileSha256Lower $binExe) (Get-FileSha256Lower $rootExe) ".bin/UltraGamingMode.exe and root UltraGamingMode.exe must have identical SHA-256"
@@ -750,12 +746,12 @@ Write-Output 'TCP_TIMESTAMPS_OK'
         Assert-E2EEqual 0 $hits.Count ("Content policy hygiene violations: " + ($hits -join "; "))
     }
 
-    Register-E2ETest -Id "T1-F8-05" -Tier 1 -Feature "F8" -Name "Build-Release.ps1 v4.0.0 release notes contract uses 3 plain Russian bullets on lines 1-3" -Artifact "Build-Release.ps1" -Body {
+    Register-E2ETest -Id "T1-F8-05" -Tier 1 -Feature "F8" -Name "Build-Release.ps1 v4.0.1 release notes contract uses 3 plain Russian bullets on lines 1-3" -Artifact "Build-Release.ps1" -Body {
         param($ctx)
         $brPath = Join-Path $ctx.RepoRoot "Build-Release.ps1"
         $raw = Get-Content -LiteralPath $brPath -Raw -Encoding UTF8
-        if ($raw -notmatch 'v4\.0\.0') {
-            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Build-Release.ps1 not yet updated to v4.0.0 (M5 pending)" -Artifact "Build-Release.ps1"
+        if ($raw -notmatch 'v4\.0\.1') {
+            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Build-Release.ps1 not yet updated to v4.0.1 (M5 pending)" -Artifact "Build-Release.ps1"
         }
         Assert-E2ENotMatch $raw 'npm run tauri build' "Build-Release.ps1 must not invoke Tauri build"
         Assert-E2EMatch $raw 'cargo build --release' "Build-Release.ps1 must invoke cargo build --release"

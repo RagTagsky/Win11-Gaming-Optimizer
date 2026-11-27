@@ -142,6 +142,7 @@ export component ServicesView inherits Rectangle {
                                 wifi-ta := TouchArea {
                                     mouse-cursor: pointer;
                                     accessible-role: button;
+                                    accessible-label: "Оставить Wi-Fi включённым";
                                     clicked => {
                                         root.toggle-feature-pack("wifi", true);
                                     }
@@ -237,6 +238,7 @@ export component ServicesView inherits Rectangle {
                             sf0-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "Показать все службы (" + root.total-count + ")";
                                 clicked => { root.filter-changed("all"); }
                             }
 
@@ -263,6 +265,7 @@ export component ServicesView inherits Rectangle {
                             sf1-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "Показать отключаемые службы (" + root.disabled-count + ")";
                                 clicked => { root.filter-changed("disable"); }
                             }
 
@@ -289,6 +292,7 @@ export component ServicesView inherits Rectangle {
                             sf2-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "Показать службы без отключения (" + root.normal-count + ")";
                                 clicked => { root.filter-changed("normal"); }
                             }
 
@@ -592,6 +596,7 @@ export component ServicesView inherits Rectangle {
                                         skeep-ta := TouchArea {
                                             mouse-cursor: pointer;
                                             accessible-role: button;
+                                            accessible-label: "Оставить службу " + svc.display-name + " без отключения";
                                             clicked => {
                                                 if (svc.disable-in-gaming) {
                                                     root.set-service-mode(svc.name, false);
@@ -620,6 +625,7 @@ export component ServicesView inherits Rectangle {
                                         sdis-ta := TouchArea {
                                             mouse-cursor: pointer;
                                             accessible-role: button;
+                                            accessible-label: "Выключать службу " + svc.display-name + " в Gaming Mode";
                                             clicked => {
                                                 if (!svc.disable-in-gaming) {
                                                     root.set-service-mode(svc.name, true);

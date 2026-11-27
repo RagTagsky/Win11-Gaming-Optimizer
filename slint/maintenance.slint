@@ -139,6 +139,7 @@ export component MaintenanceView inherits Rectangle {
                                 enabled: root.running-repair == "";
                                 mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Очистить кэш ОЗУ";
                                 clicked => { root.run-safe-repair("memory"); }
                             }
 
@@ -189,6 +190,7 @@ export component MaintenanceView inherits Rectangle {
                                 enabled: root.running-repair == "";
                                 mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Проверить конфиги";
                                 clicked => { root.run-safe-repair("verify"); }
                             }
 
@@ -239,6 +241,7 @@ export component MaintenanceView inherits Rectangle {
                                 enabled: root.running-repair == "";
                                 mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Восстановить службы";
                                 clicked => { root.run-safe-repair("services"); }
                             }
 
@@ -302,6 +305,7 @@ export component MaintenanceView inherits Rectangle {
                                 enabled: root.running-repair == "";
                                 mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Очистить кэш шейдеров GPU";
                                 clicked => { root.request-critical-repair("shaders"); }
                             }
 
@@ -353,6 +357,7 @@ export component MaintenanceView inherits Rectangle {
                                 enabled: root.running-repair == "";
                                 mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Сбросить графический стек DWM";
                                 clicked => { root.request-critical-repair("display"); }
                             }
 
@@ -404,6 +409,7 @@ export component MaintenanceView inherits Rectangle {
                                 enabled: root.running-repair == "";
                                 mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Применить Win11 Debloat";
                                 clicked => { root.request-critical-repair("debloat"); }
                             }
 
@@ -455,6 +461,7 @@ export component MaintenanceView inherits Rectangle {
                                 enabled: root.running-repair == "";
                                 mouse-cursor: root.running-repair == "" ? pointer : default;
                                 accessible-role: button;
+                                accessible-label: "Откатить Win11 Debloat";
                                 clicked => { root.request-critical-repair("restore_debloat"); }
                             }
 

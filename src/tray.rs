@@ -173,6 +173,7 @@ pub struct TrayController {
     last_mode: RefCell<String>,
     last_timer_locked: Cell<bool>,
     last_busy: Cell<bool>,
+    transient_tooltip_until: Cell<Option<std::time::Instant>>,
 }
 
 impl TrayController {
@@ -188,6 +189,7 @@ impl TrayController {
         install_global_tray_handlers();
 
         let (status_text, tooltip, toggle_text) = mode_to_tray_meta(&initial.mode);
+        let safe_initial_tooltip = truncate_tray_tooltip(tooltip);
         let (rgba, w, h) = build_tray_icon_rgba(&initial.mode);
         let icon = Icon::from_rgba(rgba, w, h)
             .map_err(|e| format!("Не удалось создать иконку трея: {}", e))?;
@@ -229,7 +231,7 @@ impl TrayController {
         let tray = TrayIconBuilder::new()
             .with_id("ugm-tray")
             .with_icon(icon)
-            .with_tooltip(tooltip)
+            .with_tooltip(&safe_initial_tooltip)
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .build()
@@ -243,10 +245,19 @@ impl TrayController {
             last_mode: RefCell::new(initial.mode.clone()),
             last_timer_locked: Cell::new(initial.timer_locked),
             last_busy: Cell::new(initial.mode_action_busy),
+            transient_tooltip_until: Cell::new(None),
         })
     }
 
     pub fn sync_state(&self, state: &TrayStateSnapshot) {
+        let mut transient_expired = false;
+        if let Some(until) = self.transient_tooltip_until.get() {
+            if std::time::Instant::now() >= until {
+                self.transient_tooltip_until.set(None);
+                transient_expired = true;
+            }
+        }
+
         let mode_changed = {
             let mut prev = self.last_mode.borrow_mut();
             if *prev != state.mode {
@@ -258,6 +269,7 @@ impl TrayController {
         };
 
         if mode_changed {
+            self.transient_tooltip_until.set(None);
             let (status_text, tooltip, toggle_text) = mode_to_tray_meta(&state.mode);
             self.status_item.set_text(status_text);
             self.toggle_item.set_text(toggle_text);
@@ -265,7 +277,10 @@ impl TrayController {
             if let Ok(icon) = Icon::from_rgba(rgba, w, h) {
                 let _ = self.tray.set_icon(Some(icon));
             }
-            let _ = self.tray.set_tooltip(Some(tooltip));
+            self.set_tooltip(tooltip);
+        } else if transient_expired {
+            let (_, tooltip, _) = mode_to_tray_meta(&state.mode);
+            self.set_tooltip(tooltip);
         }
 
         if self.last_timer_locked.get() != state.timer_locked {
@@ -280,13 +295,45 @@ impl TrayController {
     }
 
     pub fn set_tooltip(&self, tooltip: &str) {
-        let _ = self.tray.set_tooltip(Some(tooltip));
+        let safe = truncate_tray_tooltip(tooltip);
+        let _ = self.tray.set_tooltip(Some(&safe));
+    }
+
+    pub fn set_action_tooltip(&self, mode: &str, detail: &str) {
+        self.transient_tooltip_until
+            .set(Some(std::time::Instant::now() + std::time::Duration::from_secs(6)));
+        let (_, base_tooltip, _) = mode_to_tray_meta(mode);
+        let combined = format!("{} · {}", base_tooltip, detail.trim());
+        self.set_tooltip(&combined);
     }
 
     pub fn set_toggle_enabled(&self, enabled: bool) {
         self.last_busy.set(!enabled);
         self.toggle_item.set_enabled(enabled);
     }
+}
+
+pub fn truncate_tray_tooltip(raw: &str) -> String {
+    const MAX_UTF16_UNITS: usize = 120;
+    let single_line: String = raw
+        .chars()
+        .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
+        .collect();
+    if single_line.encode_utf16().count() <= MAX_UTF16_UNITS {
+        return single_line;
+    }
+    let mut out = String::new();
+    let mut units = 0usize;
+    for ch in single_line.chars() {
+        let len = ch.len_utf16();
+        if units + len + 1 > MAX_UTF16_UNITS {
+            out.push('…');
+            break;
+        }
+        out.push(ch);
+        units += len;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -369,5 +416,13 @@ mod tests {
         assert!(st.contains("восстановление"));
         assert!(tt.contains("оранжевый"));
         assert_eq!(tog, "Завершить восстановление");
+
+        let long_ru = "Ultra Gaming Mode — ".to_string() + &"Очень длинное сообщение о состоянии памяти ".repeat(5);
+        let clamped = truncate_tray_tooltip(&long_ru);
+        assert!(
+            clamped.encode_utf16().count() <= 120,
+            "Win32 NOTIFYICONDATAW szTip must stay within 127 WCHAR limit"
+        );
+        assert!(clamped.ends_with('…'));
     }
 }

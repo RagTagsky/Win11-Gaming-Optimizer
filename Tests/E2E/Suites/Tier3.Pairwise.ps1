@@ -34,10 +34,9 @@ function Register-Tier3Tests {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
-        Assert-E2EEqual 0 (Get-E2EPreExistingUgmPids).Count "No pre-existing UltraGamingMode.exe allowed"
 
         $portDir = Join-Path $ctx.Sandbox.Root ("port_ui_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
         $cfgDir = Join-Path $portDir "Config"
@@ -123,10 +122,9 @@ Write-Output 'PAIR_PROC_GUARD_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
-        Assert-E2EEqual 0 (Get-E2EPreExistingUgmPids).Count "No pre-existing UltraGamingMode.exe allowed"
 
         $portDir = Join-Path $ctx.Sandbox.Root ("port_rt_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
         New-Item -ItemType Directory -Path $portDir -Force | Out-Null
@@ -205,7 +203,7 @@ Write-Output 'PAIR_PROC_GUARD_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::", "Shell_NotifyIconW", "DwmSetWindowAttribute", "slint")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.0.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.0.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         Assert-E2EEqual "WindowsGui" $pe.Subsystem "Subsystem must be WindowsGui"

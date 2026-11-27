@@ -425,25 +425,25 @@ Assert-Test ($debloatSnap -is [hashtable] -and $debloatSnap.Count -eq 14) "Get-W
 
 # -- 9. SemVer Parser, Suite Version & URL/Tag Injection Guards ---------------
 Write-Host "`n[Test Group 9] SemVer Engine, Suite Version & URL Security Guards:" -ForegroundColor Cyan
-Assert-Test ((Get-AppCurrentVersion) -eq "4.0.0") "Get-AppCurrentVersion returns '4.0.0'"
+Assert-Test ((Get-AppCurrentVersion) -eq "4.0.1") "Get-AppCurrentVersion returns '4.0.1'"
 
 $vBase  = ConvertTo-SemVer "v2.8"
 $vPad   = ConvertTo-SemVer "2.8.0"
 $vPatch = ConvertTo-SemVer "v2.8.1"
-$vCurr  = ConvertTo-SemVer "v4.0.0"
+$vCurr  = ConvertTo-SemVer "v4.0.1"
 Assert-Test ($vBase -eq $vPad -and $vPatch -gt $vBase -and $vCurr -gt $vPatch) "ConvertTo-SemVer normalizes and compares versions accurately"
 Assert-Test ($null -eq (ConvertTo-SemVer "") -and $null -eq (ConvertTo-SemVer "invalid")) "ConvertTo-SemVer returns null on invalid version input"
 
-Assert-Test ((Test-SafeVersionTag -Tag "v4.0.0") -and -not (Test-SafeVersionTag -Tag 'v4.0.0"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
+Assert-Test ((Test-SafeVersionTag -Tag "v4.0.1") -and -not (Test-SafeVersionTag -Tag 'v4.0.1"&calc.exe') -and -not (Test-SafeVersionTag -Tag "")) "Test-SafeVersionTag validates tags and blocks shell metacharacters"
 Assert-Test (
-    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.0") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.0") -and
-    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.0") -and
+    (Test-SafeGitHubReleaseUrl -Url "https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.1") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "http://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.1") -and
+    -not (Test-SafeGitHubReleaseUrl -Url "https://evil.example.com/RagTagsky/Win11-Gaming-Optimizer/releases/tag/v4.0.1") -and
     -not (Test-SafeGitHubReleaseUrl -Url "file:///C:/Windows/System32/calc.exe")
 ) "Test-SafeGitHubReleaseUrl enforces HTTPS and github.com repository allowlist"
 
 $batContent = Get-Content -LiteralPath (Join-Path $repoRoot "UltraGamingMode.bat") -Raw -Encoding UTF8
-Assert-Test ($batContent -match 'v4\.0\.0' -and $batContent -notmatch '3\.6\.0') "UltraGamingMode.bat reports version v4.0.0 without stale 3.6.0 references"
+Assert-Test ($batContent -match 'v4\.0\.1' -and $batContent -notmatch '3\.6\.0') "UltraGamingMode.bat reports version v4.0.1 without stale 3.6.0 references"
 
 # -- 10. Process, WebView2 & Service Security Guards --------------------------
 Write-Host "`n[Test Group 10] Process, WebView2 & Service Security Guards:" -ForegroundColor Cyan

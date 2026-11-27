@@ -62,10 +62,12 @@ export component DashboardView inherits Rectangle {
     in property <string> dpc-latency: "Потоковый DPC (оптимально)";
     in property <string> mpo-status: "Штатный конвейер DWM (без мерцания)";
     in property <string> timer-resolution: "1.000 мс (штатный)";
-    in property <string> app-version: "4.0.0";
-    in property <string> latest-version: "4.0.0";
+    in property <string> app-version: "4.0.1";
+    in property <string> latest-version: "4.0.1";
     in property <bool> has-update: false;
-    in property <string> update-status-text: "Установлена актуальная версия v4.0.0.";
+    in property <bool> is-checking-updates: false;
+    in property <bool> update-is-error: false;
+    in property <string> update-status-text: "Установлена актуальная версия v4.0.1.";
     in property <int> disabled-services-count: 205;
     in property <int> disabled-processes-count: 40;
 
@@ -872,7 +874,7 @@ export component DashboardView inherits Rectangle {
                         Text {
                             text: root.update-status-text;
                             font-size: 12px;
-                            color: root.has-update ? ThemeTokens.accent-text : ThemeTokens.status-active-text;
+                            color: root.update-is-error ? ThemeTokens.status-warn-text : (root.has-update ? ThemeTokens.accent-text : ThemeTokens.status-active-text);
                             wrap: word-wrap;
                         }
                     }
@@ -886,13 +888,14 @@ export component DashboardView inherits Rectangle {
                             Rectangle {
                                 height: 32px;
                                 border-radius: 7px;
+                                opacity: root.is-checking-updates ? 0.6 : 1.0;
                                 background: upd-ta.pressed ? ThemeTokens.bg-active : (upd-ta.has-hover ? ThemeTokens.bg-hover : ThemeTokens.bg-elevated);
                                 border-width: 1px;
                                 border-color: upd-ta.has-hover ? ThemeTokens.border-strong : ThemeTokens.border-subtle;
 
-
                                 upd-ta := TouchArea {
-                                    mouse-cursor: pointer;
+                                    enabled: !root.is-checking-updates;
+                                    mouse-cursor: !root.is-checking-updates ? pointer : default;
                                     accessible-role: button;
                                     accessible-label: "Проверить обновления";
                                     clicked => {
@@ -904,10 +907,10 @@ export component DashboardView inherits Rectangle {
                                     padding-left: 12px;
                                     padding-right: 12px;
                                     Text {
-                                        text: "Проверить обновления";
+                                        text: root.is-checking-updates ? "Проверка…" : "Проверить обновления";
                                         font-size: 12px;
                                         font-weight: 600;
-                                        color: ThemeTokens.text-primary;
+                                        color: root.is-checking-updates ? ThemeTokens.text-muted : ThemeTokens.text-primary;
                                         vertical-alignment: center;
                                     }
                                 }

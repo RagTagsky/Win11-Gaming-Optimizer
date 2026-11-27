@@ -168,6 +168,7 @@ export component ProcessesView inherits Rectangle {
                             f0-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "Показать все процессы (" + root.total-count + ")";
                                 clicked => { root.filter-changed("all"); }
                             }
 
@@ -194,6 +195,7 @@ export component ProcessesView inherits Rectangle {
                             f1-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "Показать отключаемые процессы (" + root.disabled-count + ")";
                                 clicked => { root.filter-changed("disable"); }
                             }
 
@@ -220,6 +222,7 @@ export component ProcessesView inherits Rectangle {
                             f2-ta := TouchArea {
                                 mouse-cursor: pointer;
                                 accessible-role: button;
+                                accessible-label: "Показать процессы без отключения (" + root.normal-count + ")";
                                 clicked => { root.filter-changed("normal"); }
                             }
 
@@ -299,6 +302,7 @@ export component ProcessesView inherits Rectangle {
                             mouse-cursor: pointer;
                             accessible-role: checkbox;
                             accessible-checked: root.show-os-core;
+                            accessible-label: "Показать процессы ядра Windows (" + root.os-core-count + ")";
                             clicked => {
                                 root.show-os-core = !root.show-os-core;
                                 root.toggle-os-core(root.show-os-core);
@@ -600,6 +604,7 @@ export component ProcessesView inherits Rectangle {
                                         keep-ta := TouchArea {
                                             mouse-cursor: pointer;
                                             accessible-role: button;
+                                            accessible-label: "Оставить процесс " + item.display-name + " без отключения";
                                             clicked => {
                                                 if (item.disable-in-gaming) {
                                                     root.set-process-mode(item.name, false);
@@ -628,6 +633,7 @@ export component ProcessesView inherits Rectangle {
                                         dis-ta := TouchArea {
                                             mouse-cursor: pointer;
                                             accessible-role: button;
+                                            accessible-label: "Выключать процесс " + item.display-name + " в Gaming Mode";
                                             clicked => {
                                                 if (!item.disable-in-gaming) {
                                                     root.set-process-mode(item.name, true);
