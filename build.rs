@@ -47,8 +47,8 @@ fn main() {
 1 ICON "{icon}"
 
 1 VERSIONINFO
-FILEVERSION 4,1,0,0
-PRODUCTVERSION 4,1,0,0
+FILEVERSION 4,1,1,0
+PRODUCTVERSION 4,1,1,0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS 0x40004L
@@ -60,12 +60,12 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "CompanyName", "Ultra Gaming Mode Team"
-      VALUE "FileDescription", "Ultra Gaming Mode v4.1.0"
-      VALUE "FileVersion", "4.1.0"
+      VALUE "FileDescription", "Ultra Gaming Mode v4.1.1"
+      VALUE "FileVersion", "4.1.1"
       VALUE "InternalName", "UltraGamingMode"
       VALUE "OriginalFilename", "UltraGamingMode.exe"
       VALUE "ProductName", "Ultra Gaming Mode"
-      VALUE "ProductVersion", "4.1.0"
+      VALUE "ProductVersion", "4.1.1"
     END
   END
   BLOCK "VarFileInfo"

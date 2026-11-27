@@ -290,9 +290,9 @@
       "safetyLevel": "protected"
     },
     "msedgewebview2": {
-      "displayNameRu": "Microsoft Edge WebView2",
-      "summaryRu": "Встроенный движок интерфейса Windows (используется окном Ultra Gaming Mode и системными панелями).",
-      "canDisableRu": "Защищён, чтобы интерфейс приложения и поиск Windows не закрывались аварийно.",
+      "displayNameRu": "Microsoft Edge WebView2 (системный)",
+      "summaryRu": "Системный веб-движок самой Windows 11 (поиск меню «Пуск» SearchHost, виджеты и сторонние программы; Ultra Gaming Mode его не использует).",
+      "canDisableRu": "Экземпляры поиска меню «Пуск» защищены как компонент ОС, а фоновые экземпляры Виджетов выгружаются в Gaming Mode автоматически.",
       "safetyLevel": "protected"
     },
     "vgk": {
@@ -418,7 +418,7 @@
     "msedge": {
       "displayNameRu": "Microsoft Edge",
       "summaryRu": "Веб-браузер Microsoft Edge и его фоновый предзапуск Startup Boost.",
-      "canDisableRu": "Можно смело выключать в Gaming Mode (на окно Ultra Gaming Mode и WebView2 не влияет).",
+      "canDisableRu": "Можно смело выключать в Gaming Mode — освобождает ОЗУ и отключает фоновый предзапуск браузера.",
       "safetyLevel": "safe"
     },
     "Widgets": {

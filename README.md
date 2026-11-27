@@ -1,12 +1,12 @@
 <div align="center">
 
 # ⚡ Ultra Gaming Mode for Windows 11
-### *Native Rust + Slint GUI · AAA Frame Pacing · Portable Universal Edition (v4.1.0)*
+### *Native Rust + Slint GUI · AAA Frame Pacing · Portable Universal Edition (v4.1.1)*
 
 **A zero-risk, snapshot-driven kernel latency, frame pacing, and hardware optimizer for Windows 10 & 11.**  
 Built on a **native Rust + Slint 1.19.0 GUI** (`960×680` frameless, Windows DWM Dark Mode & rounded corners, `Segoe UI Variable Text` + `Cascadia Code`, zero WebView2) and a **Win32 / PowerShell AAA Engine** — featuring an **8-theme design package (5 dark + 3 light)**, a unified AAA gaming pipeline, 2-mode Services & Processes management with safety tooltips, native `tray-icon` background mode, portable single-executable execution (`UltraGamingMode.exe`), automatic `0.500 ms` timer resolution, smart Standby RAM auto-purge, **Zapret / WinDivert / `winws`** protection, and a crash-proof `HKLM\RunOnce` failsafe watchdog.
 
-[![Release](https://img.shields.io/badge/Release-v4.1.0-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
+[![Release](https://img.shields.io/badge/Release-v4.1.1-2563EB?style=for-the-badge&labelColor=0F172A)](https://github.com/RagTagsky/Win11-Gaming-Optimizer/releases/latest)
 [![Platform](https://img.shields.io/badge/Windows-11%20%7C%2010%20(x64)-2563EB?style=for-the-badge&logo=windows&logoColor=white&labelColor=0F172A)](https://www.microsoft.com/windows)
 [![Desktop Stack](https://img.shields.io/badge/GUI-Rust%20%2B%20Slint-3B82F6?style=for-the-badge&logo=rust&logoColor=white&labelColor=0F172A)](#option-a-native-desktop-gui-app-v400---recommended)
 [![Watchdog](https://img.shields.io/badge/Failsafe-HKLM%20RunOnce-10B981?style=for-the-badge&labelColor=0F172A)](#the-zero-risk-watchdog-guarantee)
@@ -31,8 +31,8 @@ Built on a **native Rust + Slint 1.19.0 GUI** (`960×680` frameless, Windows DWM
 | • **Native Rust + Slint 1.19.0** (`960×680` frameless, zero WebView2, DWM Dark Mode)<br>• **Native Tray Mode**: closing `[×]` destroys the Slint window and keeps only `tray-icon` + `muda` active<br>• **8-Theme Design Package** (5 dark + 3 light, 4×2 grid + smart header polarity toggle)<br>• **Portable Single EXE** (`UltraGamingMode.exe` with embedded runtime assets) + SHA-256 Updater | • **Auto `0.500 ms` Timer Lock** in Gaming Mode (`NtSetTimerResolution`)<br>• **GPU & PCIe NIC MSI Mode** (`DevicePriority = 3`)<br>• **Winsock AFD 64 KB Fast-Path** & Nagle off<br>• **AAA Input Buffers** (`100` packets, `>= 32` safety floor, 8000 Hz safe) | • **CPU Unparking** (`CPMINCORES 100`) & Low-Core Guard (`<= 4` threads)<br>• **Discrete GPU Discovery** (AMD ULPS/DXNAVI, NVIDIA Per-Core DPC, Intel Arc, AAA Flip Model + HDR/OBS)<br>• **Low-RAM Guard (8 GB)** + native `NtSetSystemInformation` Standby Purge<br>• **Mechanical HDD 100% Thrash Guard** | • Full pre-flight JSON snapshot (`Backups\active_state.json`)<br>• Autonomous `HKLM\RunOnce` kernel watchdog (`*UltraGamingModeRestore`)<br>• **95 Protected Whitelist Services** (`FACEIT`, `vgk`, `EAC`, `zapret`, `WinDivert`, `camsvc`, `PrtSc`)<br>• 1-Click Emergency DisplayPort & Audio Repair |
 
 > [!TIP]
-> **What's New in v4.1.0 (building on v4.0.1 / v4.0.0):**
-> - **1-Click SHA-256 Verified In-App Updater (`v4.1.0`):** Automatic background release discovery, quick header update pill, and primary in-app install button that detects NSIS (`Setup.exe`), WiX (`.msi`), or Portable (`UltraGamingMode.exe`) deployments, cryptographically verifies `SHA256SUMS.txt` before execution, preserves `Config/*.json`, and seamlessly relaunches the app.
+> **What's New in v4.1.1 (building on v4.0.1 / v4.0.0):**
+> - **1-Click SHA-256 Verified In-App Updater (`v4.1.1`):** Automatic background release discovery, quick header update pill, and primary in-app install button that detects NSIS (`Setup.exe`), WiX (`.msi`), or Portable (`UltraGamingMode.exe`) deployments, cryptographically verifies `SHA256SUMS.txt` before execution, preserves `Config/*.json`, and seamlessly relaunches the app.
 > - **Hardened NSIS & WiX Installers (`v4.0.1`):** Reliable elevated/tray process shutdown during upgrades, automatic cleanup of legacy root Start Menu `.lnk` shortcuts and scheduled tasks on uninstall, mutual NSIS↔MSI cross-detection preserving user `Config/*.json`, and explicit `GCLP_HICON` window class icons.
 > - **Zero-Freeze Async UI & Resilient Tray (`v4.0.1`):** Non-blocking background loading for Processes, Services, Autostart, and Tray RAM purge, automatic tray retry on early Windows logon, safe UTF-16 `NOTIFYICONDATAW` tooltip clamping, modal keyboard `Tab` focus traps, local wall-clock Event Log timestamps, and full `Backups\verify-*.log` diagnostic reports.
 > - **Native Rust + Slint 1.19.0 Desktop GUI (`v4.0.0`, Zero WebView2):** Pure native Rust + Slint desktop application (`960×680` frameless, min `860×600`) with Windows DWM Dark Mode & rounded-border frame synchronization (`DwmSetWindowAttribute`), crisp Windows typography (`Segoe UI Variable Text` + `Cascadia Code` with Windows 10 `Segoe UI` / `Consolas` fallbacks), native `tray-icon` + `muda` menu, zero browser runtimes, and portable-first `UltraGamingMode.exe` embedding all PowerShell and JSON runtime assets (`EMBEDDED_RUNTIME_ASSETS`).
@@ -612,7 +612,7 @@ Ultra Gaming Mode v4.0.0 builds with a **pure Rust toolchain** (no external Java
 cargo build --release
 
 # Or build the full release package & SHA256SUMS.txt into .bin/
-.\Build-Release.ps1 -Tag v4.1.0
+.\Build-Release.ps1 -Tag v4.1.1
 ```
 
 ---

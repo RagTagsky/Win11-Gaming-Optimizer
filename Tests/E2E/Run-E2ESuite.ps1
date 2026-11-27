@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Opaque-box End-to-End (E2E) Test Suite Runner for Ultra Gaming Mode v4.1.0.
+    Opaque-box End-to-End (E2E) Test Suite Runner for Ultra Gaming Mode v4.1.1.
 #>
 
 [CmdletBinding()]
@@ -130,7 +130,7 @@ if (-not $integrityResult.Clean) {
 $report = [PSCustomObject]@{
     schemaVersion = "1.0"
     suite         = "UltraGamingMode.E2E"
-    targetVersion = "4.1.0"
+    targetVersion = "4.1.1"
     phase         = $(if ($ValidateSuiteOnly) { "PhaseA-ValidateSuiteOnly" } else { "PhaseB-FullGate" })
     requestedTier = $Tier
     startedAtUtc  = $startedUtc

@@ -77,7 +77,7 @@ Write-Output 'STATE_CORRUPT_SAFE'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::", "CreateCoreWebView2", "WebView2Loader", "slint")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.1.0*") {
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.1.1*") {
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still legacy build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         Assert-E2EEqual 0 $pe.MarkerCounts["WebView2Loader"] "WebView2Loader symbol count must be 0"
@@ -521,8 +521,8 @@ Write-Output 'MIXED_CASE_TCP_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.1.0*") {
-            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.1.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.1.1*") {
+            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.1.1 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
 
         $portDir = Join-Path $ctx.Sandbox.Root ("port_preserve_" + [guid]::NewGuid().ToString("N").Substring(0, 6))
@@ -552,8 +552,8 @@ Write-Output 'MIXED_CASE_TCP_OK'
             Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe missing (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
         $pe = Get-PEInspection -ExePath $exePath -Markers @("tauri::")
-        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.1.0*") {
-            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.1.0 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
+        if ($pe.MarkerCounts["tauri::"] -gt 0 -or $pe.FileVersion -notlike "4.1.1*") {
+            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason ".bin/UltraGamingMode.exe is still pre-v4.1.1 build (M5 pending)" -Artifact ".bin/UltraGamingMode.exe"
         }
 
         $roExe = Join-Path $ctx.Sandbox.PortableRo "UltraGamingMode.exe"
@@ -580,8 +580,8 @@ Write-Output 'MIXED_CASE_TCP_OK'
     Register-E2ETest -Id "T2-F8-03" -Tier 2 -Feature "F8" -Name "Build-Release.ps1 and installer/ contain zero WebView2 bootstrapper references" -Artifact "Build-Release.ps1" -Body {
         param($ctx)
         $br = Get-Content -LiteralPath (Join-Path $ctx.RepoRoot "Build-Release.ps1") -Raw -Encoding UTF8
-        if ($br -notmatch 'v4\.1\.0') {
-            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Build-Release.ps1 not yet updated for v4.1.0 (M5 pending)" -Artifact "Build-Release.ps1"
+        if ($br -notmatch 'v4\.1\.1') {
+            Invoke-E2EDeferIfPhaseA -ValidateSuiteOnly $ctx.ValidateSuiteOnly -Reason "Build-Release.ps1 not yet updated for v4.1.1 (M5 pending)" -Artifact "Build-Release.ps1"
         }
         Assert-E2ENotMatch $br '(?i)webview2' "Build-Release.ps1 must not reference WebView2"
         $instDir = Join-Path $ctx.RepoRoot "installer"

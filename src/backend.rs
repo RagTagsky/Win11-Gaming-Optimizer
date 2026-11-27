@@ -646,13 +646,9 @@ pub fn classify_process_protection(name: &str) -> Option<&'static str> {
     if !is_safe_identifier(clean) {
         return Some("os_core");
     }
-    if [
-        "UltraGamingMode",
-        "com.ultragamingmode.optimizer",
-        "msedgewebview2",
-    ]
-    .iter()
-    .any(|p| p.eq_ignore_ascii_case(clean))
+    if ["UltraGamingMode", "com.ultragamingmode.optimizer"]
+        .iter()
+        .any(|p| p.eq_ignore_ascii_case(clean))
     {
         return Some("self_app");
     }
@@ -7265,6 +7261,12 @@ mod tests {
         }
         assert!(!is_protected_process_name("Discord.exe"));
         assert!(!is_protected_process_name("Spotify"));
+        assert_eq!(classify_process_protection("UltraGamingMode"), Some("self_app"));
+        assert_eq!(
+            classify_process_protection("msedgewebview2"),
+            Some("os_core"),
+            "msedgewebview2 belongs to Windows shell/other apps and must never be tagged self_app"
+        );
 
         assert!(is_immutable_core_service("RpcSs"));
         assert!(is_immutable_core_service("Audiosrv"));

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Automated build and release packaging orchestrator for Ultra Gaming Mode v4.1.0.
+    Automated build and release packaging orchestrator for Ultra Gaming Mode v4.1.1.
     Terminates running instances, compiles native Rust/Slint release via cargo build --release,
     populates .bin/UltraGamingMode.exe and root UltraGamingMode.exe, packages native
     UltraGamingMode-Setup.exe (NSIS) and UltraGamingMode.msi (WiX), and writes SHA256SUMS.txt.
@@ -9,7 +9,7 @@
 param(
     [switch]$SkipBuild,
     [switch]$CreateGhRelease,
-    [string]$Tag = "v4.1.0"
+    [string]$Tag = "v4.1.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,16 +29,20 @@ if (-not (Test-Path $binDir)) {
 
 $cleanVersion = ($Tag -replace '^[vV]', '')
 if ($cleanVersion -notmatch '^\d+\.\d+\.\d+$') {
-    $cleanVersion = "4.1.0"
+    $cleanVersion = "4.1.1"
 }
 
 Write-Host "=====================================================" -ForegroundColor Cyan
 Write-Host "   ULTRA GAMING MODE v$cleanVersion -- NATIVE BUILDER        " -ForegroundColor Cyan
 Write-Host "=====================================================" -ForegroundColor Cyan
 
-# 1. Stop any running instances so files are not locked
-Write-Host "`n[*] Stopping any running UltraGamingMode instances..." -ForegroundColor Yellow
-Stop-Process -Name "UltraGamingMode", "ultra-gaming-mode" -Force -ErrorAction SilentlyContinue
+# 1. Stop any repo-local instances so target/.bin/root files are not locked (leaves Program Files install untouched)
+Write-Host "`n[*] Stopping any repo-local UltraGamingMode instances..." -ForegroundColor Yellow
+Get-Process -Name "UltraGamingMode", "ultra-gaming-mode" -ErrorAction SilentlyContinue | Where-Object {
+    $p = $null
+    try { $p = $_.MainModule.FileName } catch {}
+    ($null -eq $p) -or $p.StartsWith($rootDir, [System.StringComparison]::OrdinalIgnoreCase)
+} | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 300
 
 # 2. Clean stale legacy binaries from target/ and previous installer outputs from .bin/
@@ -187,9 +191,9 @@ if ($hashLines.Count -gt 0) {
 # 7. Optional GitHub Release creation/update
 if ($CreateGhRelease) {
     $notesList = [System.Collections.Generic.List[string]]::new()
-    $notesList.Add(([regex]::Unescape('- \u0414\u043e\u0431\u0430\u0432\u043b\u0435\u043d\u0430 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0439 \u0432 \u043e\u0434\u0438\u043d \u043a\u043b\u0438\u043a \u043f\u0440\u044f\u043c\u043e \u0432 \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435 \u0441 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u043e\u0439 SHA-256')))
+    $notesList.Add(([regex]::Unescape('- \u0418\u0441\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0430 \u043f\u043e\u043c\u0435\u0442\u043a\u0430 \u0441\u0438\u0441\u0442\u0435\u043c\u043d\u044b\u0445 \u0432\u0435\u0431-\u043f\u0440\u043e\u0446\u0435\u0441\u0441\u043e\u0432 Windows 11 \u0432 \u0441\u043f\u0438\u0441\u043a\u0435 \u043f\u0440\u043e\u0446\u0435\u0441\u0441\u043e\u0432 (\u0443\u0431\u0440\u0430\u043d\u043e \u0443\u0441\u0442\u0430\u0440\u0435\u0432\u0448\u0435\u0435 \u043e\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043e\u0442 v3)')))
+    $notesList.Add(([regex]::Unescape('- \u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0439 \u0432 \u043e\u0434\u0438\u043d \u043a\u043b\u0438\u043a \u043f\u0440\u044f\u043c\u043e \u0432 \u043f\u0440\u043e\u0433\u0440\u0430\u043c\u043c\u0435 \u0441 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u043e\u0439 SHA-256')))
     $notesList.Add(([regex]::Unescape('- \u0410\u0432\u0442\u043e\u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u0440\u0435\u0436\u0438\u043c\u0430 Setup, MSI \u0438\u043b\u0438 Portable \u0441 \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u044b\u043c \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u043a\u043e\u043c \u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435\u043c \u043a\u043e\u043d\u0444\u0438\u0433\u043e\u0432')))
-    $notesList.Add(([regex]::Unescape('- \u0424\u043e\u043d\u043e\u0432\u0430\u044f \u0430\u0432\u0442\u043e\u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043d\u043e\u0432\u044b\u0445 \u0432\u0435\u0440\u0441\u0438\u0439 \u0438 \u0431\u044b\u0441\u0442\u0440\u0430\u044f \u043a\u043d\u043e\u043f\u043a\u0430 \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u044f \u0432 \u0448\u0430\u043f\u043a\u0435 \u043e\u043a\u043d\u0430')))
     $notesList.Add("")
     $notesList.Add(([regex]::Unescape('### \u0424\u0430\u0439\u043b\u044b \u0438 SHA-256')))
     foreach ($hl in $hashLines) {

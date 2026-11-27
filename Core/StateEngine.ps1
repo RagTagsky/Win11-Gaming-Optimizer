@@ -14,7 +14,7 @@ if (-not (Test-Path $Script:BackupDir)) {
 }
 $Script:ActiveStateFile = Join-Path -Path $Script:BackupDir -ChildPath "active_state.json"
 $Script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path -Path $Script:BackupDir -ChildPath ".."))
-$Script:APP_VERSION = "4.1.0"
+$Script:APP_VERSION = "4.1.1"
 $Script:APP_REPO = "RagTagsky/Win11-Gaming-Optimizer"
 
 function Set-StatePropertySafe {
@@ -166,7 +166,7 @@ function Test-ShouldStopWebViewProcess {
     if ([string]::IsNullOrWhiteSpace($CommandLine)) {
         return $false
     }
-    # Protect Ultra Gaming Mode's own WebView2 renderer, Windows Search, and shell hosts strictly
+    # Protect Windows Search and core shell hosts strictly while allowing Widgets WebView2 cleanup
     if ($CommandLine -match '(?i)(UltraGamingMode|com\.ultragamingmode\.optimizer|SearchHost|TextInputHost|StartMenuExperienceHost|ShellExperienceHost|LockApp)') {
         return $false
     }
