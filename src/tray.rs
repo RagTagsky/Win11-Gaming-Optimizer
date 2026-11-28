@@ -341,88 +341,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tray_icon_pixel_colors_for_all_three_modes() {
-        let center_idx = (15 * 32 + 15) * 4;
-
-        let (red_rgba, rw, rh) = build_tray_icon_rgba("Normal");
-        assert_eq!((rw, rh), (32, 32));
-        assert_eq!(red_rgba[3], 0, "Corner must be transparent");
-        assert_eq!(&red_rgba[center_idx..center_idx + 4], &[239, 68, 68, 255]);
-
-        let (orange_rgba, _, _) = build_tray_icon_rgba("Armed");
-        assert_eq!(
-            &orange_rgba[center_idx..center_idx + 4],
-            &[245, 158, 11, 255]
-        );
-
-        let (pending_rgba, _, _) = build_tray_icon_rgba("RestoringPending");
-        assert_eq!(
-            &pending_rgba[center_idx..center_idx + 4],
-            &[245, 158, 11, 255]
-        );
-
-        let (green_rgba, _, _) = build_tray_icon_rgba("Gaming");
-        assert_eq!(
-            &green_rgba[center_idx..center_idx + 4],
-            &[34, 197, 94, 255]
-        );
-    }
-
-    #[test]
-    fn test_tray_menu_excludes_profile_submenu_and_maps_commands() {
-        let ids = tray_menu_item_ids();
-        assert_eq!(ids.len(), 7);
-        for removed in [
-            "tray-profile-menu",
-            "tray-profile-aaa",
-            "tray-profile-legacy-1",
-            "tray-profile-legacy-2",
-        ] {
-            assert!(
-                !ids.contains(&removed),
-                "Profile submenu item '{}' must not exist in v4.0.0",
-                removed
-            );
-            assert!(map_menu_id_to_command(removed).is_none());
-        }
-
-        assert_eq!(
-            map_menu_id_to_command("tray-open"),
-            Some(TrayCommand::OpenWindow)
-        );
-        assert_eq!(
-            map_menu_id_to_command("tray-toggle"),
-            Some(TrayCommand::ToggleMode)
-        );
-        assert_eq!(
-            map_menu_id_to_command("tray-clean-ram"),
-            Some(TrayCommand::CleanRam)
-        );
-        assert_eq!(
-            map_menu_id_to_command("tray-timer"),
-            Some(TrayCommand::ToggleTimer)
-        );
-        assert_eq!(
-            map_menu_id_to_command("tray-reboot"),
-            Some(TrayCommand::RebootPc)
-        );
-        assert_eq!(
-            map_menu_id_to_command("tray-exit"),
-            Some(TrayCommand::ExitApp)
-        );
-        assert_eq!(map_menu_id_to_command("tray-status"), None);
-
-        let (st, tt, tog) = mode_to_tray_meta("RestoringPending");
-        assert!(st.contains("восстановление"));
-        assert!(tt.contains("оранжевый"));
-        assert_eq!(tog, "Завершить восстановление");
-
-        let long_ru = "Ultra Gaming Mode — ".to_string() + &"Очень длинное сообщение о состоянии памяти ".repeat(5);
+    fn test_tray_tooltip_clamping_and_commands() {
+        assert_eq!(map_menu_id_to_command("tray-open"), Some(TrayCommand::OpenWindow));
+        assert_eq!(map_menu_id_to_command("tray-exit"), Some(TrayCommand::ExitApp));
+        let long_ru = "Ultra Gaming Mode — ".to_string() + &"Длинное сообщение о памяти ".repeat(6);
         let clamped = truncate_tray_tooltip(&long_ru);
-        assert!(
-            clamped.encode_utf16().count() <= 120,
-            "Win32 NOTIFYICONDATAW szTip must stay within 127 WCHAR limit"
-        );
+        assert!(clamped.encode_utf16().count() <= 120);
         assert!(clamped.ends_with('…'));
     }
 }

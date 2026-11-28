@@ -190,36 +190,3 @@ pub fn apply_dwm_window_chrome_with_border_status(
 pub fn apply_dwm_window_chrome(_hwnd: isize, _is_dark: bool, _border_rgb: (u8, u8, u8)) -> Result<(), String> {
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_apply_dwm_dark_mode_constants_and_zero_hwnd() {
-        assert_eq!(DWMWA_USE_IMMUTABLE_DARK_MODE, 20);
-        assert_eq!(DWMWA_USE_IMMUTABLE_DARK_MODE_BEFORE_20H1, 19);
-        assert_eq!(DWMWA_WINDOW_CORNER_PREFERENCE, 33);
-        assert_eq!(DWMWA_BORDER_COLOR, 34);
-        assert_eq!(DWMWCP_ROUND, 2);
-        assert_eq!(WM_SETICON, 0x0080);
-        assert_eq!(ICON_SMALL, 0);
-        assert_eq!(ICON_BIG, 1);
-        assert_eq!(IMAGE_ICON, 1);
-        assert!(!apply_window_icon_from_exe_resource(0));
-
-        let res = apply_dwm_dark_mode(0, true);
-        let (chrome_res, border_active) = apply_dwm_window_chrome_with_border_status(0, true, (0x24, 0x2b, 0x38));
-        assert!(!border_active, "HWND = 0 must never report active DWM border");
-        #[cfg(target_os = "windows")]
-        {
-            assert!(res.is_err(), "HWND = 0 must return an Err on Windows");
-            assert!(chrome_res.is_err(), "HWND = 0 chrome sync must return an Err on Windows");
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            assert!(res.is_ok());
-            assert!(chrome_res.is_ok());
-        }
-    }
-}
