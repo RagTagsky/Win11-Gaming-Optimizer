@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release version tag (e.g. v4.1.1)"
+        required: true
+        default: "v4.1.1"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Ensure NSIS and WiX Toolset
+        shell: pwsh
+        run: |
+          $nsisFound = (Get-Command makensis.exe -ErrorAction SilentlyContinue) -or (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe") -or (Test-Path "C:\Program Files\NSIS\makensis.exe")
+          if (-not $nsisFound) {
+            choco install nsis -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "Failed to install NSIS via Chocolatey" }
+          }
+          $wixFound = ((Get-Command candle.exe -ErrorAction SilentlyContinue) -and (Get-Command light.exe -ErrorAction SilentlyContinue)) -or (Test-Path "C:\Program Files (x86)\WiX Toolset v3.14\bin\candle.exe") -or (Test-Path "C:\Program Files (x86)\WiX Toolset v3.11\bin\candle.exe")
+          if (-not $wixFound) {
+            choco install wixtoolset -y --version=3.14.1 --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              choco install wixtoolset -y --no-progress
+              if ($LASTEXITCODE -ne 0) { throw "Failed to install WiX Toolset via Chocolatey" }
+            }
+          }
+
+      - name: Pre-release test gates
+        shell: pwsh
+        run: |
+          $env:RUSTFLAGS = "-D warnings"
+          cargo check --all-targets --color never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:\RUSTFLAGS -ErrorAction SilentlyContinue
+          cargo test --color never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\Tests\Verify-UniversalEngine.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $tag = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_TAG)) { $env:INPUT_TAG.Trim() } else { $env:GITHUB_REF_NAME.Trim() }
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\Build-Release.ps1 -Tag $tag -CreateGhRelease
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

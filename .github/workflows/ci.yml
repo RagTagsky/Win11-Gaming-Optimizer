@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Compiler check (-D warnings)
+        shell: pwsh
+        env:
+          RUSTFLAGS: -D warnings
+        run: |
+          cargo check --all-targets --color never
+
+      - name: Run unit tests
+        shell: pwsh
+        run: |
+          cargo test --color never
+
+      - name: Run engine & config safety verification
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\Tests\Verify-UniversalEngine.ps1

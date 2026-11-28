@@ -215,7 +215,20 @@ if ($CreateGhRelease) {
     try {
         $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
         if ($ghCmd) {
-            & $ghCmd.Source release create $Tag $uploadAssets.ToArray() --title "Ultra Gaming Mode $Tag" --notes-file $notesFile
+            $prevEap = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            & $ghCmd.Source release view $Tag *> $null
+            $viewCode = $LASTEXITCODE
+            $ErrorActionPreference = $prevEap
+            if ($viewCode -eq 0) {
+                & $ghCmd.Source release edit $Tag --title "Ultra Gaming Mode $Tag" --notes-file $notesFile
+                if ($LASTEXITCODE -ne 0) { throw "gh release edit failed with exit code $LASTEXITCODE" }
+                & $ghCmd.Source release upload $Tag $uploadAssets.ToArray() --clobber
+                if ($LASTEXITCODE -ne 0) { throw "gh release upload failed with exit code $LASTEXITCODE" }
+            } else {
+                & $ghCmd.Source release create $Tag $uploadAssets.ToArray() --title "Ultra Gaming Mode $Tag" --notes-file $notesFile
+                if ($LASTEXITCODE -ne 0) { throw "gh release create failed with exit code $LASTEXITCODE" }
+            }
         } else {
             $credOut = ("protocol=https`nhost=github.com`n`n" | git credential fill) -join "`n"
             if ($credOut -notmatch 'password=([^\r\n]+)') {

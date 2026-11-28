@@ -566,7 +566,16 @@ Win11-Gaming-Optimizer/
 ├── src/                             # Native Rust application core & Win32/Slint backend
 │   ├── main.rs                      # Entry point, single-instance wake, Slint event loop & close-to-tray
 │   ├── lib.rs                       # Public crate exports & Rust unit tests
-│   ├── backend.rs                   # Win32/PS/Config/Portable/Zapret/StandbyRAM engine & asset extraction
+│   ├── backend/                     # Modular Win32/PS/Config/Updater/Tray-sync backend submodules
+│   │   ├── mod.rs                   # Re-exports, embedded runtime assets & core unit tests
+│   │   ├── types.rs                 # Shared DTOs, protection lists & identifier helpers
+│   │   ├── win_hw.rs                # Win32 FFI (hardware, registry, processes, services, SID, mutex)
+│   │   ├── timer.rs                 # NtQueryTimerResolution / NtSetTimerResolution (0.500ms lock)
+│   │   ├── config.rs                # Runtime asset sync, config migration, tuning & system status
+│   │   ├── actions.rs               # PS engine runner, RAM purge, shader flush & Verify gate
+│   │   ├── updater.rs               # SHA-256 verified GitHub release checker & in-app self-updater
+│   │   ├── autostart.rs             # Elevated Task Scheduler XML registration & symlink guards
+│   │   └── processes.rs             # Process/service/startup rule lists & live snapshot builder
 │   ├── themes.rs                    # 8-theme design package (43+2 tokens) & persistent preferences
 │   ├── dwm.rs                       # Windows DWM Dark Mode titlebar integration (DwmSetWindowAttribute)
 │   ├── tray.rs                      # Native tray-icon + muda menu & 32x32 dynamic status icon
